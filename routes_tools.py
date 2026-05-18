@@ -2,6 +2,7 @@
 """工具箱路由 - 企微双开等工具管理"""
 import os
 import zipfile
+import subprocess
 from datetime import datetime
 from io import BytesIO
 from flask import Blueprint, request, redirect, url_for, flash, render_template, jsonify, send_file
@@ -343,3 +344,134 @@ def download_tool_file(file_id):
         as_attachment=True,
         download_name=tool_file.filename
     )
+
+
+@bp.route('/tools/git')
+@role_required('admin')
+def git_page():
+    """Git操作页面"""
+    return render_template('admin_git.html', unread_count=get_unread_count(current_user.id))
+
+
+@bp.route('/tools/git/status')
+@role_required('admin')
+def git_status():
+    """获取Git状态"""
+    try:
+        result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True, encoding='utf-8', cwd=os.path.dirname(os.path.abspath(__file__)))
+        changed_files = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
+        
+        remotes = subprocess.run(['git', 'remote', '-v'], capture_output=True, text=True, encoding='utf-8', cwd=os.path.dirname(os.path.abspath(__file__)))
+        remote_info = {}
+        for line in remotes.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    remote_info[parts[0]] = parts[1]
+        
+        branches = subprocess.run(['git', 'branch'], capture_output=True, text=True, encoding='utf-8', cwd=os.path.dirname(os.path.abspath(__file__)))
+        current_branch = ''
+        all_branches = []
+        for line in branches.stdout.strip().split('\n'):
+            branch = line.strip().lstrip('* ').strip()
+            all_branches.append(branch)
+            if line.strip().startswith('*'):
+                current_branch = branch
+        
+        return jsonify({
+            'has_changes': len(changed_files) > 0,
+            'changed_files': changed_files,
+            'remote': remote_info.get('origin', ''),
+            'current_branch': current_branch,
+            'all_branches': all_branches,
+            'is_repo': True
+        })
+    except FileNotFoundError:
+        return jsonify({'error': '未检测到Git，请安装Git', 'is_repo': False}), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'is_repo': False}), 200
+
+
+@bp.route('/tools/git/commit', methods=['POST'])
+@role_required('admin')
+def git_commit():
+    """提交代码"""
+    data = request.get_json() or {}
+    message = data.get('message', '').strip()
+    
+    if not message:
+        return jsonify({'success': False, 'message': '请输入提交信息'}), 400
+    
+    try:
+        subprocess.run(['git', 'add', '.'], capture_output=True, encoding='utf-8', cwd=os.path.dirname(os.path.abspath(__file__)))
+        result = subprocess.run(['git', 'commit', '-m', message], capture_output=True, text=True, encoding='utf-8', cwd=os.path.dirname(os.path.abspath(__file__)))
+        
+        if result.returncode == 0:
+            return jsonify({'success': True, 'message': '提交成功'})
+        else:
+            return jsonify({'success': False, 'message': result.stderr or '提交失败'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@bp.route('/tools/git/push', methods=['POST'])
+@role_required('admin')
+def git_push():
+    """推送到远程仓库"""
+    try:
+        result = subprocess.run(['git', 'push'], capture_output=True, text=True, encoding='utf-8', cwd=os.path.dirname(os.path.abspath(__file__)))
+        
+        if result.returncode == 0:
+            return jsonify({'success': True, 'message': '推送成功'})
+        else:
+            return jsonify({'success': False, 'message': result.stderr or '推送失败'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@bp.route('/tools/git/pull', methods=['POST'])
+@role_required('admin')
+def git_pull():
+    """从远程仓库拉取"""
+    try:
+        result = subprocess.run(['git', 'pull'], capture_output=True, text=True, encoding='utf-8', cwd=os.path.dirname(os.path.abspath(__file__)))
+        
+        if result.returncode == 0:
+            return jsonify({'success': True, 'message': '拉取成功', 'output': result.stdout})
+        else:
+            return jsonify({'success': False, 'message': result.stderr or '拉取失败'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@bp.route('/tools/git/clone', methods=['POST'])
+@role_required('admin')
+def git_clone():
+    """克隆远程仓库"""
+    data = request.get_json() or {}
+    url = data.get('url', '').strip()
+    
+    if not url:
+        return jsonify({'success': False, 'message': '请输入仓库地址'}), 400
+    
+    try:
+        result = subprocess.run(['git', 'clone', url, '.'], capture_output=True, text=True, encoding='utf-8', cwd=os.path.dirname(os.path.abspath(__file__)))
+        
+        if result.returncode == 0:
+            return jsonify({'success': True, 'message': '克隆成功'})
+        else:
+            return jsonify({'success': False, 'message': result.stderr or '克隆失败'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@bp.route('/tools/git/log')
+@role_required('admin')
+def git_log():
+    """获取提交日志"""
+    try:
+        result = subprocess.run(['git', 'log', '--oneline', '-20'], capture_output=True, text=True, encoding='utf-8', cwd=os.path.dirname(os.path.abspath(__file__)))
+        logs = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
+        return jsonify({'logs': logs})
+    except Exception as e:
+        return jsonify({'logs': [], 'error': str(e)}), 200

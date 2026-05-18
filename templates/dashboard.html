@@ -399,10 +399,34 @@
             </div>
             <div class="modal-body" id="orderDetailContent"></div>
             <div class="modal-footer">
-                {% if can_edit_order_detail %}
-                <button type="button" class="btn btn-primary" id="saveOrderBtn" onclick="saveOrder()">保存修改</button>
-                {% endif %}
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 补发赠品弹窗 -->
+<div class="modal fade" id="reissueGiftModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">补发赠品</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>选择需要补发的产品类别，将自动创建一条发货单草稿。</p>
+                <div class="mb-3">
+                    <label class="form-label">产品类别</label>
+                    <select class="form-select" id="reissueCategory" onchange="updateReissueExample()"></select>
+                </div>
+                <div class="mb-3" id="reissueExampleArea" style="display:none;">
+                    <label class="form-label text-muted small">示例产品信息</label>
+                    <div class="bg-light p-2 rounded small text-muted" id="reissueExampleText"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" onclick="submitReissueGift()">确定</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
             </div>
         </div>
     </div>
@@ -519,6 +543,18 @@ function showOrderDetail(orderId) {
                 `;
             }
 
+            const footer = document.querySelector('#orderDetailModal .modal-footer');
+            footer.innerHTML = '';
+            {% if can_reissue_gift %}
+            if (data.is_main_product) {
+                footer.innerHTML += '<button type="button" class="btn btn-info" onclick="showReissueGiftModal()"><i class="bi bi-gift"></i> 补发赠品</button> ';
+            }
+            {% endif %}
+            {% if can_edit_order_detail %}
+            footer.innerHTML += '<button type="button" class="btn btn-primary" onclick="saveOrder()">保存修改</button> ';
+            {% endif %}
+            footer.innerHTML += '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>';
+
             new bootstrap.Modal(document.getElementById('orderDetailModal')).show();
 
             // 顺丰已发货订单，加载物流信息
@@ -618,9 +654,6 @@ function refreshLogistics(orderId) {
 }
 
 {% if can_edit_order_detail %}
-/**
- * 保存订单修改
- */
 function saveOrder() {
     const form = document.getElementById('orderEditForm');
     const formData = new FormData(form);
@@ -639,6 +672,69 @@ function saveOrder() {
         }
     })
     .catch(() => { alert('保存失败'); });
+}
+{% endif %}
+
+{% if can_reissue_gift %}
+let reissueCategoriesData = [];
+function showReissueGiftModal() {
+    if (!currentOrderId) {
+        alert('请先选择一个订单');
+        return;
+    }
+    
+    fetch('/api/categories')
+        .then(r => r.json())
+        .then(categories => {
+            reissueCategoriesData = categories;
+            const select = document.getElementById('reissueCategory');
+            select.innerHTML = categories.map(c => '<option value="' + c.id + '">' + c.name + '</option>').join('');
+            updateReissueExample();
+            new bootstrap.Modal(document.getElementById('reissueGiftModal')).show();
+        })
+        .catch(err => {
+            alert('加载类别失败: ' + err.message);
+        });
+}
+
+function updateReissueExample() {
+    const categoryId = document.getElementById('reissueCategory').value;
+    const example = reissueCategoriesData.find(c => c.id == categoryId);
+    const exampleArea = document.getElementById('reissueExampleArea');
+    const exampleText = document.getElementById('reissueExampleText');
+    if (example && example.example) {
+        exampleText.textContent = example.example;
+        exampleArea.style.display = 'block';
+    } else {
+        exampleArea.style.display = 'none';
+    }
+}
+
+function submitReissueGift() {
+    const categoryId = document.getElementById('reissueCategory').value;
+    if (!categoryId) {
+        alert('请选择产品类别');
+        return;
+    }
+    
+    fetch('/api/order/' + currentOrderId + '/reissue-gift', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({category_id: categoryId})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            alert('创建失败: ' + data.error);
+        } else {
+            alert('已创建补发赠品草稿单，订单ID: ' + data.order_id);
+            bootstrap.Modal.getInstance(document.getElementById('reissueGiftModal')).hide();
+            window.location.reload();
+        }
+    })
+    .catch(err => {
+        alert('请求失败: ' + err.message);
+    });
 }
 {% endif %}
 

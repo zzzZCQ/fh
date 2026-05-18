@@ -124,6 +124,7 @@ def dashboard():
                            can_ship=is_admin or is_shipper,
                            can_edit_order=is_salesman or is_admin,
                            can_edit_order_detail=is_admin,
+                           can_reissue_gift=is_admin or current_user.has_role('admin') or current_user.has_role('salesman'),
                            can_approve_delete=is_admin,
                            auto_refresh=is_salesman,
                            unread_count=get_unread_count(current_user.id),
@@ -285,6 +286,12 @@ def api_order_detail(order_id):
     elif order.salesman_id != current_user.id:
         return jsonify({'error': '无权查看此订单'}), 403
 
+    is_main_product = False
+    if order.category:
+        cat = Category.query.filter_by(name=order.category, is_active=True).first()
+        if cat:
+            is_main_product = cat.is_main_product
+    
     return jsonify({
         'id': order.id,
         'group_name': order.group_name,
@@ -305,9 +312,17 @@ def api_order_detail(order_id):
         'express_type': order.express_type or '',
         'logistics_status': order.logistics_status or '',
         'create_time': order.create_time.strftime('%Y-%m-%d %H:%M:%S') if order.create_time else '',
-        'update_time': order.update_time.strftime('%Y-%m-%d %H:%M:%S') if order.update_time else ''
+        'update_time': order.update_time.strftime('%Y-%m-%d %H:%M:%S') if order.update_time else '',
+        'is_main_product': is_main_product
     })
 
+
+@bp.route('/api/categories')
+@login_required
+def api_categories():
+    """获取所有非主品产品类别（用于补发赠品）"""
+    categories = Category.query.filter_by(is_active=True, is_main_product=False).order_by(Category.sort_order.asc(), Category.id.asc()).all()
+    return jsonify([{'id': c.id, 'name': c.name, 'example': c.example or ''} for c in categories])
 
 @bp.route('/api/category/<int:category_id>/gifts')
 @login_required
@@ -315,6 +330,48 @@ def api_category_gifts(category_id):
     """获取类别对应的赠品列表"""
     gifts = get_active_gifts(category_id)
     return jsonify([{'id': g.id, 'name': g.name} for g in gifts])
+
+
+@bp.route('/api/order/<int:order_id>/reissue-gift', methods=['POST'])
+@login_required
+def api_order_reissue_gift(order_id):
+    """补发赠品：创建一条新的草稿订单"""
+    original_order = Order.query.get_or_404(order_id)
+    
+    data = request.get_json() or {}
+    category_id = data.get('category_id')
+    
+    if not category_id:
+        return jsonify({'error': '请选择产品类别'}), 400
+    
+    category = Category.query.get(category_id)
+    if not category:
+        return jsonify({'error': '产品类别不存在'}), 400
+    
+    product_info = category.example or '补发赠品'
+    
+    new_order = Order(
+        group_name=original_order.group_name,
+        salesman_id=original_order.salesman_id,
+        product_info=product_info,
+        category=category.name,
+        paid_amount='0',
+        collect_amount='0',
+        phone=original_order.phone,
+        address=original_order.address,
+        customer_name=original_order.customer_name,
+        remark=f'补发赠品，源订单ID: {original_order.id}',
+        status='draft',
+        group_id=original_order.group_id
+    )
+    
+    db.session.add(new_order)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'order_id': new_order.id
+    })
 
 
 @bp.route('/api/order/<int:order_id>/logistics')

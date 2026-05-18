@@ -278,6 +278,9 @@
                 <a class="nav-link {% if request.endpoint == 'admin_config.admin_db_viewer' %}active{% endif %}" href="{{ url_for('admin_config.admin_db_viewer') }}">
                     <i class="bi bi-database"></i> 数据库管理
                 </a>
+                <a class="nav-link {% if request.endpoint == 'tools.git_page' %}active{% endif %}" href="{{ url_for('tools.git_page') }}">
+                    <i class="bi bi-git"></i> Git管理
+                </a>
             </nav>
         </div>
         {% endif %}

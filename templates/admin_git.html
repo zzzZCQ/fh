@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block title %}Git管理 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-git"></i> Git管理</h4>
+    <span class="badge bg-secondary" id="branchBadge">-</span>
+</div>
+
+<div id="gitAlert"></div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> 仓库状态</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">远程仓库</label>
+                    <div id="remoteUrl" class="text-muted small">-</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">当前分支</label>
+                    <div id="currentBranch" class="text-muted">-</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">文件状态</label>
+                    <div id="fileStatus" class="text-muted small">-</div>
+                </div>
+                <button class="btn btn-outline-primary btn-sm" onclick="refreshStatus()">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新状态
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-cloud-upload"></i> 克隆仓库</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">仓库地址</label>
+                    <input type="text" class="form-control" id="cloneUrl" placeholder="https://github.com/username/repo.git">
+                    <div class="form-text">例如: https://github.com/zzzZCQ/fh.git</div>
+                </div>
+                <button class="btn btn-primary" onclick="doClone()">
+                    <i class="bi bi-download"></i> 克隆
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-2">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-check-circle"></i> 提交代码</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">提交信息</label>
+                    <input type="text" class="form-control" id="commitMessage" placeholder="描述本次修改的内容">
+                </div>
+                <button class="btn btn-success" onclick="doCommit()">
+                    <i class="bi bi-check-lg"></i> 提交
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-cloud-arrow-up"></i> 同步操作</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" onclick="doPush()">
+                        <i class="bi bi-cloud-arrow-up"></i> 推送到远程
+                    </button>
+                    <button class="btn btn-info" onclick="doPull()">
+                        <i class="bi bi-cloud-arrow-down"></i> 从远程拉取
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> 最近提交</h5>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadLog()">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="logArea" class="small" style="max-height: 300px; overflow-y: auto;">
+                    <div class="text-center text-muted">加载中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+function showAlert(type, message) {
+    const alertDiv = document.getElementById('gitAlert');
+    const iconMap = {
+        'success': 'check-circle-fill',
+        'danger': 'exclamation-triangle-fill',
+        'warning': 'exclamation-triangle',
+        'info': 'info-circle-fill'
+    };
+    alertDiv.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+        <i class="bi bi-${iconMap[type]} me-1"></i> ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>`;
+    setTimeout(() => {
+        const alert = bootstrap.Alert.getOrCreateInstance(alertDiv.querySelector('.alert'));
+        if (alert) alert.close();
+    }, 5000);
+}
+
+function refreshStatus() {
+    fetch('/tools/git/status')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                showAlert('danger', data.error);
+                return;
+            }
+            document.getElementById('branchBadge').textContent = data.current_branch || '-';
+            document.getElementById('remoteUrl').textContent = data.remote || '未设置';
+            document.getElementById('currentBranch').textContent = data.current_branch || '-';
+            
+            if (data.changed_files && data.changed_files.length > 0) {
+                document.getElementById('fileStatus').innerHTML = `<span class="text-warning">有 ${data.changed_files.length} 个文件已修改</span>
+                    <div class="mt-1">${data.changed_files.slice(0, 5).map(f => `<div class="text-muted">${f}</div>`).join('')}
+                    ${data.changed_files.length > 5 ? `<div class="text-muted">...还有 ${data.changed_files.length - 5} 个</div>` : ''}</div>`;
+            } else {
+                document.getElementById('fileStatus').innerHTML = '<span class="text-success">没有未提交的更改</span>';
+            }
+        })
+        .catch(err => showAlert('danger', '获取状态失败: ' + err.message));
+}
+
+function doCommit() {
+    const message = document.getElementById('commitMessage').value.trim();
+    if (!message) {
+        showAlert('warning', '请输入提交信息');
+        return;
+    }
+    fetch('/tools/git/commit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: message})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            document.getElementById('commitMessage').value = '';
+            refreshStatus();
+            loadLog();
+        } else {
+            showAlert('danger', data.message);
+        }
+    })
+    .catch(err => showAlert('danger', '提交失败: ' + err.message));
+}
+
+function doPush() {
+    fetch('/tools/git/push', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', data.message);
+            } else {
+                showAlert('danger', data.message);
+            }
+        })
+        .catch(err => showAlert('danger', '推送失败: ' + err.message));
+}
+
+function doPull() {
+    fetch('/tools/git/pull', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', data.message);
+                refreshStatus();
+                loadLog();
+            } else {
+                showAlert('danger', data.message);
+            }
+        })
+        .catch(err => showAlert('danger', '拉取失败: ' + err.message));
+}
+
+function doClone() {
+    const url = document.getElementById('cloneUrl').value.trim();
+    if (!url) {
+        showAlert('warning', '请输入仓库地址');
+        return;
+    }
+    if (!confirm('确定要克隆仓库吗？这将覆盖本地所有文件！')) return;
+    
+    fetch('/tools/git/clone', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: url})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            refreshStatus();
+            loadLog();
+        } else {
+            showAlert('danger', data.message);
+        }
+    })
+    .catch(err => showAlert('danger', '克隆失败: ' + err.message));
+}
+
+function loadLog() {
+    fetch('/tools/git/log')
+        .then(r => r.json())
+        .then(data => {
+            if (data.logs && data.logs.length > 0) {
+                document.getElementById('logArea').innerHTML = data.logs.map(log => 
+                    `<div class="border-bottom py-2">${log}</div>`
+                ).join('');
+            } else {
+                document.getElementById('logArea').innerHTML = '<div class="text-muted text-center">暂无提交记录</div>';
+            }
+        })
+        .catch(err => {
+            document.getElementById('logArea').innerHTML = '<div class="text-danger">加载失败</div>';
+        });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    refreshStatus();
+    loadLog();
+});
+</script>
+{% endblock %}
