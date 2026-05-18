@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}导出业绩报表 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="bi bi-file-earmark-excel me-2"></i>导出业绩报表</h2>
+    <p class="text-muted">导出本月有订金或代收金额的发货单</p>
+    
+    {% if templates %}
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0">选择导出条件</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('performance.export_performance_report') }}">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">选择模板 <span class="text-danger">*</span></label>
+                        <select class="form-select" name="template_id" required>
+                            <option value="">请选择模板</option>
+                            {% for t in templates %}
+                            {% set cats = t.categories|from_json if t.categories else [] %}
+                            <option value="{{ t.id }}" {% if loop.first %}selected{% endif %}>{{ t.name }} ({{ cats|join(', ') }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">管理员配置的报表模板</div>
+                    </div>
+                    
+                    <div class="col-md-2 mb-3">
+                        <label class="form-label">年份 <span class="text-danger">*</span></label>
+                        <select class="form-select" name="year" required>
+                            {% for y in range(2024, now_year + 2) %}
+                            <option value="{{ y }}" {% if y == now_year %}selected{% endif %}>{{ y }}年</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-2 mb-3">
+                        <label class="form-label">月份 <span class="text-danger">*</span></label>
+                        <select class="form-select" name="month" required>
+                            {% for m in range(1, 13) %}
+                            <option value="{{ m }}" {% if m == now_month %}selected{% endif %}>{{ m }}月</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>导出条件：</strong>
+                    <ul class="mb-0 mt-1">
+                        <li>只导出已发货的订单</li>
+                        <li>只包含有订金（已付金额>0）或代收金额>0的订单</li>
+                        <li>只包含选中模板配置的产品类别</li>
+                    </ul>
+                </div>
+                
+                <div class="d-grid gap-2 d-md-block">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-download me-1"></i> 导出业绩报表
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-warning mt-4">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        暂无配置的业绩报表模板，请联系管理员配置。
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

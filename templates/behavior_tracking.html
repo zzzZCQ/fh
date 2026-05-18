@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}行为轨迹处理 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2><i class="bi bi-table me-2"></i>行为轨迹处理工具</h2>
+    <p class="text-muted">自动填充完播/未完播数据到行为轨迹表，并按完播次数排序</p>
+    
+    <div class="row mt-4">
+        <!-- 文件上传 -->
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-upload me-2"></i>上传文件</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('behavior.upload_behavior_files') }}" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">基础表（行为轨迹表.xlsx）</label>
+                            <input type="file" class="form-control" name="base_file" accept=".xlsx,.xls">
+                            <div class="form-text">
+                                {% if has_base_file %}
+                                <span class="text-success"><i class="bi bi-check-circle"></i> 已上传，重新上传将覆盖</span>
+                                {% else %}
+                                包含昵称列和日期列的基础表格（首次必须上传）
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">手动选择数据文件（可多选）</label>
+                            <input type="file" class="form-control" name="data_files" accept=".xlsx,.xls" multiple>
+                            <div class="form-text">
+                                文件名格式：MMDD完播.xlsx、415未完播.xls、414.xls 等
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-cloud-upload me-1"></i> 上传文件
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- 使用说明 -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>使用说明</h5>
+                </div>
+                <div class="card-body">
+                    <ol class="mb-0 small">
+                        <li>上传<strong>行为轨迹表.xlsx</strong>作为基础表（首次必须上传）</li>
+                        <li>点击"选择文件夹"自动上传所有Excel文件（推荐）</li>
+                        <li>或手动选择数据文件上传</li>
+                        <li>点击"开始处理"自动填充数据</li>
+                        <li>点击"下载结果"获取处理后的文件</li>
+                    </ol>
+                    <hr class="my-2">
+                    <div class="small text-muted">
+                        <strong>支持的文件名格式：</strong><br>
+                        • <code>0415完播.xlsx</code>、<code>415未完播.xls</code><br>
+                        • <code>414.xls</code>、<code>0509.xlsx</code>（纯日期格式）<br>
+                        • 系统自动识别日期并匹配对应列
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 文件列表和处理 -->
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-folder me-2"></i>已上传文件</h5>
+                    <span class="badge bg-secondary">{{ files|length }} 个文件</span>
+                </div>
+                <div class="card-body">
+                    {% if files %}
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>文件名</th>
+                                <th>类型</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file in files %}
+                            <tr>
+                                <td>{{ file }}</td>
+                                <td>
+                                    {% if file == '行为轨迹表.xlsx' %}
+                                    <span class="badge bg-primary">基础表</span>
+                                    {% elif '完播' in file %}
+                                    <span class="badge bg-success">完播数据</span>
+                                    {% elif '未完播' in file %}
+                                    <span class="badge bg-warning">未完播数据</span>
+                                    {% elif file.endswith('.xlsx') or file.endswith('.xls') %}
+                                    <span class="badge bg-info">数据文件</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">其他</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if file == '行为轨迹表.xlsx' %}
+                                    <span class="text-success"><i class="bi bi-check-circle"></i> 已就绪</span>
+                                    {% elif file.replace('.xlsx', '').replace('.xls', '').replace('完播', '').replace('未完播', '') in processed_dates %}
+                                    <span class="text-muted"><i class="bi bi-check-circle-fill"></i> 已处理</span>
+                                    {% else %}
+                                    <span class="text-warning"><i class="bi bi-hourglass"></i> 待处理</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    
+                    <hr>
+                    
+                    <form method="POST" action="{{ url_for('behavior.process_behavior_tracking') }}">
+                        <button type="submit" class="btn btn-success w-100" {% if not has_base_file %}disabled{% endif %}>
+                            <i class="bi bi-gear me-1"></i> 开始处理
+                        </button>
+                        {% if not has_base_file %}
+                        <div class="form-text text-danger mt-1">请先上传基础表（行为轨迹表.xlsx）</div>
+                        {% endif %}
+                    </form>
+                    
+                    {% if has_base_file %}
+                    <div class="mt-3 text-center">
+                        <a href="{{ url_for('behavior.download_behavior_result') }}" class="btn btn-outline-primary">
+                            <i class="bi bi-download"></i> 下载结果文件
+                        </a>
+                    </div>
+                    {% endif %}
+                    
+                    {% else %}
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-inbox" style="font-size: 48px;"></i>
+                        <p class="mt-3">暂无文件，请先上传</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- 已处理日期 -->
+            {% if processed_dates %}
+            <div class="card mt-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-check2-all me-2"></i>已处理日期</h5>
+                    <a href="{{ url_for('behavior.clear_behavior_processed') }}" class="btn btn-outline-warning btn-sm" onclick="return confirm('确定清空已处理记录？')">
+                        <i class="bi bi-trash"></i> 清空记录
+                    </a>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-1">
+                        {% for date in processed_dates %}
+                        <span class="badge bg-light text-dark border">{{ date[:2] }}月{{ date[2:] }}日</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

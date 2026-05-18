@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}业绩报表模板管理 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>业绩报表模板管理</h2>
+    <p class="text-muted">配置业务员可导出的业绩报表模板，包括可导出的产品类型和字段映射</p>
+    
+    <div class="row mt-4">
+        <!-- 模板列表 -->
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">模板列表</h5>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="resetForm()">新增模板</button>
+                </div>
+                <div class="card-body">
+                    {% if templates %}
+                    <div class="list-group">
+                        {% for t in templates %}
+                        <a href="#" class="list-group-item list-group-item-action {% if loop.first %}active{% endif %}" 
+                           data-id="{{ t.id }}" 
+                           data-name="{{ t.name }}" 
+                           data-categories="{{ t.categories }}" 
+                           data-field-mapping="{{ t.field_mapping }}"
+                           onclick="loadTemplateFromElement(this); return false;"
+                           id="template_{{ t.id }}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-file-earmark-excel"></i> {{ t.name }}</span>
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); loadTemplateFromElement(this.closest('a'));">编辑</button>
+                                    <form method="POST" action="{{ url_for('import_routes.delete_performance_template', template_id=t.id) }}" class="d-inline" onsubmit="return confirm('确定删除此模板？')">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation()">删除</button>
+                                    </form>
+                                </div>
+                            </div>
+                            <small class="text-muted">{{ t.categories|from_json|join(', ') if t.categories else '未配置类别' }}</small>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-4">
+                        <p>暂无模板，请添加</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- 模板配置 -->
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">模板配置</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('import_routes.save_performance_template') }}" id="templateForm" enctype="multipart/form-data">
+                        <input type="hidden" name="template_id" id="template_id" value="">
+                        
+                        <div class="mb-3">
+                            <label class="form-label">模板名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="name" id="template_name" required placeholder="如：2025年业绩报表模板">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">模板文件 <span class="text-danger">*</span></label>
+                            <input type="file" class="form-control" name="template_file" accept=".xlsx,.xls" id="template_file">
+                            <div class="form-text">请上传Excel模板文件，第一行为表头，数据将从第二行开始填充</div>
+                            <div id="current_file" class="form-text text-success mt-1" style="display:none;"></div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">可导出的产品类别 <span class="text-danger">*</span></label>
+                            <div class="form-check">
+                                {% for cat in categories %}
+                                <div class="form-check">
+                                    <input class="form-check-input category-checkbox" type="checkbox" name="categories" value="{{ cat.name }}" id="cat_{{ cat.id }}">
+                                    <label class="form-check-label" for="cat_{{ cat.id }}">{{ cat.name }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="form-text">业务员只能导出选中类别的订单</div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">字段映射配置</label>
+                            <p class="small text-muted">配置Excel表头与订单字段的对应关系</p>
+                            
+                            <div id="mappingRows">
+                                <!-- 动态添加映射行 -->
+                            </div>
+                            
+                            <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="addMappingRow()">
+                                <i class="bi bi-plus"></i> 添加字段映射
+                            </button>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">保存模板</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 预设字段选项
+const orderFields = [
+    {value: 'group_name', label: '部门/组别'},
+    {value: 'salesman_name', label: '业务员名称'},
+    {value: 'create_time', label: '发货日期'},
+    {value: 'sign_time', label: '签收时间'},
+    {value: 'customer_name', label: '客户姓名'},
+    {value: 'product_info', label: '产品名称'},
+    {value: '__sales_amount__', label: '销售金额（已付数字+代收）'},
+    {value: 'tracking_number', label: '顺丰单号'},
+    {value: 'logistics_status', label: '物流状态'},
+    {value: 'paid_amount', label: '已付金额'},
+    {value: 'collect_amount', label: '代收金额'},
+    {value: 'phone', label: '联系电话'},
+    {value: 'address', label: '地址'},
+    {value: 'remark', label: '备注'}
+];
+
+// 添加映射行
+function addMappingRow(excelField = '', orderField = '') {
+    const container = document.getElementById('mappingRows');
+    const row = document.createElement('div');
+    row.className = 'row mb-2 align-items-center';
+    
+    let optionsHtml = '<option value="">选择字段</option>';
+    orderFields.forEach(f => {
+        optionsHtml += `<option value="${f.value}" ${f.value === orderField ? 'selected' : ''}>${f.label}</option>`;
+    });
+    
+    row.innerHTML = `
+        <div class="col-5">
+            <input type="text" class="form-control form-control-sm" name="excel_field[]" placeholder="Excel表头" value="${excelField}">
+        </div>
+        <div class="col-1 text-center">→</div>
+        <div class="col-5">
+            <select class="form-select form-select-sm" name="order_field[]">
+                ${optionsHtml}
+            </select>
+        </div>
+        <div class="col-1">
+            <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.row').remove()">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+// 从元素加载模板
+function loadTemplateFromElement(element) {
+    const id = parseInt(element.dataset.id);
+    const name = element.dataset.name;
+    let categories = [];
+    let fieldMapping = {};
+    
+    try {
+        categories = JSON.parse(element.dataset.categories || '[]');
+    } catch (e) {
+        categories = [];
+    }
+    
+    try {
+        fieldMapping = JSON.parse(element.dataset.fieldMapping || '{}');
+    } catch (e) {
+        fieldMapping = {};
+    }
+    
+    loadTemplate(id, name, categories, fieldMapping);
+}
+
+// 加载模板
+function loadTemplate(id, name, categories, fieldMapping) {
+    document.getElementById('template_id').value = id;
+    document.getElementById('template_name').value = name;
+    
+    // 显示正在编辑模板
+    document.getElementById('current_file').innerHTML = '当前模板文件已存在，如需更换请重新上传';
+    document.getElementById('current_file').style.display = 'block';
+    
+    // 重置类别选择
+    document.querySelectorAll('.category-checkbox').forEach(cb => {
+        cb.checked = categories.includes(cb.value);
+    });
+    
+    // 清空并重新加载字段映射
+    document.getElementById('mappingRows').innerHTML = '';
+    if (fieldMapping && Object.keys(fieldMapping).length > 0) {
+        for (const [excelField, orderField] of Object.entries(fieldMapping)) {
+            addMappingRow(excelField, orderField);
+        }
+    }
+    
+    // 更新列表激活状态
+    document.querySelectorAll('.list-group-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    document.getElementById('template_' + id)?.classList.add('active');
+}
+
+// 重置表单
+function resetForm() {
+    document.getElementById('templateForm').reset();
+    document.getElementById('template_id').value = '';
+    document.getElementById('mappingRows').innerHTML = '';
+    document.getElementById('current_file').style.display = 'none';
+    
+    // 添加默认字段映射
+    const defaultMappings = [
+        ['部门', 'group_name'],
+        ['业务员名称', 'salesman_name'],
+        ['发货日期', 'create_time'],
+        ['姓名', 'customer_name'],
+        ['产品名称', 'product_info'],
+        ['销售金额', 'total_amount'],
+        ['顺丰单号', 'tracking_number']
+    ];
+    defaultMappings.forEach(([excel, order]) => addMappingRow(excel, order));
+    
+    document.querySelectorAll('.list-group-item').forEach(item => {
+        item.classList.remove('active');
+    });
+}
+
+// 页面加载时添加默认映射
+window.onload = function() {
+    if (!document.getElementById('template_id').value) {
+        resetForm();
+    }
+};
+</script>
+{% endblock %}

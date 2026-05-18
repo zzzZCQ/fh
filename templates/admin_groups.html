@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}组别管理 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2>组别管理</h2>
+            <p class="text-muted">设置组织架构层级，支持多级分组管理</p>
+        </div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addGroupModal">
+            <i class="bi bi-plus-circle"></i> 新增组别
+        </button>
+    </div>
+    
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">组别列表</h5>
+        </div>
+        <div class="card-body">
+            {% if groups %}
+            <div class="group-tree">
+                {% macro render_group_tree(groups, level=0) %}
+                    {% for group in groups %}
+                        {% if group.parent_id == None or level > 0 %}
+                        <div class="group-item {% if not group.is_active %}text-muted{% endif %}" style="margin-left: {{ level * 30 }}px;">
+                            <div class="d-flex align-items-center justify-content-between py-2 border-bottom">
+                                <div class="d-flex align-items-center">
+                                    <span class="me-2">
+                                        {% if group.children %}
+                                            <i class="bi bi-folder-fill text-warning"></i>
+                                        {% else %}
+                                            <i class="bi bi-folder text-secondary"></i>
+                                        {% endif %}
+                                    </span>
+                                    <div>
+                                        <span class="fw-bold">{{ group.name }}</span>
+                                        {% if group.code %}
+                                            <span class="badge bg-light text-dark ms-1">{{ group.code }}</span>
+                                        {% endif %}
+                                        <span class="badge bg-info ms-1">L{{ group.level }}</span>
+                                        {% if group.is_active %}
+                                            <span class="badge bg-success">启用</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">停用</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% if is_super_admin or group.id in managed_group_ids %}
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal{{ group.id }}">编辑</button>
+                                    <form method="POST" action="{{ url_for('templates.toggle_group', group_id=group.id) }}" class="d-inline">
+                                        {% if group.is_active %}
+                                        <button type="submit" class="btn btn-outline-warning" onclick="return confirm('确定停用此组别？')">停用</button>
+                                        {% else %}
+                                        <button type="submit" class="btn btn-outline-success">启用</button>
+                                        {% endif %}
+                                    </form>
+                                    <form method="POST" action="{{ url_for('templates.delete_group', group_id=group.id) }}" class="d-inline" onsubmit="return confirm('确定要删除组别 "{{ group.name }}"？请确认此组别下没有子组、用户和订单！')">
+                                        <button type="submit" class="btn btn-outline-danger">删除</button>
+                                    </form>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- 递归渲染子组 -->
+                            {% if group.children %}
+                                {{ render_group_tree(group.children, level + 1) }}
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                {% endmacro %}
+                
+                {# 获取顶级组别并渲染树 #}
+                {% set root_groups = groups | selectattr('parent_id', 'none') | list %}
+                {% if root_groups %}
+                    {% for root in root_groups %}
+                        <div class="group-item {% if not root.is_active %}text-muted{% endif %}">
+                            <div class="d-flex align-items-center justify-content-between py-2 border-bottom">
+                                <div class="d-flex align-items-center">
+                                    <span class="me-2">
+                                        {% if root.children %}
+                                            <i class="bi bi-folder-fill text-warning"></i>
+                                        {% else %}
+                                            <i class="bi bi-folder text-secondary"></i>
+                                        {% endif %}
+                                    </span>
+                                    <div>
+                                        <span class="fw-bold">{{ root.name }}</span>
+                                        {% if root.code %}
+                                            <span class="badge bg-light text-dark ms-1">{{ root.code }}</span>
+                                        {% endif %}
+                                        <span class="badge bg-info ms-1">L{{ root.level }}</span>
+                                        {% if root.is_active %}
+                                            <span class="badge bg-success">启用</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">停用</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% if is_super_admin or root.id in managed_group_ids %}
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal{{ root.id }}">编辑</button>
+                                    <form method="POST" action="{{ url_for('templates.toggle_group', group_id=root.id) }}" class="d-inline">
+                                        {% if root.is_active %}
+                                        <button type="submit" class="btn btn-outline-warning" onclick="return confirm('确定停用此组别？')">停用</button>
+                                        {% else %}
+                                        <button type="submit" class="btn btn-outline-success">启用</button>
+                                        {% endif %}
+                                    </form>
+                                    <form method="POST" action="{{ url_for('templates.delete_group', group_id=root.id) }}" class="d-inline" onsubmit="return confirm('确定要删除组别 "{{ root.name }}"？请确认此组别下没有子组、用户和订单！')">
+                                        <button type="submit" class="btn btn-outline-danger">删除</button>
+                                    </form>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- 渲染子组 -->
+                            {% if root.children %}
+                                {% for child in root.children recursive %}
+                                <div class="group-item {% if not child.is_active %}text-muted{% endif %}" style="margin-left: 30px;">
+                                    <div class="d-flex align-items-center justify-content-between py-2 border-bottom">
+                                        <div class="d-flex align-items-center">
+                                            <span class="me-2">
+                                                {% if child.children %}
+                                                    <i class="bi bi-folder-fill text-warning"></i>
+                                                {% else %}
+                                                    <i class="bi bi-folder text-secondary"></i>
+                                                {% endif %}
+                                            </span>
+                                            <div>
+                                                <span class="fw-bold">{{ child.name }}</span>
+                                                {% if child.code %}
+                                                    <span class="badge bg-light text-dark ms-1">{{ child.code }}</span>
+                                                {% endif %}
+                                                <span class="badge bg-info ms-1">L{{ child.level }}</span>
+                                                {% if child.is_active %}
+                                                    <span class="badge bg-success">启用</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary">停用</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        {% if is_super_admin or child.id in managed_group_ids %}
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal{{ child.id }}">编辑</button>
+                                            <form method="POST" action="{{ url_for('templates.toggle_group', group_id=child.id) }}" class="d-inline">
+                                                {% if child.is_active %}
+                                                <button type="submit" class="btn btn-outline-warning" onclick="return confirm('确定停用此组别？')">停用</button>
+                                                {% else %}
+                                                <button type="submit" class="btn btn-outline-success">启用</button>
+                                                {% endif %}
+                                            </form>
+                                            <form method="POST" action="{{ url_for('templates.delete_group', group_id=child.id) }}" class="d-inline" onsubmit="return confirm('确定要删除组别 "{{ child.name }}"？请确认此组别下没有子组、用户和订单！')">
+                                                <button type="submit" class="btn btn-outline-danger">删除</button>
+                                            </form>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <!-- 递归渲染孙组 -->
+                                    {% if child.children %}
+                                        {{ loop(child.children) }}
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-diagram-3" style="font-size: 48px;"></i>
+                        <p class="mt-3">暂无组别数据</p>
+                    </div>
+                {% endif %}
+            </div>
+            
+            <!-- 编辑模态框 -->
+            {% for group in groups %}
+            <div class="modal fade" id="editModal{{ group.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">编辑组别</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <form method="POST" action="{{ url_for('templates.edit_group', group_id=group.id) }}">
+                            <div class="modal-body">
+                                <div class="mb-3">
+                                    <label class="form-label">组名 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" name="name" value="{{ group.name }}" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">组编码</label>
+                                    <input type="text" class="form-control" name="code" value="{{ group.code or '' }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">上级组别</label>
+                                    <select class="form-select" name="parent_id">
+                                        <option value="">无（顶级）</option>
+                                        {% for g in groups if g.is_active and g.id != group.id %}
+                                        <option value="{{ g.id }}" {% if g.id == group.parent_id %}selected{% endif %}>{{ g.get_full_path() }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                <button type="submit" class="btn btn-primary">保存修改</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-diagram-3" style="font-size: 48px;"></i>
+                <p class="mt-3">暂无组别数据</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 新增组别模态框 -->
+<div class="modal fade" id="addGroupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新增组别</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('templates.add_group') }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">组名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">组编码</label>
+                        <input type="text" class="form-control" name="code" placeholder="如：XF001">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">上级组别</label>
+                        <select class="form-select" name="parent_id">
+                            <option value="">无（顶级）</option>
+                            {% for group in groups if group.is_active %}
+                            <option value="{{ group.id }}">{{ group.get_full_path() }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">新增组别</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.group-tree .group-item:hover {
+    background-color: #f8f9fa;
+}
+.group-tree .group-item .border-bottom:last-child {
+    border-bottom: none !important;
+}
+</style>
+{% endblock %}

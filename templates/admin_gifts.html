@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}赠品配置 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>赠品配置</h2>
+    
+    <div class="row mt-4">
+        <!-- 添加新赠品 -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5>添加新赠品</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('admin_config.add_gift') }}">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">赠品名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="name" name="name" required placeholder="如：体验装">
+                        </div>
+                        <div class="mb-3">
+                            <label for="category_id" class="form-label">关联类别</label>
+                            <select class="form-select" id="category_id" name="category_id">
+                                <option value="">通用赠品（所有类别可用）</option>
+                                {% for cat in categories %}
+                                <option value="{{ cat.id }}">{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">选择类别后，该赠品仅在该类别订单中显示</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sort_order" class="form-label">排序</label>
+                            <input type="number" class="form-control" id="sort_order" name="sort_order" value="0" min="0">
+                            <div class="form-text">数字越小排序越靠前</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">添加赠品</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 赠品列表 -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5>赠品列表</h5>
+                </div>
+                <div class="card-body">
+                    {% if gifts %}
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>排序</th>
+                                <th>赠品名称</th>
+                                <th>关联类别</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for gift in gifts %}
+                            <tr>
+                                <td>{{ gift.sort_order }}</td>
+                                <td>{{ gift.name }}</td>
+                                <td>
+                                    {% if gift.category %}
+                                    <span class="badge bg-primary">{{ gift.category.name }}</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">通用</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if gift.is_active %}
+                                    <span class="badge bg-success">启用</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">禁用</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editModal{{ gift.id }}">编辑</button>
+                                    <form method="POST" action="{{ url_for('admin_config.delete_gift', gift_id=gift.id) }}" class="d-inline" onsubmit="return confirm('确定要删除此赠品吗？')">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">删除</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            
+                            <!-- 编辑模态框 -->
+                            <div class="modal fade" id="editModal{{ gift.id }}" tabindex="-1" aria-hidden="true">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <form method="POST" action="{{ url_for('admin_config.edit_gift', gift_id=gift.id) }}">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">编辑赠品</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <div class="mb-3">
+                                                    <label class="form-label">赠品名称 <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" name="name" value="{{ gift.name }}" required>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">关联类别</label>
+                                                    <select class="form-select" name="category_id">
+                                                        <option value="">通用赠品（所有类别可用）</option>
+                                                        {% for cat in categories %}
+                                                        <option value="{{ cat.id }}" {% if gift.category_id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">排序</label>
+                                                    <input type="number" class="form-control" name="sort_order" value="{{ gift.sort_order }}" min="0">
+                                                </div>
+                                                <div class="mb-3 form-check">
+                                                    <input type="checkbox" class="form-check-input" id="is_active{{ gift.id }}" name="is_active" {% if gift.is_active %}checked{% endif %}>
+                                                    <label class="form-check-label" for="is_active{{ gift.id }}">启用</label>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                                <button type="submit" class="btn btn-primary">保存</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="text-center text-muted py-4">
+                        <p>暂无赠品配置</p>
+                        <p class="small">请在左侧添加新赠品</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

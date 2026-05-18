@@ -1,0 +1,536 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+    <h2>发货员工作台</h2>
+
+    
+
+    <div class="d-flex gap-2 mb-3 flex-wrap">
+
+        <!-- 搜索的form -->
+
+        <form method="GET" class="d-flex gap-2 align-items-center" id="filterForm">
+
+            <input type="text" class="form-control" name="customer_keyword" placeholder="搜索客户名" value="{{ request.args.get('customer_keyword', '') }}">
+
+            <input type="text" class="form-control" name="tracking_keyword" placeholder="搜索快递单号 value="{{ request.args.get('tracking_keyword', '') }}">
+
+            <!-- 状态筛选-->
+
+            <select name="status" class="form-select" style="width: 100px;">
+
+                <option value="">全部状态</option>
+
+                <option value="submitted" {% if request.args.get('status') == 'submitted' %}selected{% endif %}>待发�?/option>
+
+                <option value="shipped" {% if request.args.get('status') == 'shipped' %}selected{% endif %}>已发�?/option>
+
+            </select>
+
+            <!-- 产品类别筛�?-->
+
+            <select name="category" class="form-select" style="width: 120px;">
+
+                <option value="">全部类别</option>
+
+                {% for cat in categories %}
+
+                <option value="{{ cat.name }}" {% if request.args.get('category') == cat.name %}selected{% endif %}>{{ cat.name }}</option>
+
+                {% endfor %}
+
+            </select>
+
+            <!-- 业务员筛�?-->
+
+            <select name="salesman_id" class="form-select" style="width: 120px;">
+
+                <option value="">全部业务员</option>
+
+                {% for salesman in salesmen %}
+
+                <option value="{{ salesman.id }}" {% if request.args.get('salesman_id')|int == salesman.id %}selected{% endif %}>{{ salesman.name }}</option>
+
+                {% endfor %}
+
+            </select>
+
+            <button type="submit" class="btn btn-primary">搜索</button>
+
+        </form>
+
+        <!-- 更新物流的form，单独的，不嵌套 -->
+
+        <form method="POST" action="{{ url_for('shipping.update_logistics') }}" class="d-inline">
+
+            <input type="hidden" name="page" value="{{ request.args.get('page', 1) }}">
+
+            <input type="hidden" name="customer_keyword" value="{{ request.args.get('customer_keyword', '') }}">
+
+            <input type="hidden" name="tracking_keyword" value="{{ request.args.get('tracking_keyword', '') }}">
+
+            <input type="hidden" name="status" value="{{ request.args.get('status', '') }}">
+
+            <input type="hidden" name="category" value="{{ request.args.get('category', '') }}">
+
+            <input type="hidden" name="salesman_id" value="{{ request.args.get('salesman_id', '') }}">
+
+            <button type="submit" class="btn btn-success">更新物流</button>
+
+        </form>
+
+        <!-- 导出按钮 -->
+
+        <a href="javascript:void(0)" class="btn btn-outline-primary" onclick="exportOrders()" style="white-space: nowrap;">
+
+            <i class="bi bi-file-earmark-excel"></i> 导出待发货        </a>
+
+        <!-- 批量导入按钮 -->
+
+        <a href="{{ url_for('import_routes.batch_import_page') }}" class="btn btn-outline-success" style="white-space: nowrap;">
+
+            <i class="bi bi-upload"></i> 批量导入
+
+        </a>
+
+    </div>
+
+    
+
+    <div class="card">
+
+        <div class="card-body">
+
+            <table class="table table-striped">
+
+                <thead>
+
+                    <tr>
+
+                        <th>组名</th>
+
+                        <th>业务员</th>
+
+                        <th>客户名</th>
+
+                        <th>收货电话</th>
+
+                        <th>已付定金</th>
+
+                        <th>代收金额</th>
+
+                        <th>产品类别</th>
+
+                        <th>状态</th>
+
+                        <th>快递信息</th>
+
+                        <th>导出标记</th>
+
+                        <th>签收时间</th>
+
+                        <th>创建时间</th>
+
+                        <th>操作</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    {% for order in orders.items %}
+
+                    <tr style="cursor: pointer;" onclick="showOrderDetail({{ order.id }})">
+
+                        <td>{{ order.group_name }}</td>
+
+                        <td>{{ order.salesman.name }}</td>
+
+                        <td>{{ order.customer_name }}</td>
+
+                        <td>{{ order.phone }}</td>
+
+                        <td>{{ order.paid_amount }}</td>
+
+                        <td>{{ order.collect_amount }}</td>
+
+                        <td>{{ order.category }}</td>
+
+                        <td>
+
+                            {% if order.status == 'submitted' %}
+
+                            <span class="badge" style="background-color:#ffc107; color:#000; width:25%; display:inline-block;">待发货</span>
+
+                            {% elif order.status == 'shipped' %}
+
+                                {% if order.logistics_status == '已签收' %}
+
+                                <span class="badge" style="background-color:#198754; color:#fff; width:100%; display:inline-block;">已签收</span>
+
+                                {% elif order.logistics_status == '拒签' %}
+
+                                <span class="badge" style="background-color:#dc3545; color:#fff; width:100%; display:inline-block;">拒签</span>
+
+                                {% elif order.logistics_status == '派送中' %}
+
+                                <span class="badge" style="background-color:#0dcaf0; color:#000; width:75%; display:inline-block;">派送中</span>
+
+                                {% elif order.logistics_status == '运送中' %}
+
+                                <span class="badge" style="background-color:#0d6efd; color:#fff; width:75%; display:inline-block;">运送中</span>
+
+                                {% else %}
+
+                                <span class="badge" style="background-color:#0dcaf0; color:#000; width:50%; display:inline-block;">已发货</span>
+
+                                {% endif %}
+
+                            {% endif %}
+
+                        </td>
+
+                        <td>
+
+                            {% if order.tracking_number and order.tracking_number != '0' %}
+
+                            {{ order.express_type or '' }}：{{ order.tracking_number }}
+
+                            {% endif %}
+
+                        </td>
+
+                        <td>
+
+                            {% if order.status == 'submitted' %}
+
+                            <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline" onclick="event.stopPropagation()" style="cursor:pointer;">
+
+                                <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}">
+
+                            </form>
+
+                            {% endif %}
+
+                        </td>
+
+                        <td>{{ order.sign_time.strftime('%Y-%m-%d %H:%M') if order.sign_time else '-' }}</td>
+
+                        <td>{{ order.create_time.strftime('%Y-%m-%d %H:%M') }}</td>
+
+                        <td onclick="event.stopPropagation()">
+
+                            <div class="btn-group btn-group-sm">
+
+                                {% if order.status == 'submitted' %}
+
+                                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shipModal{{ order.id }}">发货</button>
+
+                                {% endif %}
+
+                            </div>
+
+                        </td>
+
+                    </tr>
+
+                    
+
+                    <!-- 发货的模态框，加大尺寸，让界面更好看 -->
+
+                    <div class="modal fade modal-lg" id="shipModal{{ order.id }}" tabindex="-1" aria-labelledby="shipModalLabel" aria-hidden="true">
+
+                        <div class="modal-dialog">
+
+                            <div class="modal-content">
+
+                                <form method="POST" action="{{ url_for('shipping.ship_order', order_id=order.id) }}">
+
+                                    <div class="modal-header">
+
+                                        <h5 class="modal-title" id="shipModalLabel">处理发货：{{ order.group_name }}</h5>
+
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+
+                                    </div>
+
+                                    <div class="modal-body">
+
+                                        <div class="row">
+
+                                            <!-- 内容居中，两边留�?-->
+
+                                            <div class="col-md-8 offset-md-2">
+
+                                                <div class="mb-3">
+
+                                                    <label class="form-label">快递单号</label>
+
+                                                    <input type="text" class="form-control" name="tracking_number" required>
+
+                                                </div>
+
+                                                <div class="mb-3">
+
+                                                    <label class="form-label">快递类�?<span class="text-danger">*</span></label>
+
+                                                    <select class="form-select" name="express_type" required>
+
+                                                        <option value="">请选择</option>
+
+                                                        <option value="顺丰">顺丰</option>
+
+                                                        <option value="中�?>中�?/option>
+
+                                                        <option value="申�?>申�?/option>
+
+                                                        <option value="韵达">韵达</option>
+
+                                                        <option value="极兔">极兔</option>
+
+                                                        <option value="京东">京东</option>
+
+                                                    </select>
+
+                                                </div>
+
+                                                <div class="mb-3">
+
+                                                    <label class="form-label">收货信息</label>
+
+                                                    <p>电话：{{ order.phone }}<br>地址：{{ order.address }}</p>
+
+                                                </div>
+
+                                            </div>
+
+                                        </div>
+
+                                    </div>
+
+                                    <div class="modal-footer">
+
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+
+                                        <button type="submit" class="btn btn-primary">确认发货</button>
+
+                                    </div>
+
+                                </form>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+            
+
+            <!-- 分页，带上所有筛选参�?-->
+
+            {% if orders.pages > 1 %}
+
+            <nav aria-label="Page navigation">
+
+                <ul class="pagination justify-content-center">
+
+                    {% if orders.has_prev %}
+
+                    <li class="page-item">
+
+                        <a class="page-link" href="{{ url_for('orders.shipper_dashboard', page=orders.prev_num, customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', '')) }}">上一�?/a>
+
+                    </li>
+
+                    {% endif %}
+
+                    {% for page in orders.iter_pages() %}
+
+                        {% if page %}
+
+                            {% if page == orders.page %}
+
+                            <li class="page-item active"><a class="page-link" href="#">{{ page }}</a></li>
+
+                            {% else %}
+
+                            <li class="page-item"><a class="page-link" href="{{ url_for('orders.shipper_dashboard', page=page, customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', '')) }}">{{ page }}</a></li>
+
+                            {% endif %}
+
+                        {% else %}
+
+                        <li class="page-item disabled"><a class="page-link">...</a></li>
+
+                        {% endif %}
+
+                    {% endfor %}
+
+                    {% if orders.has_next %}
+
+                    <li class="page-item">
+
+                        <a class="page-link" href="{{ url_for('orders.shipper_dashboard', page=orders.next_num, customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', '')) }}">下一�?/a>
+
+                    </li>
+
+                    {% endif %}
+
+                </ul>
+
+            </nav>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<!-- 订单详情弹窗 -->
+
+<div class="modal fade" id="orderDetailModal" tabindex="-1">
+
+    <div class="modal-dialog modal-lg">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">订单详情</h5>
+
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+
+            </div>
+
+            <div class="modal-body" id="orderDetailContent"></div>
+
+            <div class="modal-footer">
+
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+
+<script>
+
+function showOrderDetail(orderId) {
+
+    fetch('/api/order/' + orderId)
+
+        .then(r => r.json())
+
+        .then(data => {
+
+            const statusMap = {'draft': '草稿', 'submitted': '待发�?, 'shipped': '已发�?};
+
+            const status = data.status === 'shipped' ? (data.logistics_status || '已发�?) : statusMap[data.status];
+
+            document.getElementById('orderDetailContent').innerHTML = `
+
+                <div class="row">
+
+                    <div class="col-md-6">
+
+                        <table class="table table-sm">
+
+                            <tr><th width="100">组名</th><td>${data.group_name}</td></tr>
+
+                            <tr><th>业务员</th><td>${data.salesman_name}</td></tr>
+
+                            <tr><th>客户名</th><td>${data.customer_name}</td></tr>
+
+                            <tr><th>电话</th><td>${data.phone}</td></tr>
+
+                            <tr><th>地址</th><td>${data.address}</td></tr>
+
+                            <tr><th>类别</th><td>${data.category}</td></tr>
+
+                        </table>
+
+                    </div>
+
+                    <div class="col-md-6">
+
+                        <table class="table table-sm">
+
+                            <tr><th width="100">已付定金</th><td>${data.paid_amount || '-'}</td></tr>
+
+                            <tr><th>代收金额</th><td>${data.collect_amount || '-'}</td></tr>
+
+                            <tr><th>赠品</th><td>${data.has_gift ? (data.gift_info || '�?) : '�?}</td></tr>
+
+                            <tr><th>快�?/th><td>${data.express_type || '-'}</td></tr>
+
+                            <tr><th>单号</th><td>${data.tracking_number || '-'}</td></tr>
+
+                            <tr><th>状态</th><td>${status}</td></tr>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+                <div class="row mt-2"><div class="col-12"><strong>产品信息�?/strong><div class="border rounded p-2 mt-1 bg-light">${data.product_info}</div></div></div>
+
+                ${data.remark ? `<div class="row mt-2"><div class="col-12"><strong>备注�?/strong><div class="border rounded p-2 mt-1 bg-light">${data.remark}</div></div></div>` : ''}
+
+                <div class="row mt-2"><div class="col-6 text-muted small">创建�?{data.create_time}</div><div class="col-6 text-muted small text-end">更新�?{data.update_time}</div></div>
+
+            `;
+
+            new bootstrap.Modal(document.getElementById('orderDetailModal')).show();
+
+        });
+
+}
+
+
+
+function exportOrders() {
+
+    const form = document.getElementById('filterForm');
+
+    const params = new URLSearchParams();
+
+    params.set('customer_keyword', form.querySelector('[name="customer_keyword"]').value);
+
+    params.set('tracking_keyword', form.querySelector('[name="tracking_keyword"]').value);
+
+    params.set('status', form.querySelector('[name="status"]').value);
+
+    params.set('category', form.querySelector('[name="category"]').value);
+
+    params.set('salesman_id', form.querySelector('[name="salesman_id"]').value);
+
+    window.location.href = '/export/orders?' + params.toString();
+
+}
+
+</script>
+
+{% endblock %}
+

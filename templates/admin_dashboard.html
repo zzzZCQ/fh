@@ -1,0 +1,846 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+    <h2>管理员后�?/h2>
+
+    
+
+    <div class="d-flex gap-2 mb-3 flex-wrap">
+
+        <!-- 搜索的form -->
+
+        <form method="GET" class="d-flex gap-2 align-items-center" id="filterForm">
+
+            <!-- 保留当前页码 -->
+            <input type="hidden" name="page" value="{{ request.args.get('page', 1) }}">
+
+            <input type="text" class="form-control" name="customer_keyword" placeholder="搜索客户名" value="{{ request.args.get('customer_keyword', '') }}">
+
+            <input type="text" class="form-control" name="tracking_keyword" placeholder="搜索快递单号" value="{{ request.args.get('tracking_keyword', '') }}">
+
+            <!-- 状态筛选-->
+
+            <select name="status" class="form-select" style="width: 100px;">
+
+                <option value="">全部状态</option>
+
+                <option value="draft" {% if request.args.get('status') == 'draft' %}selected{% endif %}>草稿</option>
+
+                <option value="submitted" {% if request.args.get('status') == 'submitted' %}selected{% endif %}>待发�?/option>
+
+                <option value="shipped" {% if request.args.get('status') == 'shipped' %}selected{% endif %}>已发�?/option>
+
+            </select>
+
+            <!-- 产品类别筛�?-->
+
+            <select name="category" class="form-select" style="width: 120px;">
+
+                <option value="">全部类别</option>
+
+                {% for cat in categories %}
+
+                <option value="{{ cat.name }}" {% if request.args.get('category') == cat.name %}selected{% endif %}>{{ cat.name }}</option>
+
+                {% endfor %}
+
+            </select>
+
+            <!-- 业务员筛�?-->
+
+            <select name="salesman_id" class="form-select" style="width: 120px;">
+
+                <option value="">全部业务员</option>
+
+                {% for salesman in salesmen %}
+
+                <option value="{{ salesman.id }}" {% if request.args.get('salesman_id')|int == salesman.id %}selected{% endif %}>{{ salesman.name }}</option>
+
+                {% endfor %}
+
+            </select>
+
+            <button type="submit" class="btn btn-primary">搜索</button>
+
+        </form>
+
+        <!-- 更新物流的form，单独的，不嵌套 -->
+
+        <form method="POST" action="{{ url_for('shipping.update_logistics') }}" class="d-inline">
+
+            <input type="hidden" name="page" value="{{ request.args.get('page', 1) }}">
+
+            <input type="hidden" name="customer_keyword" value="{{ request.args.get('customer_keyword', '') }}">
+
+            <input type="hidden" name="tracking_keyword" value="{{ request.args.get('tracking_keyword', '') }}">
+
+            <input type="hidden" name="status" value="{{ request.args.get('status', '') }}">
+
+            <input type="hidden" name="category" value="{{ request.args.get('category', '') }}">
+
+            <input type="hidden" name="salesman_id" value="{{ request.args.get('salesman_id', '') }}">
+
+            <button type="submit" class="btn btn-success">更新物流</button>
+
+        </form>
+
+        <!-- 导出按钮 -->
+
+        <a href="javascript:void(0)" class="btn btn-outline-primary" onclick="exportOrders()" style="white-space: nowrap;">
+
+            <i class="bi bi-file-earmark-excel"></i> 导出待发货        </a>
+
+        <!-- 批量导入按钮 -->
+
+        <a href="{{ url_for('import_routes.batch_import_page') }}" class="btn btn-outline-success" style="white-space: nowrap;">
+
+            <i class="bi bi-upload"></i> 批量导入
+
+        </a>
+
+    </div>
+
+    
+
+    <div class="card">
+
+        <div class="card-body">
+
+            <table class="table table-striped">
+
+                <thead>
+
+                    <tr>
+
+                        <th>组名</th>
+
+                        <th>业务员</th>
+
+                        <th>客户名</th>
+
+                        <th>收货电话</th>
+
+                        <th>已付定金</th>
+
+                        <th>代收金额</th>
+
+                        <th>产品类别</th>
+
+                        <th>状态</th>
+
+                        <th>快递信息</th>
+
+                        <th>导出标记</th>
+
+                        <th>创建时间</th>
+
+                        <th>操作</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    {% for order in orders.items %}
+
+                    <tr style="cursor: pointer;" onclick="showOrderDetail({{ order.id }})">
+
+                        <td>{{ order.group_name }}</td>
+
+                        <td>{{ order.salesman.name }}</td>
+
+                        <td>{{ order.customer_name }}</td>
+
+                        <td>{{ order.phone }}</td>
+
+                        <td>{{ order.paid_amount }}</td>
+
+                        <td>{{ order.collect_amount }}</td>
+
+                        <td>{{ order.category }}</td>
+
+                        <td>
+
+                            {% if order.status == 'draft' %}
+
+                            <span class="badge bg-secondary">草稿</span>
+
+                            {% elif order.status == 'submitted' %}
+
+                            <span class="badge" style="background-color:#ffc107; color:#000; width:25%; display:inline-block;">待发货</span>
+
+                            {% elif order.status == 'shipped' %}
+
+                                {% if order.logistics_status == '已签收' %}
+
+                                <span class="badge" style="background-color:#198754; color:#fff; width:100%; display:inline-block;">已签收</span>
+
+                                {% elif order.logistics_status == '拒签' %}
+
+                                <span class="badge" style="background-color:#dc3545; color:#fff; width:100%; display:inline-block;">拒签</span>
+
+                                {% elif order.logistics_status == '派送中' %}
+
+                                <span class="badge" style="background-color:#0dcaf0; color:#000; width:75%; display:inline-block;">派送中</span>
+
+                                {% elif order.logistics_status == '运送中' %}
+
+                                <span class="badge" style="background-color:#0d6efd; color:#fff; width:75%; display:inline-block;">运送中</span>
+
+                                {% elif order.logistics_status == '已揽收' %}
+
+                                <span class="badge" style="background-color:#6610f2; color:#fff; width:50%; display:inline-block;">已揽收</span>
+
+                                {% elif order.logistics_status == '待取件' %}
+
+                                <span class="badge" style="background-color:#6f42c1; color:#fff; width:75%; display:inline-block;">待取件</span>
+
+                                {% else %}
+
+                                <span class="badge" style="background-color:#0dcaf0; color:#000; width:50%; display:inline-block;">已发货</span>
+
+                                {% endif %}
+
+                            {% endif %}
+
+                            {% if order.delete_requested %}
+
+                            <span class="badge bg-warning">删除申请中</span>
+
+                            {% endif %}
+
+                        </td>
+
+                        <td>
+
+                            {% if order.tracking_number and order.tracking_number != '0' %}
+
+                            {{ order.express_type or '' }}：{{ order.tracking_number }}
+
+                            {% endif %}
+
+                        </td>
+
+                        <td>
+
+                            {% if order.status == 'submitted' %}
+
+                            <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline" onclick="event.stopPropagation()" style="cursor:pointer;">
+
+                                <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}">
+
+                            </form>
+
+                            {% endif %}
+
+                        </td>
+
+                        <td>{{ order.create_time.strftime('%Y-%m-%d %H:%M') }}</td>
+
+                        <td onclick="event.stopPropagation()">
+
+                            <div class="btn-group btn-group-sm">
+
+                                {% if order.status == 'submitted' %}
+
+                                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shipModal{{ order.id }}">发货</button>
+
+                                {% endif %}
+
+                                {% if order.delete_requested %}
+
+                                <form method="POST" action="{{ url_for('shipping.approve_delete', order_id=order.id) }}" class="d-inline">
+
+                                    <button type="submit" class="btn btn-outline-success" onclick="return confirm('确定通过删除申请？\n订单：{{ order.group_name }}\n客户：{{ order.customer_name }}\n\n通过后订单将被永久删除！')">通过</button>
+
+                                </form>
+
+                                <form method="POST" action="{{ url_for('shipping.reject_delete', order_id=order.id) }}" class="d-inline">
+
+                                    <button type="submit" class="btn btn-outline-danger" onclick="return confirm('确定拒绝删除申请？\n订单：{{ order.group_name }}\n客户：{{ order.customer_name }}')">拒绝</button>
+
+                                </form>
+
+                                {% endif %}
+
+                            </div>
+
+                        </td>
+
+                    </tr>
+
+                    
+
+                    <!-- 发货的模态框，加大尺寸，让界面更好看 -->
+
+                    <div class="modal fade modal-lg" id="shipModal{{ order.id }}" tabindex="-1" aria-labelledby="shipModalLabel" aria-hidden="true">
+
+                        <div class="modal-dialog">
+
+                            <div class="modal-content">
+
+                                <form method="POST" action="{{ url_for('shipping.ship_order', order_id=order.id) }}">
+
+                                    <div class="modal-header">
+
+                                        <h5 class="modal-title" id="shipModalLabel">处理发货：{{ order.group_name }}</h5>
+
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+
+                                    </div>
+
+                                    <div class="modal-body">
+
+                                        <div class="row">
+
+                                            <!-- 内容居中，两边留�?-->
+
+                                            <div class="col-md-8 offset-md-2">
+
+                                                <div class="mb-3">
+
+                                                    <label class="form-label">快递单号</label>
+
+                                                    <input type="text" class="form-control" name="tracking_number" required>
+
+                                                </div>
+
+                                                <div class="mb-3">
+
+                                                    <label class="form-label">快递类�?<span class="text-danger">*</span></label>
+
+                                                    <select class="form-select" name="express_type" required>
+
+                                                        <option value="">请选择</option>
+
+                                                        <option value="顺丰">顺丰</option>
+
+                                                        <option value="中�?>中�?/option>
+
+                                                        <option value="申�?>申�?/option>
+
+                                                        <option value="韵达">韵达</option>
+
+                                                        <option value="极兔">极兔</option>
+
+                                                        <option value="京东">京东</option>
+
+                                                    </select>
+
+                                                </div>
+
+                                                <div class="mb-3">
+
+                                                    <label class="form-label">收货信息</label>
+
+                                                    <p>电话：{{ order.phone }}<br>地址：{{ order.address }}</p>
+
+                                                </div>
+
+                                            </div>
+
+                                        </div>
+
+                                    </div>
+
+                                    <div class="modal-footer">
+
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+
+                                        <button type="submit" class="btn btn-primary">确认发货</button>
+
+                                    </div>
+
+                                </form>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+            
+
+            <!-- 分页，带上所有筛选参�?-->
+
+            {% if orders.pages > 1 %}
+
+            <nav aria-label="Page navigation">
+
+                <ul class="pagination justify-content-center">
+
+                    {% if orders.has_prev %}
+
+                    <li class="page-item">
+
+                        <a class="page-link" href="{{ url_for('orders.admin_dashboard', page=orders.prev_num, customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', '')) }}">上一�?/a>
+
+                    </li>
+
+                    {% endif %}
+
+                    {% for page in orders.iter_pages() %}
+
+                        {% if page %}
+
+                            {% if page == orders.page %}
+
+                            <li class="page-item active"><a class="page-link" href="#">{{ page }}</a></li>
+
+                            {% else %}
+
+                            <li class="page-item"><a class="page-link" href="{{ url_for('orders.admin_dashboard', page=page, customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', '')) }}">{{ page }}</a></li>
+
+                            {% endif %}
+
+                        {% else %}
+
+                        <li class="page-item disabled"><a class="page-link">...</a></li>
+
+                        {% endif %}
+
+                    {% endfor %}
+
+                    {% if orders.has_next %}
+
+                    <li class="page-item">
+
+                        <a class="page-link" href="{{ url_for('orders.admin_dashboard', page=orders.next_num, customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', '')) }}">下一�?/a>
+
+                    </li>
+
+                    {% endif %}
+
+                </ul>
+
+            </nav>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<!-- 订单详情弹窗 -->
+
+<div class="modal fade" id="orderDetailModal" tabindex="-1">
+
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">订单详情（可编辑�?/h5>
+
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+
+            </div>
+
+            <div class="modal-body" id="orderDetailContent"></div>
+
+            <div class="modal-footer">
+
+                <button type="button" class="btn btn-primary" id="saveOrderBtn" onclick="saveOrder()">保存修改</button>
+
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+
+<script>
+
+let currentOrderId = null;
+
+
+
+function showOrderDetail(orderId) {
+
+    currentOrderId = orderId;
+
+    fetch('/api/order/' + orderId)
+
+        .then(r => {
+
+            if (!r.ok) return r.json().then(e => { throw new Error(e.error || '加载失败'); });
+
+            return r.json();
+
+        })
+
+        .then(data => {
+
+            if (!data || data.error) {
+
+                document.getElementById('orderDetailContent').innerHTML = '<div class="text-danger">加载订单失败�? + (data?.error || '未知错误') + '</div>';
+
+                new bootstrap.Modal(document.getElementById('orderDetailModal')).show();
+
+                return;
+
+            }
+
+            const statusMap = {'draft': '草稿', 'submitted': '待发�?, 'shipped': '已发�?};
+
+            const status = data.status === 'shipped' ? (data.logistics_status || '已发�?) : (statusMap[data.status] || data.status);
+
+            document.getElementById('orderDetailContent').innerHTML = `
+
+                <form id="orderEditForm">
+
+                <input type="hidden" name="order_id" value="${data.id}">
+
+                <div class="row">
+
+                    <div class="col-md-6">
+
+                        <table class="table table-sm">
+
+                            <tr><th width="100">组名</th><td>${data.group_name}</td></tr>
+
+                            <tr><th>业务员</th><td>${data.salesman_name}</td></tr>
+
+                            <tr><th>客户名</th><td><input type="text" class="form-control form-control-sm" name="customer_name" value="${data.customer_name || ''}"></td></tr>
+
+                            <tr><th>电话</th><td><input type="text" class="form-control form-control-sm" name="phone" value="${data.phone || ''}"></td></tr>
+
+                            <tr><th>地址</th><td><input type="text" class="form-control form-control-sm" name="address" value="${data.address || ''}"></td></tr>
+
+                            <tr><th>类别</th><td>${data.category}</td></tr>
+
+                        </table>
+
+                    </div>
+
+                    <div class="col-md-6">
+
+                        <table class="table table-sm">
+
+                            <tr><th width="100">已付定金</th><td><input type="text" class="form-control form-control-sm" name="paid_amount" value="${data.paid_amount || ''}"></td></tr>
+
+                            <tr><th>代收金额</th><td><input type="number" class="form-control form-control-sm" name="collect_amount" value="${data.collect_amount || 0}"></td></tr>
+
+                            <tr><th>赠品</th><td>${data.has_gift ? (data.gift_info || '�?) : '�?}</td></tr>
+
+                            <tr><th>快�?/th><td><input type="text" class="form-control form-control-sm" name="express_type" value="${data.express_type || ''}"></td></tr>
+
+                            <tr><th>单号</th><td><input type="text" class="form-control form-control-sm" name="tracking_number" value="${data.tracking_number || ''}"></td></tr>
+
+                            <tr><th>状态</th><td>${status}</td></tr>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+                <div class="row mt-2">
+
+                    <div class="col-12">
+
+                        <strong>产品信息�?/strong>
+
+                        <input type="text" class="form-control form-control-sm mt-1" name="product_info" value="${data.product_info || ''}">
+
+                    </div>
+
+                </div>
+
+                <div class="row mt-2">
+
+                    <div class="col-12">
+
+                        <strong>备注�?/strong>
+
+                        <textarea class="form-control form-control-sm mt-1" name="remark" rows="2">${data.remark || ''}</textarea>
+
+                    </div>
+
+                </div>
+
+                <div class="row mt-2">
+
+                    <div class="col-6 text-muted small">创建�?{data.create_time}</div>
+
+                    <div class="col-6 text-muted small text-end">更新�?{data.update_time}</div>
+
+                </div>
+
+                </form>
+
+                <!-- 物流信息区域 -->
+
+                <div id="logisticsSection"></div>
+
+            `;
+
+            new bootstrap.Modal(document.getElementById('orderDetailModal')).show();
+
+            
+
+            // 如果是顺丰已发货订单，加载物流信�?            if (data.express_type === '顺丰' && data.status === 'shipped' && data.tracking_number) {
+
+                loadLogistics(data.id);
+
+            }
+
+        });
+
+}
+
+
+
+function loadLogistics(orderId) {
+
+    const section = document.getElementById('logisticsSection');
+
+    section.innerHTML = '<div class="text-center mt-3"><div class="spinner-border spinner-border-sm text-primary"></div> <span class="text-muted">查询物流信息...</span></div>';
+
+    
+
+    fetch('/api/order/' + orderId + '/logistics')
+
+        .then(r => r.json())
+
+        .then(result => {
+
+            if (result.error) {
+
+                section.innerHTML = '';
+
+                return;
+
+            }
+
+            const routes = result.routes || [];
+
+            if (routes.length === 0) {
+
+                section.innerHTML = '<div class="text-muted text-center mt-3 small">暂无物流信息</div>';
+
+                return;
+
+            }
+
+            
+
+            // 按日期分�?            const groups = {};
+
+            routes.forEach(r => {
+
+                const date = (r.acceptTime || '').substring(0, 10);
+
+                if (!groups[date]) groups[date] = [];
+
+                groups[date].push(r);
+
+            });
+
+            
+
+            const statusMap = {'已签�?: 'success', '拒签': 'danger', '派送中': 'warning', '运送中': 'primary', '已发�?: 'info'};
+
+            const statusBadge = statusMap[result.logistics_status] || 'secondary';
+
+            
+
+            let html = `
+
+                <div class="mt-3 pt-3 border-top">
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+
+                        <h6 class="mb-0"><i class="bi bi-truck me-1"></i>物流信息</h6>
+
+                        <div>
+
+                            <span class="text-muted small me-2">${result.tracking_number}</span>
+
+                            <span class="badge bg-${statusBadge}">${result.logistics_status || '已发货'}</span>
+
+                            <button class="btn btn-outline-secondary btn-sm ms-2" onclick="refreshLogistics(${orderId})" title="刷新物流">
+
+                                <i class="bi bi-arrow-clockwise"></i>
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                    <div class="timeline-container" style="max-height: 350px; overflow-y: auto; padding-left: 8px;">`;
+
+            
+
+            const dates = Object.keys(groups).sort().reverse();
+
+            dates.forEach((date, di) => {
+
+                html += `<div class="fw-bold small text-muted mb-2 ${di > 0 ? 'mt-3 pt-2 border-top' : ''}">${date}</div>`;
+
+                const items = groups[date].sort((a, b) => (b.acceptTime || '').localeCompare(a.acceptTime || ''));
+
+                items.forEach((item, idx) => {
+
+                    const time = (item.acceptTime || '').substring(11);
+
+                    const desc = item.remark || '';
+
+                    const isLatest = (di === 0 && idx === 0);
+
+                    const dotClass = isLatest ? 'bg-danger' : 'bg-secondary';
+
+                    const textClass = isLatest ? 'fw-bold text-dark' : 'text-muted';
+
+                    
+
+                    html += `
+
+                        <div class="d-flex mb-2" style="font-size: 13px;">
+
+                            <div class="text-nowrap text-muted small me-3" style="width: 70px;">${time}</div>
+
+                            <div class="position-relative" style="padding-left: 20px;">
+
+                                <div class="position-absolute rounded-circle ${dotClass}" style="width: 10px; height: 10px; top: 4px; left: 0;"></div>
+
+                                <div class="${textClass}">${item.secondaryStatusName || ''}</div>
+
+                                <div class="text-muted small">${desc}</div>
+
+                            </div>
+
+                        </div>`;
+
+                });
+
+            });
+
+            
+
+            html += '</div></div>';
+
+            section.innerHTML = html;
+
+        })
+
+        .catch(() => {
+
+            section.innerHTML = '<div class="text-muted text-center mt-3 small">物流查询失败</div>';
+
+        });
+
+}
+
+
+function refreshLogistics(orderId) {
+    const section = document.getElementById('logisticsSection');
+    section.innerHTML = '<div class="text-center mt-3"><div class="spinner-border spinner-border-sm text-primary"></div> <span class="text-muted">刷新物流信息...</span></div>';
+    fetch('/api/order/' + orderId + '/logistics/refresh', {method: 'POST'})
+        .then(r => r.json())
+        .then(result => {
+            if (result.error) {
+                section.innerHTML = '<div class="text-danger text-center mt-3 small">' + result.error + '</div>';
+                return;
+            }
+            loadLogistics(orderId);
+        })
+        .catch(() => { section.innerHTML = '<div class="text-muted text-center mt-3 small">物流刷新失败</div>'; });
+}
+
+
+function saveOrder() {
+
+    const form = document.getElementById('orderEditForm');
+
+    const formData = new FormData(form);
+
+    
+
+    fetch('/api/order/' + currentOrderId + '/edit', {
+
+        method: 'POST',
+
+        body: formData
+
+    })
+
+    .then(r => r.json())
+
+    .then(data => {
+
+        if (data.success) {
+
+            alert(data.message);
+
+            bootstrap.Modal.getInstance(document.getElementById('orderDetailModal')).hide();
+
+            location.reload();
+
+        } else {
+
+            alert('保存失败');
+
+        }
+
+    })
+
+    .catch(err => {
+
+        console.error(err);
+
+        alert('保存失败');
+
+    });
+
+}
+
+
+
+function exportOrders() {
+
+    const form = document.getElementById('filterForm');
+
+    const params = new URLSearchParams();
+
+    params.set('customer_keyword', form.querySelector('[name="customer_keyword"]').value);
+
+    params.set('tracking_keyword', form.querySelector('[name="tracking_keyword"]').value);
+
+    params.set('status', form.querySelector('[name="status"]').value);
+
+    params.set('category', form.querySelector('[name="category"]').value);
+
+    params.set('salesman_id', form.querySelector('[name="salesman_id"]').value);
+
+    window.location.href = '/export/orders?' + params.toString();
+
+}
+
+</script>
+
+{% endblock %}
+

@@ -1,0 +1,22 @@
+# 企微双开工具
+
+## 使用方法
+
+1. 先打开一个企业微信
+2. 右键点击「start.bat」，选择「以管理员身份运行」
+3. 等待脚本执行完毕
+4. 打开第二个企业微信
+
+## 原理
+
+企业微信通过互斥体限制同时只能运行一个实例：
+- Tencent.WeWork.ExclusiveObject
+- Tencent.WeWork.ExclusiveObjectInstance1
+
+本工具关闭这两个互斥体，从而实现双开。
+
+## 文件说明
+
+- start.bat - 主程序
+- run.ps1 - PowerShell版本
+- 使用说明.txt - 本文件

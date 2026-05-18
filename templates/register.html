@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}用户注册 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h4>用户注册</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">用户名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="name" class="form-label">姓名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">密码 <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" id="password" name="password" minlength="6" required>
+                        <div class="form-text">密码长度至少6位</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="role" class="form-label">角色 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="role" name="role" required>
+                            <option value="">请选择</option>
+                            <option value="salesman">业务员</option>
+                            <option value="shipper">发货员</option>
+                        </select>
+                        <div class="form-text">仅支持注册业务员或发货员账号</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="group_id" class="form-label">所属组别 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="group_id" name="group_id" required>
+                            <option value="">请选择</option>
+                            {% for group in groups if group.is_active %}
+                            <option value="{{ group.id }}">{{ group.get_full_path() }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">请选择您所属的组别，将决定数据权限范围</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">注册</button>
+                </form>
+                <hr>
+                <p class="text-center">已有账号？<a href="{{ url_for('auth.login') }}">去登录</a></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

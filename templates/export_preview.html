@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .preview-table { font-size: 13px; }
+    .preview-table th { background: #f8f9fa; white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+    .preview-table td { white-space: nowrap; vertical-align: middle; }
+    .category-header { background: #e9ecef; font-weight: bold; padding: 8px 12px; margin-top: 15px; border-radius: 4px; }
+    .category-header:first-child { margin-top: 0; }
+    .info-box { background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+</style>
+<div class="container mt-4">
+    <h2>导出预览</h2>
+    
+    <div class="info-box">
+        <div class="row">
+            <div class="col-md-4">
+                <strong>待发货订单：</strong>{{ total_count }} 条
+            </div>
+            <div class="col-md-4">
+                <strong>类别数：</strong>{{ categories|length }} 个
+            </div>
+            <div class="col-md-4">
+                <form method="POST" action="{{ url_for('export.export_orders') }}" class="d-inline">
+                    <input type="hidden" name="customer_keyword" value="{{ customer_keyword }}">
+                    <input type="hidden" name="tracking_keyword" value="{{ tracking_keyword }}">
+                    <input type="hidden" name="category" value="{{ category_filter }}">
+                    <input type="hidden" name="salesman_id" value="{{ salesman_filter }}">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-download"></i> 确认导出并发送钉钉
+                    </button>
+                </form>
+                <a href="{{ url_for('orders.dashboard') }}" class="btn btn-secondary">取消</a>
+            </div>
+        </div>
+    </div>
+
+    {% if total_count == 0 %}
+    <div class="alert alert-info">没有待发货的订单可导出。</div>
+    {% else %}
+    
+    {% for cat_name, cat_orders in orders_by_category.items() %}
+    <div class="category-header">
+        <i class="bi bi-folder"></i> {{ cat_name }} ({{ cat_orders|length }} 条)
+    </div>
+    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+        <table class="table table-bordered table-sm preview-table">
+            <thead>
+                <tr>
+                    <th>序号</th>
+                    <th>组名</th>
+                    <th>业务员</th>
+                    <th>客户名</th>
+                    <th>收货电话</th>
+                    <th>已付定金</th>
+                    <th>代收金额</th>
+                    <th>快递信息</th>
+                    <th>创建时间</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in cat_orders %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ order.group_name }}</td>
+                    <td>{{ order.salesman.name }}</td>
+                    <td>{{ order.customer_name }}</td>
+                    <td>{{ order.phone }}</td>
+                    <td>{{ order.paid_amount }}</td>
+                    <td>{{ order.collect_amount }}</td>
+                    <td>{{ order.express_type }}：{{ order.tracking_number if order.tracking_number else '-' }}</td>
+                    <td>{{ order.create_time.strftime('%m-%d %H:%M') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+    
+    {% endif %}
+</div>
+{% endblock %}

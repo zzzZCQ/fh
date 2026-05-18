@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}登录 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h4>用户登录</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">用户名</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">密码</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">登录</button>
+                </form>
+                <hr>
+                <p class="text-center">没有账号？<a href="{{ url_for('auth.register') }}">点击注册</a></p>
+                <hr>
+                <p class="text-muted">测试账号：</p>
+                <ul class="text-muted">
+                    <li>业务员：用户名 zhangsan，密码 123456</li>
+                    <li>发货员：用户名 li，密码 123456</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

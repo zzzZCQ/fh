@@ -1,0 +1,617 @@
+{% extends "base.html" %}
+
+{% block title %}模板管理 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Excel模板管理</h2>
+        <div>
+            <button type="button" class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#addExportTemplateModal">
+                <i class="bi bi-download"></i> 新增导出模板
+            </button>
+            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addImportTemplateModal">
+                <i class="bi bi-upload"></i> 新增导入模板
+            </button>
+        </div>
+    </div>
+
+    <!-- 导出模板列表 -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-download me-2"></i>导出模板列表</h5>
+            <span class="badge bg-light text-primary">{{ templates.total }} 条</span>
+        </div>
+        <div class="card-body">
+            {% if templates.items %}
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>类别</th>
+                        <th>字段映射</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for template in templates.items %}
+                    <tr>
+                        <td><span class="badge bg-primary">{{ template.category.name }}</span></td>
+                        <td>
+                            <small>
+                            {% for excel_col, order_field in (template.field_mapping | from_json).items() %}
+                            <span class="badge bg-light text-dark border me-1">{{ excel_col }}→{{ order_field }}</span>
+                            {% endfor %}
+                            </small>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-outline-primary btn-sm btn-edit-export" data-id="{{ template.id }}" data-cat-id="{{ template.category_id }}" data-cat-name="{{ template.category.name }}" data-mapping="{{ template.field_mapping | e }}"><i class="bi bi-pencil"></i> 编辑</button>
+                            <a href="{{ url_for('templates.download_template', template_id=template.id) }}" class="btn btn-outline-info btn-sm"><i class="bi bi-download"></i> 下载</a>
+                            <form method="POST" action="{{ url_for('templates.delete_template', template_id=template.id) }}" class="d-inline" onsubmit="return confirm('确定删除？')">
+                                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> 删除</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <!-- 分页 -->
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center">
+                    {% if templates.has_prev %}
+                    <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.prev_num, import_page=import_templates.page) }}">上一页</a></li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">上一页</span></li>
+                    {% endif %}
+                    {% for page_num in templates.iter_pages(left_edge=2, left_current=2, right_current=3, right_edge=2) %}
+                        {% if page_num %}
+                            {% if page_num == templates.page %}
+                            <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+                            {% else %}
+                            <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=page_num, import_page=import_templates.page) }}">{{ page_num }}</a></li>
+                            {% endif %}
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                        {% endif %}
+                    {% endfor %}
+                    {% if templates.has_next %}
+                    <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.next_num, import_page=import_templates.page) }}">下一页</a></li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">下一页</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% else %}
+            <div class="text-center text-muted py-4">
+                <p>暂无导出模板</p>
+                <p class="small">请点击上方"新增导出模板"按钮添加</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 导入模板列表 -->
+    <div class="card">
+        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-upload me-2"></i>导入模板列表</h5>
+            <span class="badge bg-light text-success">{{ import_templates.total }} 条</span>
+        </div>
+        <div class="card-body">
+            {% if import_templates.items %}
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>类别</th>
+                        <th>字段映射</th>
+                        <th>默认快递</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for template in import_templates.items %}
+                    <tr>
+                        <td><span class="badge bg-success">{{ template.category.name }}</span></td>
+                        <td>
+                            <small>
+                            {% for excel_col, order_field in (template.field_mapping | from_json).items() %}
+                            <span class="badge bg-light text-dark border me-1">{{ excel_col }}→{{ order_field }}</span>
+                            {% endfor %}
+                            </small>
+                        </td>
+                        <td>{{ template.default_express_type or '-' }}</td>
+                        <td>
+                            <button type="button" class="btn btn-outline-primary btn-sm btn-edit-import" data-id="{{ template.id }}" data-cat-id="{{ template.category_id }}" data-cat-name="{{ template.category.name }}" data-mapping="{{ template.field_mapping | e }}" data-express="{{ template.default_express_type or '' }}"><i class="bi bi-pencil"></i> 编辑</button>
+                            <form method="POST" action="{{ url_for('import_routes.delete_import_template', template_id=template.id) }}" class="d-inline" onsubmit="return confirm('确定删除？')">
+                                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> 删除</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <!-- 分页 -->
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center">
+                    {% if import_templates.has_prev %}
+                    <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.page, import_page=import_templates.prev_num) }}">上一页</a></li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">上一页</span></li>
+                    {% endif %}
+                    {% for page_num in import_templates.iter_pages(left_edge=2, left_current=2, right_current=3, right_edge=2) %}
+                        {% if page_num %}
+                            {% if page_num == import_templates.page %}
+                            <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+                            {% else %}
+                            <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.page, import_page=page_num) }}">{{ page_num }}</a></li>
+                            {% endif %}
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                        {% endif %}
+                    {% endfor %}
+                    {% if import_templates.has_next %}
+                    <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.page, import_page=import_templates.next_num) }}">下一页</a></li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">下一页</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% else %}
+            <div class="text-center text-muted py-4">
+                <p>暂无导入模板</p>
+                <p class="small">请点击上方"新增导入模板"按钮添加</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 新增导出模板模态框 -->
+<div class="modal fade" id="addExportTemplateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('templates.upload_template') }}" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">新增导出模板</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">选择类别 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="export_category_id" name="category_id" required onchange="onExportCategoryChange()">
+                            <option value="">请选择类别</option>
+                            {% for category in categories %}
+                            <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">上传模板文件 <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required>
+                        <div class="form-text">请上传.xlsx或.xls格式的Excel文件作为模板</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label">字段映射</label>
+                            <div>
+                                <button type="button" class="btn btn-link btn-sm" onclick="loadExportPreset()">快速填充</button>
+                                <button type="button" class="btn btn-link btn-sm" onclick="addExportMappingRow()">添加字段</button>
+                            </div>
+                        </div>
+                        <div id="exportMappingRows" class="mt-2"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 新增导入模板模态框 -->
+<div class="modal fade" id="addImportTemplateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('import_routes.upload_import_template') }}" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">新增导入模板</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">选择类别 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="import_category_id" name="category_id" required onchange="onImportCategoryChange()">
+                            <option value="">请选择类别</option>
+                            {% for category in categories %}
+                            <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">上传模板文件 <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required>
+                        <div class="form-text">请上传.xlsx或.xls格式的Excel文件作为模板</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label">字段映射</label>
+                            <div>
+                                <button type="button" class="btn btn-link btn-sm" onclick="loadImportPreset()">快速填充</button>
+                                <button type="button" class="btn btn-link btn-sm" onclick="addImportMappingRow()">添加字段</button>
+                            </div>
+                        </div>
+                        <div id="importMappingRows" class="mt-2"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">默认快递种类</label>
+                        <input type="text" class="form-control" name="default_express_type" id="default_express_type" placeholder="Excel中没有快递种类时使用，如：顺丰">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-success">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑导出模板模态框 -->
+<div class="modal fade" id="editExportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('templates.edit_template') }}" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">编辑导出模板</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="template_id" id="edit_export_template_id">
+                    <div class="mb-3">
+                        <label class="form-label">类别</label>
+                        <input type="text" class="form-control" id="edit_export_category_name" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">重新上传模板文件（可选）</label>
+                        <input type="file" class="form-control" name="file" accept=".xlsx,.xls">
+                        <div class="form-text">不上传则保留原文件，只更新字段映射</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label">字段映射</label>
+                            <button type="button" class="btn btn-link btn-sm" onclick="addEditExportMappingRow()">添加字段</button>
+                        </div>
+                        <div id="editExportMappingRows" class="mt-2"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑导入模板模态框 -->
+<div class="modal fade" id="editImportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('import_routes.edit_import_template') }}" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">编辑导入模板</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="template_id" id="edit_import_template_id">
+                    <div class="mb-3">
+                        <label class="form-label">类别</label>
+                        <input type="text" class="form-control" id="edit_import_category_name" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">重新上传模板文件（可选）</label>
+                        <input type="file" class="form-control" name="file" accept=".xlsx,.xls">
+                        <div class="form-text">不上传则保留原文件，只更新字段映射</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label">字段映射</label>
+                            <button type="button" class="btn btn-link btn-sm" onclick="addEditImportMappingRow()">添加字段</button>
+                        </div>
+                        <div id="editImportMappingRows" class="mt-2"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">默认快递种类</label>
+                        <input type="text" class="form-control" name="default_express_type" id="edit_import_default_express">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-success">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ========== 导出模板 ==========
+let exportMappingIndex = 0;
+const exportPresetMappings = [
+    { excel: '日期', field: '__date__' },
+    { excel: '序号', field: '__seq__' },
+    { excel: '组别', field: 'group_name' },
+    { excel: '业务员姓名', field: 'salesman_name' },
+    { excel: '客户姓名', field: 'customer_name' },
+    { excel: '电话', field: 'phone' },
+    { excel: '地址', field: 'address' },
+    { excel: '托寄物内容', field: 'product_info' },
+    { excel: '代收金额', field: 'collect_amount' },
+    { excel: '已付定金（渠道和时间）', field: 'paid_amount' },
+    { excel: '备注', field: 'remark' },
+];
+
+function addExportMappingRow(excelCol = '', orderField = '') {
+    const container = document.getElementById('exportMappingRows');
+    const isRegex = orderField.startsWith('/') && orderField.endsWith('/');
+    const row = document.createElement('div');
+    row.className = 'row mb-2 align-items-center';
+    row.innerHTML = `
+        <div class="col-4"><input type="text" class="form-control" placeholder="Excel列名" name="excel_col_${exportMappingIndex}" value="${excelCol}"></div>
+        <div class="col-1 text-center">→</div>
+        <div class="col-6">
+            <div class="input-group">
+                <select class="form-select" name="order_field_${exportMappingIndex}" style="max-width:180px;" onchange="toggleRegexInput(this)">
+                    <option value="">选择字段</option>
+                    <option value="__date__" ${orderField === '__date__' ? 'selected' : ''}>日期（自动）</option>
+                    <option value="__seq__" ${orderField === '__seq__' ? 'selected' : ''}>序号（自动递增）</option>
+                    <option value="group_name" ${orderField === 'group_name' ? 'selected' : ''}>组名</option>
+                    <option value="salesman_name" ${orderField === 'salesman_name' ? 'selected' : ''}>业务员姓名</option>
+                    <option value="customer_name" ${orderField === 'customer_name' ? 'selected' : ''}>客户名</option>
+                    <option value="phone" ${orderField === 'phone' ? 'selected' : ''}>电话</option>
+                    <option value="address" ${orderField === 'address' ? 'selected' : ''}>地址</option>
+                    <option value="product_info" ${orderField === 'product_info' ? 'selected' : ''}>产品信息</option>
+                    <option value="has_gift" ${orderField === 'has_gift' ? 'selected' : ''}>是否有赠品(0/1)</option>
+                    <option value="gift_info" ${orderField === 'gift_info' ? 'selected' : ''}>赠品内容</option>
+                    <option value="remark" ${orderField === 'remark' ? 'selected' : ''}>备注</option>
+                    <option value="paid_amount" ${orderField === 'paid_amount' ? 'selected' : ''}>已付定金</option>
+                    <option value="collect_amount" ${orderField === 'collect_amount' ? 'selected' : ''}>代收金额</option>
+                    <option value="__extract_qty__" ${orderField === '__extract_qty__' ? 'selected' : ''}>提取产品数量</option>
+                    <option value="__regex__" ${isRegex ? 'selected' : ''}>正则提取...</option>
+                </select>
+                <input type="text" class="form-control regex-input" placeholder="如: /康欣胶囊\*(\d+)/" name="regex_field_${exportMappingIndex}" value="${isRegex ? orderField : ''}" style="display:${isRegex ? 'block' : 'none'};">
+            </div>
+        </div>
+        <div class="col-1"><button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.row').remove()"><i class="bi bi-x"></i></button></div>
+    `;
+    container.appendChild(row);
+    exportMappingIndex++;
+}
+
+function toggleRegexInput(sel) {
+    const row = sel.closest('.row');
+    const regexInput = row.querySelector('.regex-input');
+    if (sel.value === '__regex__') {
+        regexInput.style.display = 'block';
+        regexInput.name = sel.name;
+        sel.name = '';
+    } else {
+        regexInput.style.display = 'none';
+        regexInput.name = '';
+        sel.name = sel.name || sel.getAttribute('name').replace('regex_field', 'order_field');
+    }
+}
+
+function loadExportPreset() {
+    document.getElementById('exportMappingRows').innerHTML = '';
+    exportMappingIndex = 0;
+    exportPresetMappings.forEach(m => addExportMappingRow(m.excel, m.field));
+}
+
+function onExportCategoryChange() {
+    const categoryId = document.getElementById('export_category_id').value;
+    if (!categoryId) return;
+    fetch('/api/template/mapping/' + categoryId)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('exportMappingRows').innerHTML = '';
+            exportMappingIndex = 0;
+            if (data && Object.keys(data).length > 0) {
+                for (const [k, v] of Object.entries(data)) addExportMappingRow(k, v);
+            }
+        });
+}
+
+// ========== 导入模板 ==========
+let importMappingIndex = 0;
+const importPresetMappings = [
+    { excel: '组别', field: 'group_name' },
+    { excel: '业务员姓名', field: 'salesman_name' },
+    { excel: '客户姓名', field: 'customer_name' },
+    { excel: '快递单号', field: 'tracking_number' },
+    { excel: '快递种类', field: 'express_type' },
+    { excel: '托寄物内容', field: 'product_info' },
+];
+
+function addImportMappingRow(excelCol = '', orderField = '') {
+    const container = document.getElementById('importMappingRows');
+    const row = document.createElement('div');
+    row.className = 'row mb-2 align-items-center';
+    row.innerHTML = `
+        <div class="col-4"><input type="text" class="form-control" placeholder="列名或列号(如A,B)" name="excel_col_${importMappingIndex}" value="${excelCol}"></div>
+        <div class="col-1 text-center">→</div>
+        <div class="col-6">
+            <select class="form-select" name="order_field_${importMappingIndex}">
+                <option value="">选择字段</option>
+                <option value="group_name" ${orderField === 'group_name' ? 'selected' : ''}>组名（匹配订单）</option>
+                <option value="salesman_name" ${orderField === 'salesman_name' ? 'selected' : ''}>业务员姓名（匹配订单）</option>
+                <option value="customer_name" ${orderField === 'customer_name' ? 'selected' : ''}>客户姓名（匹配订单）</option>
+                <option value="tracking_number" ${orderField === 'tracking_number' ? 'selected' : ''}>快递单号</option>
+                <option value="express_type" ${orderField === 'express_type' ? 'selected' : ''}>快递种类</option>
+                <option value="product_info" ${orderField === 'product_info' ? 'selected' : ''}>托寄物内容（匹配订单）</option>
+            </select>
+        </div>
+        <div class="col-1"><button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.row').remove()"><i class="bi bi-x"></i></button></div>
+    `;
+    container.appendChild(row);
+    importMappingIndex++;
+}
+
+function loadImportPreset() {
+    document.getElementById('importMappingRows').innerHTML = '';
+    importMappingIndex = 0;
+    importPresetMappings.forEach(m => addImportMappingRow(m.excel, m.field));
+}
+
+function onImportCategoryChange() {
+    const categoryId = document.getElementById('import_category_id').value;
+    if (!categoryId) return;
+    fetch('/api/import_template/mapping/' + categoryId)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('importMappingRows').innerHTML = '';
+            importMappingIndex = 0;
+            const mapping = data.mapping || data;
+            if (mapping && Object.keys(mapping).length > 0) {
+                for (const [k, v] of Object.entries(mapping)) addImportMappingRow(k, v);
+            }
+            document.getElementById('default_express_type').value = data.default_express_type || '';
+        });
+}
+
+// ========== 编辑导出模板 ==========
+let editExportMappingIndex = 0;
+
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-edit-export');
+    if (!btn) return;
+    const templateId = btn.dataset.id;
+    const categoryName = btn.dataset.catName;
+    const fieldMapping = JSON.parse(btn.dataset.mapping);
+
+    document.getElementById('edit_export_template_id').value = templateId;
+    document.getElementById('edit_export_category_name').value = categoryName;
+
+    const container = document.getElementById('editExportMappingRows');
+    container.innerHTML = '';
+    editExportMappingIndex = 0;
+
+    if (fieldMapping && Object.keys(fieldMapping).length > 0) {
+        for (const [excelCol, orderField] of Object.entries(fieldMapping)) {
+            addEditExportMappingRow(excelCol, orderField);
+        }
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById('editExportModal'));
+    modal.show();
+});
+
+function addEditExportMappingRow(excelCol = '', orderField = '') {
+    const container = document.getElementById('editExportMappingRows');
+    const isRegex = orderField.startsWith('/') && orderField.endsWith('/');
+    const row = document.createElement('div');
+    row.className = 'row mb-2 align-items-center';
+    row.innerHTML = `
+        <div class="col-4"><input type="text" class="form-control" placeholder="Excel列名" name="excel_col_${editExportMappingIndex}" value="${excelCol}"></div>
+        <div class="col-1 text-center">→</div>
+        <div class="col-6">
+            <div class="input-group">
+                <select class="form-select" name="order_field_${editExportMappingIndex}" style="max-width:180px;" onchange="toggleEditRegexInput(this)">
+                    <option value="">选择字段</option>
+                    <option value="__date__" ${orderField === '__date__' ? 'selected' : ''}>日期（自动）</option>
+                    <option value="__seq__" ${orderField === '__seq__' ? 'selected' : ''}>序号（自动递增）</option>
+                    <option value="group_name" ${orderField === 'group_name' ? 'selected' : ''}>组名</option>
+                    <option value="salesman_name" ${orderField === 'salesman_name' ? 'selected' : ''}>业务员姓名</option>
+                    <option value="customer_name" ${orderField === 'customer_name' ? 'selected' : ''}>客户名</option>
+                    <option value="phone" ${orderField === 'phone' ? 'selected' : ''}>电话</option>
+                    <option value="address" ${orderField === 'address' ? 'selected' : ''}>地址</option>
+                    <option value="product_info" ${orderField === 'product_info' ? 'selected' : ''}>产品信息</option>
+                    <option value="has_gift" ${orderField === 'has_gift' ? 'selected' : ''}>是否有赠品(0/1)</option>
+                    <option value="gift_info" ${orderField === 'gift_info' ? 'selected' : ''}>赠品内容</option>
+                    <option value="remark" ${orderField === 'remark' ? 'selected' : ''}>备注</option>
+                    <option value="paid_amount" ${orderField === 'paid_amount' ? 'selected' : ''}>已付定金</option>
+                    <option value="collect_amount" ${orderField === 'collect_amount' ? 'selected' : ''}>代收金额</option>
+                    <option value="__extract_qty__" ${orderField === '__extract_qty__' ? 'selected' : ''}>提取产品数量</option>
+                    <option value="__regex__" ${isRegex ? 'selected' : ''}>正则提取...</option>
+                </select>
+                <input type="text" class="form-control regex-input" placeholder="如: /数量[：:]([\\d]+)/" name="regex_field_${editExportMappingIndex}" value="${isRegex ? orderField : ''}" style="display:${isRegex ? 'block' : 'none'};">
+            </div>
+        </div>
+        <div class="col-1"><button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.row').remove()"><i class="bi bi-x"></i></button></div>
+    `;
+    container.appendChild(row);
+    editExportMappingIndex++;
+}
+
+function toggleEditRegexInput(sel) {
+    const row = sel.closest('.row');
+    const regexInput = row.querySelector('.regex-input');
+    if (sel.value === '__regex__') {
+        regexInput.style.display = 'block';
+        regexInput.name = sel.name;
+        sel.name = '';
+    } else {
+        regexInput.style.display = 'none';
+        regexInput.name = '';
+        sel.name = sel.name || `order_field_${sel.closest('.row').parentElement.children.length - 1}`;
+    }
+}
+
+// ========== 编辑导入模板 ==========
+let editImportMappingIndex = 0;
+
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-edit-import');
+    if (!btn) return;
+    const templateId = btn.dataset.id;
+    const categoryName = btn.dataset.catName;
+    const fieldMapping = JSON.parse(btn.dataset.mapping);
+    const defaultExpress = btn.dataset.express || '';
+
+    document.getElementById('edit_import_template_id').value = templateId;
+    document.getElementById('edit_import_category_name').value = categoryName;
+    document.getElementById('edit_import_default_express').value = defaultExpress;
+
+    const container = document.getElementById('editImportMappingRows');
+    container.innerHTML = '';
+    editImportMappingIndex = 0;
+
+    if (fieldMapping && Object.keys(fieldMapping).length > 0) {
+        for (const [excelCol, orderField] of Object.entries(fieldMapping)) {
+            addEditImportMappingRow(excelCol, orderField);
+        }
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById('editImportModal'));
+    modal.show();
+});
+
+function addEditImportMappingRow(excelCol = '', orderField = '') {
+    const container = document.getElementById('editImportMappingRows');
+    const row = document.createElement('div');
+    row.className = 'row mb-2 align-items-center';
+    row.innerHTML = `
+        <div class="col-4"><input type="text" class="form-control" placeholder="列名或列号(如A,B)" name="excel_col_${editImportMappingIndex}" value="${excelCol}"></div>
+        <div class="col-1 text-center">→</div>
+        <div class="col-6">
+            <select class="form-select" name="order_field_${editImportMappingIndex}">
+                <option value="">选择字段</option>
+                <option value="group_name" ${orderField === 'group_name' ? 'selected' : ''}>组名（匹配订单）</option>
+                <option value="salesman_name" ${orderField === 'salesman_name' ? 'selected' : ''}>业务员姓名（匹配订单）</option>
+                <option value="customer_name" ${orderField === 'customer_name' ? 'selected' : ''}>客户姓名（匹配订单）</option>
+                <option value="tracking_number" ${orderField === 'tracking_number' ? 'selected' : ''}>快递单号</option>
+                <option value="express_type" ${orderField === 'express_type' ? 'selected' : ''}>快递种类</option>
+                <option value="product_info" ${orderField === 'product_info' ? 'selected' : ''}>托寄物内容（匹配订单）</option>
+            </select>
+        </div>
+        <div class="col-1"><button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.row').remove()"><i class="bi bi-x"></i></button></div>
+    `;
+    container.appendChild(row);
+    editImportMappingIndex++;
+}
+</script>
+{% endblock %}

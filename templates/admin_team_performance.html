@@ -1,0 +1,517 @@
+{% extends "base.html" %}
+
+{% block title %}团队业绩统计 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-people me-2"></i>团队业绩统计</h2>
+        <div class="d-flex align-items-center gap-2">
+            <select id="groupSelect" class="form-select" style="width: 150px;">
+                <option value="">全部组别</option>
+                {% for group in groups %}
+                <option value="{{ group.id }}">{{ group.name }}</option>
+                {% endfor %}
+            </select>
+            <select id="yearSelect" class="form-select" style="width: 100px;">
+                {% for y in range(2024, now_year + 2) %}
+                <option value="{{ y }}" {% if y == now_year %}selected{% endif %}>{{ y }}年</option>
+                {% endfor %}
+            </select>
+            <select id="monthSelect" class="form-select" style="width: 80px;">
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if m == now_month %}selected{% endif %}>{{ m }}月</option>
+                {% endfor %}
+            </select>
+            <button id="exportBtn" class="btn btn-success" onclick="exportMonthPerformance()">
+                <i class="bi bi-download"></i> 导出当月业绩
+            </button>
+        </div>
+    </div>
+
+    <!-- 概览卡片 -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6 class="card-title">团队总业绩</h6>
+                    <h3 id="totalAmount" class="mb-0">-</h3>
+                    <small id="totalCount">0 单</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6 class="card-title">已签收业绩</h6>
+                    <h3 id="signedAmount" class="mb-0">-</h3>
+                    <small id="signedCount">0 单</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6 class="card-title">业务员人数</h6>
+                    <h3 id="salesmanCount" class="mb-0">-</h3>
+                    <small>人</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图表区域 -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">团队月度业绩趋势</div>
+                <div class="card-body">
+                    <div id="trendChart" style="height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">产品类别分布</div>
+                <div class="card-body">
+                    <div id="categoryChart" style="height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 签收率图表 -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">个人签收率</div>
+                <div class="card-body">
+                    <div id="signRatePersonChart" style="height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">产品类别签收率</div>
+                <div class="card-body">
+                    <div id="signRateCategoryChart" style="height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 业务员业绩排行榜 -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>业务员业绩排行榜</span>
+            <div class="d-flex align-items-center gap-2">
+                <span id="rankingBadge" class="badge bg-primary">TOP 10</span>
+                <button id="toggleRankingBtn" class="btn btn-sm btn-outline-primary d-none" onclick="toggleRanking()">
+                    展开全部
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>排名</th>
+                            <th>业务员</th>
+                            <th>所属组别</th>
+                            <th>总业绩</th>
+                            <th>总订单</th>
+                            <th>已签收业绩</th>
+                            <th>占比</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rankingTableBody">
+                        <tr><td colspan="6" class="text-center text-muted">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 订单详情模态框 -->
+<div class="modal fade" id="orderDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">订单详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>客户</th>
+                                <th>产品</th>
+                                <th>已付</th>
+                                <th>代收</th>
+                                <th>总额</th>
+                                <th>状态</th>
+                                <th>运单号</th>
+                                <th>创建时间</th>
+                                <th>签收时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orderDetailBody">
+                            <tr><td colspan="9" class="text-center text-muted">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentYear = {{ now_year }};
+let currentMonth = {{ now_month }};
+let currentGroup = '';
+let showAllRanking = false;
+
+// 页面加载时获取数据
+document.addEventListener('DOMContentLoaded', function() {
+    loadData();
+
+    // 筛选条件变化时重新加载
+    document.getElementById('yearSelect').addEventListener('change', function() {
+        currentYear = parseInt(this.value);
+        loadData();
+    });
+    document.getElementById('monthSelect').addEventListener('change', function() {
+        currentMonth = parseInt(this.value);
+        loadData();
+    });
+    document.getElementById('groupSelect').addEventListener('change', function() {
+        currentGroup = this.value;
+        showAllRanking = false;
+        loadData();
+    });
+});
+
+function loadData() {
+    loadOverview();
+    loadTrend();
+    loadCategory();
+    loadSignRatePerson();
+    loadSignRateCategory();
+}
+
+// 加载概览数据
+function loadOverview() {
+    let url = `/admin/team_performance/api/overview?year=${currentYear}&month=${currentMonth}`;
+    if (currentGroup) url += `&group_id=${currentGroup}`;
+    if (showAllRanking) url += `&show_all=1`;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            // 团队总业绩（所有已发货）
+            document.getElementById('totalAmount').textContent = formatMoney(data.total_amount);
+            document.getElementById('totalCount').textContent = data.total_count + ' 单';
+
+            // 已签收业绩
+            document.getElementById('signedAmount').textContent = formatMoney(data.signed_amount);
+            document.getElementById('signedCount').textContent = data.signed_count + ' 单';
+
+            document.getElementById('salesmanCount').textContent = data.salesman_count;
+
+            // 渲染排行榜
+            renderRanking(data.salesman_stats, data.total_amount);
+
+            // 控制展开按钮显示
+            const btn = document.getElementById('toggleRankingBtn');
+            const badge = document.getElementById('rankingBadge');
+            if (data.has_more && !showAllRanking) {
+                btn.classList.remove('d-none');
+                btn.textContent = '展开全部';
+                badge.textContent = 'TOP 10';
+            } else if (showAllRanking) {
+                btn.classList.remove('d-none');
+                btn.textContent = '收起';
+                badge.textContent = '全部 ' + data.salesman_count + ' 人';
+            } else {
+                btn.classList.add('d-none');
+                badge.textContent = 'TOP 10';
+            }
+        });
+}
+
+// 展开/收起排行榜
+function toggleRanking() {
+    showAllRanking = !showAllRanking;
+    loadOverview();
+}
+
+// 渲染排行榜
+function renderRanking(stats, totalAmount) {
+    const tbody = document.getElementById('rankingTableBody');
+    if (stats.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无数据</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = stats.map((s, index) => {
+        const rank = index + 1;
+        const percent = totalAmount > 0 ? (s.total_amount / totalAmount * 100).toFixed(1) : 0;
+        const rankBadge = rank <= 3 ? `<span class="badge bg-${rank === 1 ? 'warning' : rank === 2 ? 'secondary' : 'danger'}">${rank}</span>` : rank;
+        return `
+            <tr style="cursor: pointer;" onclick="showSalesmanDetail('${s.name}')">
+                <td>${rankBadge}</td>
+                <td><strong>${s.name}</strong></td>
+                <td>${s.group_name}</td>
+                <td class="text-primary"><strong>${formatMoney(s.total_amount)}</strong></td>
+                <td>${s.total_count} 单</td>
+                <td class="text-success">${formatMoney(s.signed_amount)}<br><small>${s.signed_count}单</small></td>
+                <td>
+                    <div class="d-flex align-items-center">
+                        <div class="progress flex-grow-1" style="height: 8px;">
+                            <div class="progress-bar bg-success" style="width: ${percent}%"></div>
+                        </div>
+                        <span class="ms-2 small">${percent}%</span>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// 显示业务员订单详情
+function showSalesmanDetail(salesmanName) {
+    document.getElementById('modalTitle').textContent = salesmanName + ' - 订单详情';
+    const tbody = document.getElementById('orderDetailBody');
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">加载中...</td></tr>';
+
+    let url = `/admin/team_performance/api/salesman_detail?salesman_name=${encodeURIComponent(salesmanName)}&year=${currentYear}&month=${currentMonth}`;
+    if (currentGroup) url += `&group_id=${currentGroup}`;
+
+    fetch(url)
+        .then(r => {
+            if (!r.ok) {
+                throw new Error('请求失败');
+            }
+            return r.json();
+        })
+        .then(data => {
+            if (data.orders && data.orders.length > 0) {
+                tbody.innerHTML = data.orders.map(order => {
+                    // 根据订单管理列表的样式设置状态徽章颜色和宽度
+                    let badgeStyle = '';
+                    if (order.status === '已签收') {
+                        badgeStyle = 'style="background-color:#198754; color:#fff; width:100%; display:inline-block;"';
+                    } else if (order.status === '拒签') {
+                        badgeStyle = 'style="background-color:#dc3545; color:#fff; width:100%; display:inline-block;"';
+                    } else if (order.status === '派送中') {
+                        badgeStyle = 'style="background-color:#0dcaf0; color:#000; width:75%; display:inline-block;"';
+                    } else if (order.status === '运送中') {
+                        badgeStyle = 'style="background-color:#0d6efd; color:#fff; width:75%; display:inline-block;"';
+                    } else if (order.status === '已揽收') {
+                        badgeStyle = 'style="background-color:#6610f2; color:#fff; width:50%; display:inline-block;"';
+                    } else if (order.status === '待取件') {
+                        badgeStyle = 'style="background-color:#6f42c1; color:#fff; width:75%; display:inline-block;"';
+                    } else if (order.status === '待发货') {
+                        badgeStyle = 'style="background-color:#ffc107; color:#000; width:25%; display:inline-block;"';
+                    } else if (order.status === '已发货') {
+                        badgeStyle = 'style="background-color:#0dcaf0; color:#000; width:50%; display:inline-block;"';
+                    } else if (order.status === '草稿') {
+                        badgeStyle = 'class="bg-secondary" style="width:25%; display:inline-block;"';
+                    }
+                    
+                    return `
+                        <tr>
+                            <td>${order.customer_name}</td>
+                            <td>${order.category}</td>
+                            <td>${order.paid_amount || '-'}</td>
+                            <td>${order.collect_amount || '-'}</td>
+                            <td class="text-primary"><strong>${formatMoney(order.total_amount)}</strong></td>
+                            <td><span class="badge" ${badgeStyle}>${order.status}</span></td>
+                            <td>${order.tracking_number || '-'}</td>
+                            <td>${order.create_time || '-'}</td>
+                            <td>${order.sign_time || '-'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无订单数据</td></tr>';
+            }
+        })
+        .catch(err => {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">加载失败，请稍后重试</td></tr>';
+        });
+
+    // 打开模态框
+    const modal = new bootstrap.Modal(document.getElementById('orderDetailModal'));
+    modal.show();
+}
+
+// 加载月度趋势
+function loadTrend() {
+    let url = `/admin/team_performance/api/monthly_trend?year=${currentYear}&month=${currentMonth}`;
+    if (currentGroup) url += `&group_id=${currentGroup}`;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const chart = echarts.init(document.getElementById('trendChart'));
+            chart.setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['业绩金额', '订单数'] },
+                xAxis: { type: 'category', data: data.months },
+                yAxis: [
+                    { type: 'value', name: '金额' },
+                    { type: 'value', name: '订单数' }
+                ],
+                series: [
+                    { name: '业绩金额', type: 'bar', data: data.amounts, itemStyle: { color: '#0d6efd' } },
+                    { name: '订单数', type: 'line', yAxisIndex: 1, data: data.counts, itemStyle: { color: '#198754' } }
+                ]
+            });
+        });
+}
+
+// 加载类别分布
+function loadCategory() {
+    let url = `/admin/team_performance/api/category_distribution?year=${currentYear}&month=${currentMonth}`;
+    if (currentGroup) url += `&group_id=${currentGroup}`;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const chart = echarts.init(document.getElementById('categoryChart'));
+            const pieData = Object.entries(data).map(([name, val]) => ({ name, value: val.amount }));
+            chart.setOption({
+                tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    data: pieData,
+                    label: { show: true, formatter: '{b}\n{d}%' }
+                }]
+            });
+        });
+}
+
+function formatMoney(num) {
+    return '¥' + (num || 0).toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+// 导出当月业绩
+function exportMonthPerformance() {
+    const year = currentYear;
+    const month = currentMonth;
+    const groupId = currentGroup;
+    
+    let url = `/admin/team_performance/api/export?year=${year}&month=${month}`;
+    if (groupId) url += `&group_id=${groupId}`;
+    
+    // 使用fetch检查是否有错误
+    fetch(url)
+        .then(response => {
+            if (response.headers.get('content-type')?.includes('application/json')) {
+                return response.json().then(data => Promise.reject(data));
+            }
+            return response.blob();
+        })
+        .then(blob => {
+            // 下载文件
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `团队业绩报表_${year}年${month}月.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        })
+        .catch(data => {
+            if (data.message) {
+                showToast(data.message, 'danger');
+            }
+        });
+}
+
+// 个人签收率图表
+function loadSignRatePerson() {
+    let url = `/admin/team_performance/api/sign_rate_by_person?year=${currentYear}&month=${currentMonth}`;
+    if (currentGroup) url += `&group_id=${currentGroup}`;
+
+    fetch(url).then(r => r.json()).then(data => {
+        const chart = echarts.init(document.getElementById('signRatePersonChart'));
+        const names = data.map(d => d.name);
+        const rates = data.map(d => d.rate);
+        const signed = data.map(d => d.signed);
+        const unsigned = data.map(d => d.unsigned);
+
+        chart.setOption({
+            tooltip: {
+                trigger: 'axis',
+                formatter: function(params) {
+                    const idx = params[0].dataIndex;
+                    const item = data[idx];
+                    return `${item.name}<br/>发货: ${item.total} 单<br/>已签收: ${item.signed} 单<br/>签收率: ${item.rate}%`;
+                }
+            },
+            legend: { data: ['已签收', '未签收'] },
+            xAxis: { type: 'category', data: names, axisLabel: { rotate: 30 } },
+            yAxis: [
+                { type: 'value', name: '单数' },
+                { type: 'value', name: '签收率%', max: 100 }
+            ],
+            series: [
+                { name: '已签收', type: 'bar', stack: 'total', data: signed, itemStyle: { color: '#198754' } },
+                { name: '未签收', type: 'bar', stack: 'total', data: unsigned, itemStyle: { color: '#dc3545' } },
+                { name: '签收率', type: 'line', yAxisIndex: 1, data: rates, itemStyle: { color: '#fd7e14' },
+                  label: { show: true, formatter: '{c}%', fontSize: 10 } }
+            ]
+        });
+    });
+}
+
+// 产品类别签收率图表
+function loadSignRateCategory() {
+    let url = `/admin/team_performance/api/sign_rate_by_category?year=${currentYear}&month=${currentMonth}`;
+    if (currentGroup) url += `&group_id=${currentGroup}`;
+
+    fetch(url).then(r => r.json()).then(data => {
+        const chart = echarts.init(document.getElementById('signRateCategoryChart'));
+        const categories = data.map(d => d.category);
+        const rates = data.map(d => d.rate);
+        const signed = data.map(d => d.signed);
+        const unsigned = data.map(d => d.unsigned);
+
+        chart.setOption({
+            tooltip: {
+                trigger: 'axis',
+                formatter: function(params) {
+                    const idx = params[0].dataIndex;
+                    const item = data[idx];
+                    return `${item.category}<br/>发货: ${item.total} 单<br/>已签收: ${item.signed} 单<br/>签收率: ${item.rate}%`;
+                }
+            },
+            legend: { data: ['已签收', '未签收'] },
+            xAxis: { type: 'category', data: categories },
+            yAxis: [
+                { type: 'value', name: '单数' },
+                { type: 'value', name: '签收率%', max: 100 }
+            ],
+            series: [
+                { name: '已签收', type: 'bar', stack: 'total', data: signed, itemStyle: { color: '#198754' } },
+                { name: '未签收', type: 'bar', stack: 'total', data: unsigned, itemStyle: { color: '#dc3545' } },
+                { name: '签收率', type: 'line', yAxisIndex: 1, data: rates, itemStyle: { color: '#fd7e14' },
+                  label: { show: true, formatter: '{c}%', fontSize: 10 } }
+            ]
+        });
+    });
+}
+</script>
+{% endblock %}

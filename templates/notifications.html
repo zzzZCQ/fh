@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}通知中心 - 发货通知系统{% endblock %}
+
+{% block content %}
+<h2>通知中心</h2>
+
+<div class="card mt-4">
+    <div class="card-body">
+        <div class="list-group">
+            {% for notification in notifications %}
+            <div class="list-group-item {% if not notification.is_read %}list-group-item-primary{% endif %}">
+                <div class="d-flex w-100 justify-content-between">
+                    <h5 class="mb-1">{{ notification.content }}</h5>
+                    <small>{{ notification.create_time.strftime('%Y-%m-%d %H:%M') }}</small>
+                </div>
+                {% if notification.order %}
+                <small>关联订单：{{ notification.order.group_name }}</small>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="list-group-item text-center">暂无通知</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

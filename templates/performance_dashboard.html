@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+
+{% block title %}业绩管理 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-graph-up me-2"></i>业绩管理</h2>
+        <div class="d-flex align-items-center gap-2">
+            <select id="yearSelect" class="form-select" style="width: 100px;">
+                {% for y in range(2024, now_year + 2) %}
+                <option value="{{ y }}" {% if y == now_year %}selected{% endif %}>{{ y }}年</option>
+                {% endfor %}
+            </select>
+            <select id="monthSelect" class="form-select" style="width: 80px;">
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if m == now_month %}selected{% endif %}>{{ m }}月</option>
+                {% endfor %}
+            </select>
+            <button id="exportBtn" class="btn btn-success">
+                <i class="bi bi-file-earmark-excel me-1"></i>导出业绩报表
+            </button>
+        </div>
+    </div>
+
+    <!-- 概览卡片 -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6 class="card-title">本月业绩</h6>
+                    <h3 id="currentAmount" class="mb-0">-</h3>
+                    <small id="currentCount">0 单</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6 class="card-title">已签收业绩</h6>
+                    <h3 id="currentSignedAmount" class="mb-0">-</h3>
+                    <small id="currentSignedCount">0 单</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card" id="momCard">
+                <div class="card-body">
+                    <h6 class="card-title">环比增长</h6>
+                    <h3 id="momRate" class="mb-0">-</h3>
+                    <small>较上月（已签收）</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card" id="yoyCard">
+                <div class="card-body">
+                    <h6 class="card-title">同比增长</h6>
+                    <h3 id="yoyRate" class="mb-0">-</h3>
+                    <small>较去年同期</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图表区域 -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">月度业绩趋势</div>
+                <div class="card-body">
+                    <div id="trendChart" style="height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">产品类别分布</div>
+                <div class="card-body">
+                    <div id="categoryChart" style="height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 订单列表 -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>本月已签收订单</span>
+            <span id="orderCountBadge" class="badge bg-primary">0 单</span>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>订单ID</th>
+                            <th>客户名</th>
+                            <th>产品类别</th>
+                            <th>已付定金</th>
+                            <th>代收金额</th>
+                            <th>合计金额</th>
+                            <th>签收时间</th>
+                            <th>快递单号</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orderTableBody">
+                        <tr><td colspan="8" class="text-center text-muted">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentYear = {{ now_year }};
+let currentMonth = {{ now_month }};
+
+// 页面加载时获取数据
+document.addEventListener('DOMContentLoaded', function() {
+    loadData();
+
+    // 年月选择变化时重新加载
+    document.getElementById('yearSelect').addEventListener('change', function() {
+        currentYear = parseInt(this.value);
+        loadData();
+    });
+    document.getElementById('monthSelect').addEventListener('change', function() {
+        currentMonth = parseInt(this.value);
+        loadData();
+    });
+
+    // 导出业绩报表按钮
+    document.getElementById('exportBtn').addEventListener('click', function() {
+        const year = currentYear;
+        const month = currentMonth;
+        
+        fetch('/salesman/performance/api/export', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ year, month })
+        })
+        .then(response => {
+            if (response.headers.get('content-type')?.includes('application/json')) {
+                return response.json().then(data => Promise.reject(data));
+            }
+            return response.blob();
+        })
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `业绩报表_${year}年${month}月.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        })
+        .catch(data => {
+            if (data.message) {
+                showToast(data.message, 'danger');
+            }
+        });
+    });
+});
+
+function loadData() {
+    loadOverview();
+    loadTrend();
+    loadCategory();
+    loadOrders();
+}
+
+// 加载概览数据
+function loadOverview() {
+    fetch(`/salesman/performance/api/overview?year=${currentYear}&month=${currentMonth}`)
+        .then(r => r.json())
+        .then(data => {
+            // 本月总业绩
+            document.getElementById('currentAmount').textContent = formatMoney(data.current_month.total_amount);
+            document.getElementById('currentCount').textContent = data.current_month.total_count + ' 单';
+            
+            // 已签收业绩
+            document.getElementById('currentSignedAmount').textContent = formatMoney(data.current_month.signed_amount);
+            document.getElementById('currentSignedCount').textContent = data.current_month.signed_count + ' 单';
+            
+            // 环比（基于已签收业绩）
+            const momRate = data.mom_rate;
+            document.getElementById('momRate').textContent = (momRate >= 0 ? '+' : '') + momRate + '%';
+            document.getElementById('momCard').className = 'card ' + (momRate >= 0 ? 'bg-success text-white' : 'bg-danger text-white');
+            
+            // 同比（基于已签收业绩）
+            const yoyRate = data.yoy_rate;
+            document.getElementById('yoyRate').textContent = (yoyRate >= 0 ? '+' : '') + yoyRate + '%';
+            document.getElementById('yoyCard').className = 'card ' + (yoyRate >= 0 ? 'bg-success text-white' : 'bg-danger text-white');
+        });
+}
+
+// 加载月度趋势
+function loadTrend() {
+    fetch(`/salesman/performance/api/monthly_trend?year=${currentYear}&month=${currentMonth}`)
+        .then(r => r.json())
+        .then(data => {
+            const chart = echarts.init(document.getElementById('trendChart'));
+            chart.setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['业绩金额', '订单数'] },
+                xAxis: { type: 'category', data: data.months },
+                yAxis: [
+                    { type: 'value', name: '金额' },
+                    { type: 'value', name: '订单数' }
+                ],
+                series: [
+                    { name: '业绩金额', type: 'bar', data: data.amounts, itemStyle: { color: '#0d6efd' } },
+                    { name: '订单数', type: 'line', yAxisIndex: 1, data: data.counts, itemStyle: { color: '#198754' } }
+                ]
+            });
+        });
+}
+
+// 加载类别分布
+function loadCategory() {
+    fetch(`/salesman/performance/api/category_distribution?year=${currentYear}&month=${currentMonth}`)
+        .then(r => r.json())
+        .then(data => {
+            const chart = echarts.init(document.getElementById('categoryChart'));
+            const pieData = Object.entries(data).map(([name, val]) => ({ name, value: val.amount }));
+            chart.setOption({
+                tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    data: pieData,
+                    label: { show: true, formatter: '{b}\n{d}%' }
+                }]
+            });
+        });
+}
+
+// 加载订单列表
+function loadOrders() {
+    fetch(`/salesman/performance/api/order_list?year=${currentYear}&month=${currentMonth}`)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('orderCountBadge').textContent = data.orders.length + ' 单';
+            const tbody = document.getElementById('orderTableBody');
+            if (data.orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.orders.map(o => `
+                <tr>
+                    <td>${o.id}</td>
+                    <td>${o.customer_name || '-'}</td>
+                    <td>${o.category || '-'}</td>
+                    <td>${o.paid_amount || '-'}</td>
+                    <td>${o.collect_amount || 0}</td>
+                    <td><strong>${formatMoney(o.total_amount)}</strong></td>
+                    <td>${o.sign_time || '-'}</td>
+                    <td>${o.tracking_number || '-'}</td>
+                </tr>
+            `).join('');
+        });
+}
+
+function formatMoney(num) {
+    return '¥' + (num || 0).toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>{% block title %}发货通知系统{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --sidebar-width: 220px;
+            --sidebar-bg: #1e293b;
+            --sidebar-hover: #334155;
+            --sidebar-active: #0ea5e9;
+            --sidebar-text: #94a3b8;
+            --sidebar-text-active: #ffffff;
+            --topbar-height: 56px;
+        }
+        body { padding-top: var(--topbar-height); }
+
+        /* 顶部栏 */
+        .top-bar {
+            position: fixed; top: 0; left: 0; right: 0;
+            height: var(--topbar-height);
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex; align-items: center;
+            padding: 0 24px;
+            z-index: 1040;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+        .top-bar .brand {
+            font-size: 18px; font-weight: 700; color: #0f172a;
+            text-decoration: none; margin-right: 32px;
+        }
+        .top-bar .user-info {
+            margin-left: auto; display: flex; align-items: center; gap: 16px;
+            font-size: 14px; color: #475569;
+        }
+        .top-bar .user-info .badge { font-size: 11px; }
+        .notification-btn { cursor: pointer; padding: 4px; border-radius: 50%; transition: background 0.2s; }
+        .notification-btn:hover { background: #f1f5f9; }
+
+        /* 侧边栏 */
+        .sidebar {
+            position: fixed; top: var(--topbar-height); left: 0; bottom: 0;
+            width: var(--sidebar-width);
+            background: var(--sidebar-bg);
+            overflow-y: auto;
+            z-index: 1030;
+            padding: 12px 0;
+        }
+        .sidebar .menu-group { margin-bottom: 8px; }
+        .sidebar .menu-label {
+            padding: 8px 20px 4px;
+            font-size: 11px; font-weight: 600;
+            color: #475569; text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .sidebar .nav-link {
+            color: var(--sidebar-text);
+            padding: 9px 20px;
+            font-size: 14px;
+            border-radius: 0;
+            transition: all 0.15s;
+            display: flex; align-items: center; gap: 10px;
+            text-decoration: none;
+        }
+        .sidebar .nav-link:hover {
+            color: var(--sidebar-text-active);
+            background: var(--sidebar-hover);
+        }
+        .sidebar .nav-link.active {
+            color: var(--sidebar-text-active);
+            background: var(--sidebar-active);
+            font-weight: 500;
+        }
+        .sidebar .nav-link i { font-size: 16px; width: 20px; text-align: center; }
+        .sidebar .nav-link .badge {
+            margin-left: auto; font-size: 10px; padding: 2px 6px;
+        }
+
+        /* 主内容区 */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            padding: 20px 24px;
+            min-height: calc(100vh - var(--topbar-height));
+        }
+
+        /* Toast容器 */
+        .toast-container {
+            position: fixed;
+            top: calc(var(--topbar-height) + 16px);
+            right: 16px;
+            z-index: 1100;
+            max-width: 360px;
+        }
+        .toast-container .toast {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border: none;
+        }
+        .toast-container .toast-success { border-left: 4px solid #10b981; }
+        .toast-container .toast-danger { border-left: 4px solid #ef4444; }
+        .toast-container .toast-warning { border-left: 4px solid #f59e0b; }
+        .toast-container .toast-info { border-left: 4px solid #3b82f6; }
+
+        /* 通知弹窗 */
+        .notification-panel {
+            position: fixed;
+            top: calc(var(--topbar-height) + 8px);
+            right: 16px;
+            width: 380px;
+            max-height: 480px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            z-index: 1090;
+            display: none;
+            overflow: hidden;
+        }
+        .notification-panel.show { display: block; }
+        .notification-panel .panel-header {
+            padding: 16px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .notification-panel .panel-header h6 { margin: 0; font-weight: 600; }
+        .notification-panel .panel-body {
+            max-height: 380px;
+            overflow-y: auto;
+        }
+        .notification-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .notification-item:hover { background: #f8fafc; }
+        .notification-item.unread { background: #eff6ff; }
+        .notification-item .time { font-size: 12px; color: #94a3b8; }
+        .notification-item .content { font-size: 14px; color: #334155; margin-top: 4px; }
+        .notification-empty { padding: 40px; text-align: center; color: #94a3b8; }
+    </style>
+</head>
+<body>
+    {% if current_user.is_authenticated %}
+    <!-- 顶部栏 -->
+    <div class="top-bar">
+        <a class="brand" href="{{ url_for('auth.index') }}">
+            <i class="bi bi-box-seam"></i> 发货通知系统
+        </a>
+        <div class="user-info">
+            <div class="notification-btn position-relative" onclick="toggleNotificationPanel()">
+                <i class="bi bi-bell" style="font-size:18px;"></i>
+                {% if unread_count > 0 %}
+                <span class="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill">{{ unread_count }}</span>
+                {% endif %}
+            </div>
+            <span>{{ current_user.name }}
+                <span class="badge bg-secondary">{% if current_user.has_role('admin') %}管理员{% elif current_user.has_role('shipper') %}发货员{% elif current_user.has_role('follow_up') %}对接员{% else %}业务员{% endif %}</span>
+            </span>
+            <a href="{{ url_for('auth.change_password') }}" class="text-decoration-none text-muted"><i class="bi bi-key"></i></a>
+            <a href="{{ url_for('auth.logout') }}" class="text-decoration-none text-muted"><i class="bi bi-box-arrow-right"></i></a>
+        </div>
+    </div>
+
+    <!-- 通知弹窗 -->
+    <div class="notification-panel" id="notificationPanel">
+        <div class="panel-header">
+            <h6><i class="bi bi-bell me-2"></i>通知中心</h6>
+            <a href="{{ url_for('auth.notifications') }}" class="text-decoration-none small">查看全部</a>
+        </div>
+        <div class="panel-body" id="notificationList">
+            <div class="notification-empty">加载中...</div>
+        </div>
+    </div>
+
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+        <!-- 工具箱 -->
+        <div class="menu-group">
+            <div class="menu-label">工具箱</div>
+            <nav class="nav flex-column">
+                {% if current_user.has_role('salesman') %}
+                <a class="nav-link {% if request.endpoint == 'behavior.behavior_tracking_page' %}active{% endif %}" href="{{ url_for('behavior.behavior_tracking_page') }}">
+                    <i class="bi bi-table"></i> 行为轨迹处理
+                </a>
+                {% endif %}
+                <a class="nav-link {% if request.endpoint == 'tools.tools_page' %}active{% endif %}" href="{{ url_for('tools.tools_page') }}">
+                    <i class="bi bi-windows"></i> 企微双开
+                </a>
+                <a class="nav-link {% if request.endpoint == 'tools.files_page' %}active{% endif %}" href="{{ url_for('tools.files_page') }}">
+                    <i class="bi bi-folder"></i> 文件管理
+                </a>
+            </nav>
+        </div>
+
+        <!-- 订单管理 -->
+        <div class="menu-group">
+            <div class="menu-label">订单管理</div>
+            <nav class="nav flex-column">
+                <a class="nav-link {% if request.endpoint == 'orders.dashboard' %}active{% endif %}" href="{{ url_for('orders.dashboard') }}">
+                    <i class="bi bi-list-task"></i> 订单管理
+                </a>
+                {% if current_user.has_role('salesman') %}
+                <a class="nav-link {% if request.endpoint == 'orders.create_order_page' %}active{% endif %}" href="{{ url_for('orders.create_order_page') }}">
+                    <i class="bi bi-plus-circle"></i> 新建发货单
+                </a>
+                {% endif %}
+                {% if current_user.has_role('salesman') or current_user.has_role('follow_up') %}
+                <a class="nav-link {% if request.endpoint == 'customer_follow_up.follow_up_list' %}active{% endif %}" href="{{ url_for('customer_follow_up.follow_up_list') }}">
+                    <i class="bi bi-person-check"></i> 客户对接
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+
+        <!-- 业绩管理 -->
+        <div class="menu-group">
+            <div class="menu-label">业绩管理</div>
+            <nav class="nav flex-column">
+                {% if current_user.has_role('salesman') %}
+                <a class="nav-link {% if request.endpoint == 'performance.performance_dashboard' %}active{% endif %}" 
+                   href="{{ url_for('performance.performance_dashboard') }}">
+                    <i class="bi bi-graph-up"></i> 个人业绩
+                </a>
+                {% endif %}
+                {% if current_user.has_role('admin') %}
+                <a class="nav-link {% if request.endpoint == 'performance.team_performance_dashboard' %}active{% endif %}" href="{{ url_for('performance.team_performance_dashboard') }}">
+                    <i class="bi bi-people"></i> 团队业绩统计
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+
+        <!-- 用户管理（管理员可见） -->
+        {% if current_user.has_role('admin') %}
+        <div class="menu-group">
+            <div class="menu-label">用户管理</div>
+            <nav class="nav flex-column">
+                <a class="nav-link {% if request.endpoint == 'admin_users.admin_users' %}active{% endif %}" href="{{ url_for('admin_users.admin_users') }}">
+                    <i class="bi bi-people"></i> 用户列表
+                </a>
+            </nav>
+        </div>
+
+        <!-- 组织架构（管理员可见） -->
+        <div class="menu-group">
+            <div class="menu-label">组织架构</div>
+            <nav class="nav flex-column">
+                <a class="nav-link {% if request.endpoint == 'templates.admin_groups' %}active{% endif %}" href="{{ url_for('templates.admin_groups') }}">
+                    <i class="bi bi-diagram-3"></i> 组别管理
+                </a>
+            </nav>
+        </div>
+        {% endif %}
+
+        <!-- 系统配置（仅超级管理员） -->
+        {% if current_user.username == 'admin' %}
+        <div class="menu-group">
+            <div class="menu-label">系统配置</div>
+            <nav class="nav flex-column">
+                <a class="nav-link {% if request.endpoint == 'admin_config.admin_categories' %}active{% endif %}" href="{{ url_for('admin_config.admin_categories') }}">
+                    <i class="bi bi-tags"></i> 类别配置
+                </a>
+                <a class="nav-link {% if request.endpoint == 'admin_config.admin_gifts' %}active{% endif %}" href="{{ url_for('admin_config.admin_gifts') }}">
+                    <i class="bi bi-gift"></i> 赠品配置
+                </a>
+                <a class="nav-link {% if request.endpoint == 'templates.admin_templates' %}active{% endif %}" href="{{ url_for('templates.admin_templates') }}">
+                    <i class="bi bi-file-earmark-excel"></i> 模板管理
+                </a>
+                <a class="nav-link {% if request.endpoint == 'import_routes.admin_performance_templates' %}active{% endif %}" href="{{ url_for('import_routes.admin_performance_templates') }}">
+                    <i class="bi bi-graph-up"></i> 业绩报表模板
+                </a>
+                <a class="nav-link {% if request.endpoint == 'admin_config.admin_db_viewer' %}active{% endif %}" href="{{ url_for('admin_config.admin_db_viewer') }}">
+                    <i class="bi bi-database"></i> 数据库管理
+                </a>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Toast容器 -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- 主内容区 -->
+    <div class="{% if current_user.is_authenticated %}main-content{% else %}container mt-5{% endif %}">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script>
+    // Toast消息系统
+    function showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        const toastId = 'toast-' + Date.now();
+        const iconMap = {
+            success: 'bi-check-circle-fill text-success',
+            danger: 'bi-x-circle-fill text-danger',
+            warning: 'bi-exclamation-triangle-fill text-warning',
+            info: 'bi-info-circle-fill text-info'
+        };
+        const toast = document.createElement('div');
+        toast.className = `toast show toast-${type}`;
+        toast.id = toastId;
+        toast.innerHTML = `
+            <div class="toast-body d-flex align-items-center gap-2">
+                <i class="bi ${iconMap[type]}"></i>
+                <span class="flex-grow-1">${message}</span>
+                <button type="button" class="btn-close btn-close-sm" onclick="closeToast('${toastId}')"></button>
+            </div>
+        `;
+        container.appendChild(toast);
+        setTimeout(() => closeToast(toastId), 4000);
+    }
+    function closeToast(id) {
+        const toast = document.getElementById(id);
+        if (toast) { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }
+    }
+
+    // 页面加载时显示flash消息
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            document.addEventListener('DOMContentLoaded', function() {
+                showToast('{{ message|e }}', '{{ category }}');
+            });
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    // 通知弹窗
+    let notificationPanelVisible = false;
+    let lastUnreadCount = {{ unread_count|default(0) }};
+    function toggleNotificationPanel() {
+        const panel = document.getElementById('notificationPanel');
+        notificationPanelVisible = !notificationPanelVisible;
+        panel.classList.toggle('show', notificationPanelVisible);
+        if (notificationPanelVisible) loadNotifications();
+    }
+    document.addEventListener('click', function(e) {
+        const panel = document.getElementById('notificationPanel');
+        const btn = document.querySelector('.notification-btn');
+        if (notificationPanelVisible && !panel.contains(e.target) && !btn.contains(e.target)) {
+            notificationPanelVisible = false;
+            panel.classList.remove('show');
+        }
+    });
+    function loadNotifications() {
+        fetch('/api/notifications')
+            .then(r => r.json())
+            .then(data => {
+                const list = document.getElementById('notificationList');
+                if (data.length === 0) {
+                    list.innerHTML = '<div class="notification-empty">暂无通知</div>';
+                    return;
+                }
+                list.innerHTML = data.map(n => `
+                    <div class="notification-item ${n.is_read ? '' : 'unread'}">
+                        <div class="time">${n.time}</div>
+                        <div class="content">${n.content}</div>
+                    </div>
+                `).join('');
+            });
+    }
+    // 定时刷新未读数量
+    setInterval(function() {
+        fetch('/api/notifications/unread_count')
+            .then(r => r.json())
+            .then(count => {
+                const badge = document.querySelector('.notification-btn .badge');
+                if (count > 0) {
+                    if (!badge) {
+                        document.querySelector('.notification-btn').innerHTML += 
+                            `<span class="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill">${count}</span>`;
+                    } else { badge.textContent = count; }
+                    // 如果有新通知，弹出Toast提示
+                    if (count > lastUnreadCount && lastUnreadCount > 0) {
+                        showToast('您有新的通知，请查看！', 'info');
+                    }
+                    lastUnreadCount = count;
+                } else {
+                    if (badge) { badge.remove(); }
+                    lastUnreadCount = 0;
+                }
+            });
+    }, 5000);
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

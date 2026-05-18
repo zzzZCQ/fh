@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block title %}文件管理 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-folder"></i> 文件管理</h4>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="row g-3 mb-4 align-items-center">
+            <div class="col-md-3">
+                <select id="categoryFilter" class="form-select">
+                    <option value="">全部分类</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <input type="text" id="fileSearch" class="form-control" placeholder="搜索文件名称...">
+            </div>
+            {% if is_admin %}
+            <div class="col-md-auto ms-auto">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadFileModal">
+                    <i class="bi bi-upload"></i> 上传文件
+                </button>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>文件名称</th>
+                        <th>分类</th>
+                        <th>上传者</th>
+                        <th>上传时间</th>
+                        <th class="text-center" style="width: 150px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="fileList">
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            <span class="ms-2">加载中...</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if is_admin %}
+<div class="modal fade" id="uploadFileModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">上传文件</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="uploadFileForm">
+                    <div class="mb-3">
+                        <label class="form-label">文件名称 <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="fileName" class="form-control" required placeholder="请输入文件显示名称">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">分类</label>
+                        <input type="text" name="category" id="fileCategory" class="form-control" placeholder="例如：模板、工具、文档">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">选择文件 <span class="text-danger">*</span></label>
+                        <input type="file" name="file" id="fileInput" class="form-control" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="uploadBtn">
+                    <i class="bi bi-upload"></i> 上传
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+let categories = [];
+
+function loadFiles() {
+    const search = document.getElementById('fileSearch').value;
+    const category = document.getElementById('categoryFilter').value;
+    
+    let url = '{{ url_for('tools.list_files') }}?';
+    if (search) url += '&search=' + encodeURIComponent(search);
+    if (category) url += '&category=' + encodeURIComponent(category);
+    
+    fetch(url)
+    .then(r => r.json())
+    .then(data => {
+        renderFileList(data.files);
+        renderCategories(data.categories, category);
+    })
+    .catch(err => {
+        showToast('加载失败', 'danger');
+    });
+}
+
+function renderCategories(cats, selectedCategory) {
+    const select = document.getElementById('categoryFilter');
+    let html = '<option value="">全部分类</option>';
+    cats.forEach(cat => {
+        const selected = cat === selectedCategory ? 'selected' : '';
+        html += `<option value="${cat}" ${selected}>${cat}</option>`;
+    });
+    select.innerHTML = html;
+}
+
+function renderFileList(files) {
+    const tbody = document.getElementById('fileList');
+    
+    if (!files || files.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-muted py-4">
+                    <i class="bi bi-inbox" style="font-size: 32px;"></i>
+                    <p class="mt-2 mb-0">暂无文件</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = files.map(file => `
+        <tr>
+            <td>
+                <i class="bi bi-file-earmark"></i>
+                ${file.name}
+                <small class="text-muted d-block">${file.filename}</small>
+            </td>
+            <td><span class="badge bg-secondary">${file.category || '-'}</span></td>
+            <td>${file.uploader}</td>
+            <td>${file.create_time}</td>
+            <td class="text-center">
+                <a href="#" class="btn btn-sm btn-success download-btn" data-id="${file.id}">
+                    <i class="bi bi-download"></i> 下载
+                </a>
+                ${file.is_admin ? `
+                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${file.id}">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                ` : ''}
+            </td>
+        </tr>
+    `).join('');
+    
+    bindEvents();
+}
+
+function bindEvents() {
+    document.querySelectorAll('.download-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const fileId = this.dataset.id;
+            window.location.href = '{{ url_for('tools.download_tool_file', file_id=0) }}'.replace('0', fileId);
+        });
+    });
+    
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (!confirm('确定要删除这个文件吗？')) return;
+            
+            const fileId = this.dataset.id;
+            fetch('{{ url_for('tools.delete_tool_file', file_id=0) }}'.replace('0', fileId), {
+                method: 'POST'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    loadFiles();
+                } else {
+                    showToast(data.message, 'danger');
+                }
+            })
+            .catch(err => showToast('删除失败', 'danger'));
+        });
+    });
+}
+
+document.getElementById('fileSearch').addEventListener('input', loadFiles);
+document.getElementById('categoryFilter').addEventListener('change', loadFiles);
+
+{% if is_admin %}
+document.getElementById('uploadBtn').addEventListener('click', function() {
+    const formData = new FormData(document.getElementById('uploadFileForm'));
+    
+    fetch('{{ url_for('tools.upload_tool_file') }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message, 'success');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('uploadFileModal'));
+            modal.hide();
+            document.getElementById('uploadFileForm').reset();
+            loadFiles();
+        } else {
+            showToast(data.message, 'danger');
+        }
+    })
+    .catch(err => showToast('上传失败', 'danger'));
+});
+{% endif %}
+
+document.addEventListener('DOMContentLoaded', loadFiles);
+</script>
+{% endblock %}
