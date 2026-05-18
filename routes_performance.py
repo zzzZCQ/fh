@@ -950,6 +950,8 @@ def salesman_order_detail():
                 combined_status = '拒签'
             elif order.logistics_status == '派送中':
                 combined_status = '派送中'
+            elif order.logistics_status == '待派送':
+                combined_status = '待派送'
             elif order.logistics_status == '运送中':
                 combined_status = '运送中'
             elif order.logistics_status == '已揽收':

@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """管理配置路由（类别、赠品、数据库查看）"""
+import os
 from flask import Blueprint, request, redirect, url_for, flash, render_template
-from flask_login import current_user
+from flask_login import current_user, login_required
 
 from models import db, Order, Category, Gift
-from helpers import role_required, get_unread_count
+from helpers import role_required, get_unread_count, broadcast_notification
 
 bp = Blueprint('admin_config', __name__)
 
@@ -372,3 +373,80 @@ def admin_db_update_field(table, id):
     except Exception as e:
         conn.close()
         return jsonify({'success': False, 'message': f'更新失败: {str(e)}'})
+
+
+# ============ 广播消息 ============
+@bp.route('/broadcast')
+@login_required
+def admin_broadcast():
+    """广播消息页面"""
+    from models import User
+    
+    if not (current_user.username == 'admin' or current_user.can_broadcast):
+        flash('您没有发送广播通知的权限！', 'danger')
+        return redirect(url_for('orders.dashboard'))
+    
+    if current_user.username == 'admin':
+        users = User.query.filter(User.is_active == True, User.id != current_user.id).order_by(User.username).all()
+    else:
+        target_group_ids = current_user.get_managed_group_ids()
+        users = User.query.filter(
+            User.is_active == True,
+            User.group_id.in_(target_group_ids),
+            User.id != current_user.id
+        ).order_by(User.username).all()
+    
+    return render_template('admin_broadcast.html', users=users, unread_count=get_unread_count(current_user.id))
+
+
+@bp.route('/broadcast/send', methods=['POST'])
+@login_required
+def send_broadcast():
+    """发送广播消息"""
+    from models import User
+    
+    if not (current_user.username == 'admin' or current_user.can_broadcast):
+        flash('您没有发送广播通知的权限！', 'danger')
+        return redirect(url_for('orders.dashboard'))
+    
+    content = request.form.get('content', '').strip()
+    
+    if not content:
+        flash('消息内容不能为空！', 'danger')
+        return redirect(url_for('admin_config.admin_broadcast'))
+    
+    importance = request.form.get('importance', 'normal')
+    if importance not in ['normal', 'important', 'urgent']:
+        importance = 'normal'
+    
+    image_url = None
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename:
+            filename = file.filename
+            upload_dir = os.path.join('static', 'uploads', 'broadcast')
+            os.makedirs(upload_dir, exist_ok=True)
+            filepath = os.path.join(upload_dir, filename)
+            file.save(filepath)
+            image_url = '/' + filepath.replace('\\', '/')
+    
+    user_ids = request.form.getlist('user_ids')
+    user_ids = [int(uid) for uid in user_ids if uid.isdigit()] if user_ids else None
+    
+    if user_ids:
+        count = len(user_ids)
+    elif current_user.username == 'admin':
+        count = User.query.filter(User.is_active == True, User.id != current_user.id).count()
+    else:
+        target_group_ids = current_user.get_managed_group_ids()
+        count = User.query.filter(
+            User.is_active == True,
+            User.group_id.in_(target_group_ids),
+            User.id != current_user.id
+        ).count()
+    
+    broadcast_notification(current_user, content, image_url, user_ids, importance)
+    
+    importance_text = {'normal': '一般', 'important': '重要', 'urgent': '紧急'}.get(importance, '一般')
+    flash(f'消息已发送（{importance_text}），共发送给 {count} 位用户！', 'success')
+    return redirect(url_for('admin_config.admin_broadcast'))

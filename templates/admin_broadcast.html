@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}广播消息 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="bi bi-broadcast"></i> 广播消息</h2>
+    
+    <div class="row mt-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-send"></i> 发送广播消息</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('admin_config.send_broadcast') }}" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">消息内容 <span class="text-danger">*</span></label>
+                            <textarea class="form-control" name="content" rows="4" placeholder="输入要广播的消息内容..." required></textarea>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">消息重要性</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="importance" id="importance_normal" value="normal" checked>
+                                    <label class="form-check-label" for="importance_normal">
+                                        <span class="badge bg-secondary">一般</span>
+                                    </label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="importance" id="importance_important" value="important">
+                                    <label class="form-check-label" for="importance_important">
+                                        <span class="badge bg-warning text-dark">重要</span>
+                                    </label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="importance" id="importance_urgent" value="urgent">
+                                    <label class="form-check-label" for="importance_urgent">
+                                        <span class="badge bg-danger">紧急</span> <small class="text-muted">（自动弹窗提醒）</small>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">接收人</label>
+                            <div class="border rounded p-2 bg-light">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="selectAllUsers">
+                                    <label class="form-check-label fw-bold" for="selectAllUsers">发送给所有人</label>
+                                </div>
+                                <hr class="my-2">
+                                <div style="max-height: 200px; overflow-y: auto;">
+                                    {% for user in users %}
+                                    <div class="form-check">
+                                        <input class="form-check-input user-checkbox" type="checkbox" name="user_ids" value="{{ user.id }}" id="user_{{ user.id }}">
+                                        <label class="form-check-label" for="user_{{ user.id }}">
+                                            {{ user.username }}
+                                            {% if user.group %}
+                                            <small class="text-muted">({{ user.group.name }})</small>
+                                            {% endif %}
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="form-text">留空则发送给所有人，或选择特定用户</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">附带图片（可选）</label>
+                            <input type="file" class="form-control" name="image" accept="image/*" id="imageInput" onchange="previewImage(this)">
+                            <div class="form-text">支持 JPG、PNG、GIF 等图片格式</div>
+                        </div>
+                        
+                        <div id="imagePreview" class="mb-3" style="display: none;">
+                            <label class="form-label">图片预览</label>
+                            <div>
+                                <img id="previewImg" src="" alt="预览" style="max-width: 300px; max-height: 200px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            </div>
+                            <button type="button" class="btn btn-outline-danger btn-sm mt-2" onclick="removeImage()">移除图片</button>
+                        </div>
+                        
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary" id="sendBtn">
+                                <i class="bi bi-send"></i> 发送广播
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="clearForm()">清空</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> 说明</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0">
+                        <li>广播消息将发送给选定的用户</li>
+                        <li>消息支持添加一张图片</li>
+                        <li>发送者不会收到自己发送的消息</li>
+                        <li>紧急消息会自动弹窗提醒</li>
+                        <li>用户可在通知中心查看消息</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-bar-chart"></i> 重要性说明</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0 small">
+                        <li><span class="badge bg-secondary">一般</span> 普通通知，显示在列表中</li>
+                        <li><span class="badge bg-warning text-dark">重要</span> 重要提醒，更醒目</li>
+                        <li><span class="badge bg-danger">紧急</span> 自动弹窗，需确认</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('selectAllUsers').addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.user-checkbox');
+    checkboxes.forEach(cb => cb.checked = this.checked);
+});
+
+document.getElementById('sendBtn').addEventListener('click', function(e) {
+    const selectedUsers = document.querySelectorAll('.user-checkbox:checked');
+    const isUrgent = document.getElementById('importance_urgent').checked;
+    const content = document.querySelector('textarea[name="content"]').value.trim();
+    
+    if (!content) {
+        alert('请输入消息内容！');
+        e.preventDefault();
+        return;
+    }
+    
+    const targetText = selectedUsers.length > 0 ? `选定的 ${selectedUsers.length} 位用户` : '所有用户';
+    const importanceText = isUrgent ? '紧急' : (document.getElementById('importance_important').checked ? '重要' : '一般');
+    
+    if (!confirm(`确定要发送${importanceText}消息给${targetText}吗？` + (isUrgent ? '\n\n紧急消息将自动弹窗提醒接收人！' : ''))) {
+        e.preventDefault();
+    }
+});
+
+function previewImage(input) {
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('previewImg').src = e.target.result;
+            document.getElementById('imagePreview').style.display = 'block';
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function removeImage() {
+    document.getElementById('imageInput').value = '';
+    document.getElementById('previewImg').src = '';
+    document.getElementById('imagePreview').style.display = 'none';
+}
+
+function clearForm() {
+    document.querySelector('textarea[name="content"]').value = '';
+    document.getElementById('importance_normal').checked = true;
+    document.getElementById('selectAllUsers').checked = false;
+    document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = false);
+    removeImage();
+}
+</script>
+{% endblock %}

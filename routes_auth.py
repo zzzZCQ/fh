@@ -123,8 +123,23 @@ def change_password():
 @bp.route('/notifications')
 @login_required
 def notifications():
-    notifications = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.create_time.desc()).all()
-    for n in notifications:
-        n.is_read = True
+    """通知列表页面"""
+    notifications = Notification.query.filter_by(user_id=current_user.id)\
+        .order_by(Notification.create_time.desc()).limit(100).all()
+    total = Notification.query.filter_by(user_id=current_user.id).count()
+    return render_template('notifications.html', unread_count=get_unread_count(current_user.id), total=total, notifications=notifications)
+
+
+@bp.route('/notification/<int:notification_id>')
+@login_required
+def notification_detail(notification_id):
+    """通知详情页面"""
+    notification = Notification.query.get_or_404(notification_id)
+    # 确认是当前用户的通知
+    if notification.user_id != current_user.id:
+        flash('无权查看该通知！', 'danger')
+        return redirect(url_for('auth.notifications'))
+    # 标记为已读
+    notification.is_read = True
     db.session.commit()
-    return render_template('notifications.html', notifications=notifications, unread_count=0)
+    return render_template('notification_detail.html', notification=notification, unread_count=get_unread_count(current_user.id))

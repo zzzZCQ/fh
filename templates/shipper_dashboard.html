@@ -109,33 +109,18 @@
                 <thead>
 
                     <tr>
-
                         <th>组名</th>
-
                         <th>业务员</th>
-
                         <th>客户名</th>
-
                         <th>收货电话</th>
-
                         <th>已付定金</th>
-
                         <th>代收金额</th>
-
                         <th>产品类别</th>
-
                         <th>状态</th>
-
                         <th>快递信息</th>
-
-                        <th>导出标记</th>
-
                         <th>签收时间</th>
-
                         <th>创建时间</th>
-
-                        <th>操作</th>
-
+                        <th style="width: 350px;">操作</th>
                     </tr>
 
                 </thead>
@@ -180,6 +165,10 @@
 
                                 <span class="badge" style="background-color:#0dcaf0; color:#000; width:75%; display:inline-block;">派送中</span>
 
+                                {% elif order.logistics_status == '待派送' %}
+
+                                <span class="badge" style="background-color:#ff7f0e; color:#fff; width:75%; display:inline-block;">待派送</span>
+
                                 {% elif order.logistics_status == '运送中' %}
 
                                 <span class="badge" style="background-color:#0d6efd; color:#fff; width:75%; display:inline-block;">运送中</span>
@@ -195,45 +184,26 @@
                         </td>
 
                         <td>
-
                             {% if order.tracking_number and order.tracking_number != '0' %}
-
                             {{ order.express_type or '' }}：{{ order.tracking_number }}
-
                             {% endif %}
-
                         </td>
-
-                        <td>
-
-                            {% if order.status == 'submitted' %}
-
-                            <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline" onclick="event.stopPropagation()" style="cursor:pointer;">
-
-                                <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}">
-
-                            </form>
-
-                            {% endif %}
-
-                        </td>
-
                         <td>{{ order.sign_time.strftime('%Y-%m-%d %H:%M') if order.sign_time else '-' }}</td>
-
                         <td>{{ order.create_time.strftime('%Y-%m-%d %H:%M') }}</td>
-
                         <td onclick="event.stopPropagation()">
-
-                            <div class="btn-group btn-group-sm">
-
+                            <div class="d-flex gap-1 align-items-center">
+                                <!-- 导出标记 -->
                                 {% if order.status == 'submitted' %}
-
-                                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shipModal{{ order.id }}">发货</button>
-
+                                <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline">
+                                    <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}" style="transform: scale(1.2); cursor: pointer;">
+                                    <span class="text-muted small ms-1">导出</span>
+                                </form>
                                 {% endif %}
-
+                                <!-- 发货按钮 -->
+                                {% if order.status == 'submitted' %}
+                                <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#shipModal{{ order.id }}">发货</button>
+                                {% endif %}
                             </div>
-
                         </td>
 
                     </tr>

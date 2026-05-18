@@ -141,7 +141,8 @@
         .notification-item:hover { background: #f8fafc; }
         .notification-item.unread { background: #eff6ff; }
         .notification-item .time { font-size: 12px; color: #94a3b8; }
-        .notification-item .content { font-size: 14px; color: #334155; margin-top: 4px; }
+        .notification-item .content { font-size: 14px; color: #334155; margin-top: 4px; word-break: break-word; }
+        .notification-item .content img { max-width: 100%; max-height: 200px; border-radius: 4px; margin-top: 8px; }
         .notification-empty { padding: 40px; text-align: center; color: #94a3b8; }
     </style>
 </head>
@@ -171,10 +172,34 @@
     <div class="notification-panel" id="notificationPanel">
         <div class="panel-header">
             <h6><i class="bi bi-bell me-2"></i>通知中心</h6>
-            <a href="{{ url_for('auth.notifications') }}" class="text-decoration-none small">查看全部</a>
+            <div>
+                <a href="javascript:void(0)" class="text-decoration-none small" title="全部已读" onclick="markAllRead()" style="padding: 4px 8px; color: #64748b;">
+                    <i class="bi bi-check-all" style="font-size: 18px;"></i>
+                </a>
+                <a href="{{ url_for('auth.notifications') }}" class="text-decoration-none small" style="color: #64748b;">查看全部</a>
+            </div>
         </div>
         <div class="panel-body" id="notificationList">
-            <div class="notification-empty">加载中...</div>
+            <div class="notification-empty">请点击"查看全部"</div>
+        </div>
+    </div>
+    
+    <!-- 紧急通知弹窗 -->
+    <div class="modal fade" id="urgentNotificationModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-danger">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i>紧急通知</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="urgentNotificationContent"></div>
+                </div>
+                <div class="modal-footer">
+                    <a href="#" id="urgentNotificationLink" class="btn btn-outline-primary">查看详情</a>
+                    <button type="button" class="btn btn-danger" data-bs-dismiss="modal" onclick="confirmUrgentNotification()">我已知晓</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -258,11 +283,12 @@
         </div>
         {% endif %}
 
-        <!-- 系统配置（仅超级管理员） -->
-        {% if current_user.username == 'admin' %}
+        <!-- 系统配置（超级管理员或有广播权限） -->
+        {% if current_user.username == 'admin' or current_user.can_broadcast %}
         <div class="menu-group">
             <div class="menu-label">系统配置</div>
             <nav class="nav flex-column">
+                {% if current_user.username == 'admin' %}
                 <a class="nav-link {% if request.endpoint == 'admin_config.admin_categories' %}active{% endif %}" href="{{ url_for('admin_config.admin_categories') }}">
                     <i class="bi bi-tags"></i> 类别配置
                 </a>
@@ -281,6 +307,10 @@
                 <a class="nav-link {% if request.endpoint == 'tools.git_page' %}active{% endif %}" href="{{ url_for('tools.git_page') }}">
                     <i class="bi bi-git"></i> Git管理
                 </a>
+                {% endif %}
+                <a class="nav-link {% if request.endpoint == 'admin_config.admin_broadcast' %}active{% endif %}" href="{{ url_for('admin_config.admin_broadcast') }}">
+                    <i class="bi bi-broadcast"></i> 广播消息
+                </a>
             </nav>
         </div>
         {% endif %}
@@ -289,6 +319,20 @@
 
     <!-- Toast容器 -->
     <div class="toast-container" id="toastContainer"></div>
+
+    <!-- 图片查看模态框 -->
+    <div class="modal fade" id="imageModal" tabindex="-1">
+        <div class="modal-dialog modal-fullscreen">
+            <div class="modal-content" style="background: rgba(0,0,0,0.9);">
+                <div class="modal-header border-0">
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body d-flex justify-content-center align-items-center">
+                    <img id="modalImage" src="" class="img-fluid">
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- 主内容区 -->
     <div class="{% if current_user.is_authenticated %}main-content{% else %}container mt-5{% endif %}">
@@ -340,6 +384,9 @@
     // 通知弹窗
     let notificationPanelVisible = false;
     let lastUnreadCount = {{ unread_count|default(0) }};
+    let eventSource = null;
+    let currentUrgentId = null;
+    
     function toggleNotificationPanel() {
         const panel = document.getElementById('notificationPanel');
         notificationPanelVisible = !notificationPanelVisible;
@@ -354,45 +401,180 @@
             panel.classList.remove('show');
         }
     });
-    function loadNotifications() {
-        fetch('/api/notifications')
+    
+    function checkUrgentNotifications() {
+        fetch('/api/notifications/check_urgent')
             .then(r => r.json())
             .then(data => {
-                const list = document.getElementById('notificationList');
-                if (data.length === 0) {
+                if (data.has_urgent) {
+                    currentUrgentId = data.id;
+                    document.getElementById('urgentNotificationContent').innerHTML = data.content;
+                    document.getElementById('urgentNotificationLink').href = '/notification/' + data.id;
+                    const modal = new bootstrap.Modal(document.getElementById('urgentNotificationModal'), {backdrop: 'static', keyboard: false});
+                    modal.show();
+                }
+            })
+            .catch(err => console.error('检查紧急通知失败:', err));
+    }
+    
+    function confirmUrgentNotification() {
+        if (currentUrgentId) {
+            fetch('/api/notifications/mark_read/' + currentUrgentId, {method: 'POST'})
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        updateUnreadBadge(Math.max(0, lastUnreadCount - 1));
+                    }
+                });
+            currentUrgentId = null;
+        }
+    }
+    
+    checkUrgentNotifications();
+    let currentPage = 1;
+    let hasMoreNotifications = false;
+    let isLoadingMore = false;
+
+    function loadNotifications(append = false) {
+        if (isLoadingMore) return;
+        if (append && !hasMoreNotifications) return;
+        
+        const url = append ? `/api/notifications/page/${currentPage + 1}` : '/api/notifications';
+        const list = document.getElementById('notificationList');
+        
+        if (append) {
+            isLoadingMore = true;
+            const loadingEl = document.getElementById('loadMoreBtn');
+            if (loadingEl) loadingEl.innerHTML = '<div class="text-center text-muted py-2"><span class="spinner-border spinner-border-sm"></span> 加载中...</div>';
+        } else {
+            list.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+        }
+        
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                let items;
+                if (Array.isArray(data)) {
+                    items = data;
+                } else if (data.items) {
+                    items = data.items;
+                } else {
+                    items = [];
+                }
+                
+                if (!append) {
+                    list.innerHTML = '';
+                }
+                
+                if (items.length === 0 && !append) {
                     list.innerHTML = '<div class="notification-empty">暂无通知</div>';
+                    hasMoreNotifications = false;
                     return;
                 }
-                list.innerHTML = data.map(n => `
-                    <div class="notification-item ${n.is_read ? '' : 'unread'}">
+                
+                items.forEach(n => {
+                    const div = document.createElement('div');
+                    div.className = `notification-item ${n.is_read ? '' : 'unread'}`;
+                    div.innerHTML = `
                         <div class="time">${n.time}</div>
-                        <div class="content">${n.content}</div>
-                    </div>
-                `).join('');
+                        <div class="content">
+                            <a href="/notification/${n.id}" class="text-decoration-none text-dark">${n.content || ''}</a>
+                        </div>
+                    `;
+                    const refNode = list.querySelector('#loadMoreBtn');
+                    if (refNode) {
+                        list.insertBefore(div, refNode);
+                    } else {
+                        list.appendChild(div);
+                    }
+                });
+                
+                hasMoreNotifications = data.has_more;
+                if (append) {
+                    currentPage++;
+                    isLoadingMore = false;
+                }
+                
+                // 移除旧的加载更多按钮
+                const oldBtn = document.getElementById('loadMoreBtn');
+                if (oldBtn) oldBtn.remove();
+                
+                // 添加新的加载更多按钮
+                if (hasMoreNotifications) {
+                    const btnDiv = document.createElement('div');
+                    btnDiv.id = 'loadMoreBtn';
+                    btnDiv.className = 'text-center py-2';
+                    btnDiv.innerHTML = `<button class="btn btn-link btn-sm text-muted" onclick="loadMoreNotifications()">加载更多...</button>`;
+                    list.appendChild(btnDiv);
+                }
+                
+                initNotificationImageClick();
+            })
+            .catch(err => {
+                console.error('加载通知失败:', err);
+                list.innerHTML = '<div class="notification-empty">加载失败，请刷新重试</div>';
             });
     }
-    // 定时刷新未读数量
-    setInterval(function() {
-        fetch('/api/notifications/unread_count')
+    
+    function loadMoreNotifications() {
+        loadNotifications(true);
+    }
+    
+    function initNotificationImageClick() {
+        document.querySelectorAll('.notification-item .content img').forEach(function(img) {
+            if (!img.hasClickListener) {
+                img.hasClickListener = true;
+                img.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const modal = new bootstrap.Modal(document.getElementById('imageModal'));
+                    document.getElementById('modalImage').src = this.src;
+                    modal.show();
+                });
+            }
+        });
+    }
+    function updateUnreadBadge(count) {
+        const badge = document.querySelector('.notification-btn .badge');
+        if (count > 0) {
+            if (!badge) {
+                document.querySelector('.notification-btn').innerHTML += 
+                    `<span class="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill">${count}</span>`;
+            } else { badge.textContent = count; }
+            if (count > lastUnreadCount && lastUnreadCount > 0) {
+                showToast('您有新的通知，请查看！', 'info');
+            }
+            lastUnreadCount = count;
+        } else {
+            if (badge) { badge.remove(); }
+            lastUnreadCount = 0;
+        }
+    }
+    function markAllRead() {
+        fetch('/api/notifications/mark_all_read', {method: 'POST'})
             .then(r => r.json())
-            .then(count => {
-                const badge = document.querySelector('.notification-btn .badge');
-                if (count > 0) {
-                    if (!badge) {
-                        document.querySelector('.notification-btn').innerHTML += 
-                            `<span class="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill">${count}</span>`;
-                    } else { badge.textContent = count; }
-                    // 如果有新通知，弹出Toast提示
-                    if (count > lastUnreadCount && lastUnreadCount > 0) {
-                        showToast('您有新的通知，请查看！', 'info');
-                    }
-                    lastUnreadCount = count;
-                } else {
-                    if (badge) { badge.remove(); }
-                    lastUnreadCount = 0;
+            .then(data => {
+                if (data.success) {
+                    updateUnreadBadge(0);
+                    loadNotifications();
                 }
             });
-    }, 5000);
+    }
+    function initNotificationSSE() {
+        if (typeof(EventSource) === 'undefined') {
+            return;
+        }
+        eventSource = new EventSource('/api/notifications/stream');
+        eventSource.onmessage = function(e) {
+            const count = parseInt(e.data) || 0;
+            updateUnreadBadge(count);
+        };
+        eventSource.onerror = function() {
+            eventSource.close();
+            setTimeout(initNotificationSSE, 30000);
+        };
+    }
+    initNotificationSSE();
     </script>
     {% block scripts %}{% endblock %}
 </body>

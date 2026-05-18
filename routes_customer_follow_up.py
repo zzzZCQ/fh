@@ -233,6 +233,8 @@ def sync_follow_up():
                 existing.salesman_name = salesman_name
             if follow_up_person and not existing.follow_up_person:
                 existing.follow_up_person = follow_up_person
+            if first_order.customer_wechat:
+                existing.customer_wechat = first_order.customer_wechat
             skip_count += 1
         else:
             # 新增记录
@@ -243,6 +245,7 @@ def sync_follow_up():
                 salesman_id=first_order.salesman_id,
                 follow_up_person=follow_up_person,
                 customer_name=customer_name,
+                customer_wechat=first_order.customer_wechat or '',
                 phone=phone,
                 address=first_order.address or '',
                 purchased_products=all_products,
@@ -293,6 +296,7 @@ def edit_follow_up(record_id):
         return redirect(url_for('customer_follow_up.follow_up_list'))
 
     record.customer_name = request.form.get('customer_name', '').strip()
+    record.customer_wechat = request.form.get('customer_wechat', '').strip()
     record.gender = request.form.get('gender', '').strip()
     record.phone = request.form.get('phone', '').strip()
     record.address = request.form.get('address', '').strip()
@@ -371,6 +375,7 @@ def add_customer():
     salesman_id = request.form.get('salesman_id', type=int)
     follow_up_person = request.form.get('follow_up_person', '').strip()
     customer_name = request.form.get('customer_name', '').strip()
+    customer_wechat = request.form.get('customer_wechat', '').strip()
     gender = request.form.get('gender', '').strip()
     phone = request.form.get('phone', '').strip()
     address = request.form.get('address', '').strip()
@@ -404,12 +409,13 @@ def add_customer():
 
     # 创建记录
     record = CustomerFollowUp(
-        order_id=None,  # 手动新增没有关联订单
+        order_id=None,
         group_name=group_name,
         salesman_name=salesman_name,
         salesman_id=salesman_id if salesman_id else current_user.id,
         follow_up_person=follow_up_person,
         customer_name=customer_name,
+        customer_wechat=customer_wechat,
         gender=gender,
         phone=phone,
         address=address,

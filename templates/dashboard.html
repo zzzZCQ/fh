@@ -164,10 +164,7 @@
                             <th>快递信息</th>
                             <th>签收时间</th>
                             <th>创建时间</th>
-                            {% if can_export %}
-                            <th>导出标记</th>
-                            {% endif %}
-                            <th>操作</th>
+                            <th style="width: 350px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -192,6 +189,8 @@
                                     <span class="badge" style="background-color:#dc3545; color:#fff; width:100%; display:inline-block;">拒签</span>
                                     {% elif order.logistics_status == '派送中' %}
                                     <span class="badge" style="background-color:#0dcaf0; color:#000; width:75%; display:inline-block;">派送中</span>
+                                    {% elif order.logistics_status == '待派送' %}
+                                    <span class="badge" style="background-color:#ff7f0e; color:#fff; width:75%; display:inline-block;">待派送</span>
                                     {% elif order.logistics_status == '运送中' %}
                                     <span class="badge" style="background-color:#0d6efd; color:#fff; width:75%; display:inline-block;">运送中</span>
                                     {% elif order.logistics_status == '已揽收' %}
@@ -213,46 +212,50 @@
                             </td>
                             <td>{{ order.sign_time.strftime('%Y-%m-%d %H:%M') if order.sign_time else '-' }}</td>
                             <td>{{ order.create_time.strftime('%Y-%m-%d %H:%M') }}</td>
-                            {% if can_export %}
-                            <td>
-                                {% if order.status == 'submitted' %}
-                                <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline" onclick="event.stopPropagation()" style="cursor:pointer;">
-                                    <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}">
+                            <td onclick="event.stopPropagation()">
+                            <div class="d-flex gap-1 align-items-center">
+                                <!-- 导出标记 -->
+                                {% if can_export and order.status == 'submitted' %}
+                                <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline">
+                                    <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}" style="transform: scale(1.2); cursor: pointer;">
+                                    <span class="text-muted small ms-1">导出</span>
                                 </form>
                                 {% endif %}
-                            </td>
-                            {% endif %}
-                            <td onclick="event.stopPropagation()">
-                                <div class="d-flex gap-1">
-                                    <!-- 发货按钮（管理员和发货员可见，待发货状态） -->
-                                    {% if can_ship and order.status == 'submitted' %}
-                                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#shipModal{{ order.id }}">发货</button>
-                                    {% endif %}
-                                    <!-- 编辑（草稿状态） -->
-                                    {% if can_edit_order and order.status == 'draft' and not order.delete_requested %}
-                                    <a href="{{ url_for('orders.edit_order', order_id=order.id) }}" class="btn btn-outline-primary btn-sm">编辑</a>
-                                    {% endif %}
-                                    <!-- 删除按钮：只能删除自己的订单 -->
-                                    {% if can_edit_order and not order.delete_requested and order.salesman_id == current_user.id %}
-                                    <form method="POST" action="{{ url_for('orders.delete_order', order_id=order.id) }}" class="d-inline">
-                                        <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('确定要删除订单 {{ order.group_name }}（{{ order.customer_name }}）吗？')">删除</button>
-                                    </form>
-                                    {% endif %}
-                                    <!-- 删除申请中 -->
-                                    {% if order.delete_requested %}
-                                    <span class="text-muted small">待审批</span>
-                                    {% endif %}
-                                    <!-- 审批删除（管理员可见） -->
-                                    {% if can_approve_delete and order.delete_requested %}
-                                    <form method="POST" action="{{ url_for('shipping.approve_delete', order_id=order.id) }}" class="d-inline">
-                                        <button type="submit" class="btn btn-outline-success btn-sm">通过</button>
-                                    </form>
-                                    <form method="POST" action="{{ url_for('shipping.reject_delete', order_id=order.id) }}" class="d-inline">
-                                        <button type="submit" class="btn btn-outline-secondary btn-sm">拒绝</button>
-                                    </form>
-                                    {% endif %}
-                                </div>
-                            </td>
+                                <!-- 提交按钮（草稿状态，仅自己的订单） -->
+                                {% if order.status == 'draft' and order.salesman_id == current_user.id %}
+                                <form method="POST" action="{{ url_for('orders.submit_order', order_id=order.id) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('确定要提交订单 {{ order.group_name }}（{{ order.customer_name }}）吗？提交后将通知发货员。')">提交</button>
+                                </form>
+                                {% endif %}
+                                <!-- 发货按钮（管理员和发货员可见，待发货状态） -->
+                                {% if can_ship and order.status == 'submitted' %}
+                                <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#shipModal{{ order.id }}">发货</button>
+                                {% endif %}
+                                <!-- 编辑（草稿状态） -->
+                                {% if can_edit_order and order.status == 'draft' and not order.delete_requested %}
+                                <a href="{{ url_for('orders.edit_order', order_id=order.id) }}" class="btn btn-outline-primary btn-sm">编辑</a>
+                                {% endif %}
+                                <!-- 删除按钮：只能删除自己的订单 -->
+                                {% if can_edit_order and not order.delete_requested and order.salesman_id == current_user.id %}
+                                <form method="POST" action="{{ url_for('orders.delete_order', order_id=order.id) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('确定要删除订单 {{ order.group_name }}（{{ order.customer_name }}）吗？')">删除</button>
+                                </form>
+                                {% endif %}
+                                <!-- 删除申请中 -->
+                                {% if order.delete_requested %}
+                                <span class="text-muted small">待审批</span>
+                                {% endif %}
+                                <!-- 审批删除（管理员可见） -->
+                                {% if can_approve_delete and order.delete_requested %}
+                                <form method="POST" action="{{ url_for('shipping.approve_delete', order_id=order.id) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-outline-success btn-sm">通过</button>
+                                </form>
+                                <form method="POST" action="{{ url_for('shipping.reject_delete', order_id=order.id) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm">拒绝</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
                         </tr>
 
                         <!-- 发货模态框（管理员和发货员可见） -->
@@ -477,6 +480,7 @@ function showOrderDetail(orderId) {
                             <table class="table table-sm">
                                 <tr><th width="100">已付定金</th><td><input type="text" class="form-control form-control-sm" name="paid_amount" value="${data.paid_amount || ''}"></td></tr>
                                 <tr><th>代收金额</th><td><input type="number" class="form-control form-control-sm" name="collect_amount" value="${data.collect_amount || 0}"></td></tr>
+                                <tr><th>微信名</th><td><input type="text" class="form-control form-control-sm" name="customer_wechat" value="${data.customer_wechat || ''}"></td></tr>
                                 <tr><th>赠品</th><td>${data.has_gift ? (data.gift_info || '有') : '无'}</td></tr>
                                 <tr><th>快递</th><td><input type="text" class="form-control form-control-sm" name="express_type" value="${data.express_type || ''}"></td></tr>
                                 <tr><th>单号</th><td><input type="text" class="form-control form-control-sm" name="tracking_number" value="${data.tracking_number || ''}"></td></tr>
@@ -521,6 +525,7 @@ function showOrderDetail(orderId) {
                             <table class="table table-sm">
                                 <tr><th width="100">已付定金</th><td>${data.paid_amount || '-'}</td></tr>
                                 <tr><th>代收金额</th><td>${data.collect_amount || '-'}</td></tr>
+                                <tr><th>微信名</th><td>${data.customer_wechat || '-'}</td></tr>
                                 <tr><th>赠品</th><td>${data.has_gift ? (data.gift_info || '有') : '无'}</td></tr>
                                 <tr><th>快递</th><td>${data.express_type || '-'}</td></tr>
                                 <tr><th>单号</th><td>${data.tracking_number || '-'}</td></tr>
@@ -545,6 +550,11 @@ function showOrderDetail(orderId) {
 
             const footer = document.querySelector('#orderDetailModal .modal-footer');
             footer.innerHTML = '';
+            {% if current_user.has_role('salesman') %}
+            if (data.status === 'draft' && data.salesman_id === {{ current_user.id }}) {
+                footer.innerHTML += '<button type="button" class="btn btn-success" onclick="submitOrderFromDetail(' + data.id + ')"><i class="bi bi-send"></i> 提交订单</button> ';
+            }
+            {% endif %}
             {% if can_reissue_gift %}
             if (data.is_main_product) {
                 footer.innerHTML += '<button type="button" class="btn btn-info" onclick="showReissueGiftModal()"><i class="bi bi-gift"></i> 补发赠品</button> ';
@@ -589,7 +599,7 @@ function loadLogistics(orderId) {
                 groups[date].push(r);
             });
 
-            const statusMap = {'已签收': 'success', '拒签': 'danger', '派送中': 'warning', '运送中': 'primary', '已发货': 'info'};
+            const statusMap = {'已签收': 'success', '拒签': 'danger', '派送中': 'warning', '待派送': 'warning', '运送中': 'primary', '已发货': 'info'};
             const statusBadge = statusMap[result.logistics_status] || 'secondary';
             const cacheBadge = result.from_cache ? '<span class="badge bg-secondary ms-1">缓存</span>' : '';
 
@@ -672,6 +682,27 @@ function saveOrder() {
         }
     })
     .catch(() => { alert('保存失败'); });
+}
+{% endif %}
+
+{% if current_user.has_role('salesman') %}
+function submitOrderFromDetail(orderId) {
+    if (!confirm('确定要提交此订单吗？提交后将通知发货员。')) return;
+    
+    fetch('/order/submit/' + orderId, {
+        method: 'POST'
+    })
+    .then(r => {
+        if (r.redirected) {
+            window.location.href = r.url;
+        } else {
+            window.location.reload();
+        }
+    })
+    .catch(err => {
+        alert('提交失败: ' + err.message);
+        window.location.reload();
+    });
 }
 {% endif %}
 

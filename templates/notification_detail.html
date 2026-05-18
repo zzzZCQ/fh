@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}通知详情 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex align-items-center mb-4">
+        <a href="{{ url_for('auth.notifications') }}" class="btn btn-outline-secondary btn-sm me-3">
+            <i class="bi bi-arrow-left"></i> 返回通知列表
+        </a>
+        <h2 class="mb-0">通知详情</h2>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="badge {% if not notification.is_read %}bg-danger{% else %}bg-secondary{% endif %}">
+                        {{ '未读' if not notification.is_read else '已读' }}
+                    </span>
+                </div>
+                <small class="text-muted">
+                    <i class="bi bi-clock me-1"></i>
+                    {{ notification.create_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                </small>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="notification-content">
+                {{ notification.content | safe }}
+            </div>
+        </div>
+        {% if notification.order %}
+        <div class="card-footer bg-light">
+            <h6 class="mb-2"><i class="bi bi-box-seam me-2"></i>关联订单</h6>
+            <p class="mb-0">
+                {{ notification.order.group_name }} - 
+                {{ notification.order.customer_name or '未知客户' }}
+                {% if notification.order.phone %}
+                ({{ notification.order.phone }})
+                {% endif %}
+            </p>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="mt-4 d-flex gap-2">
+        <a href="{{ url_for('auth.notifications') }}" class="btn btn-secondary">
+            <i class="bi bi-list-ul"></i> 通知列表
+        </a>
+    </div>
+</div>
+
+<!-- 图片查看模态框 -->
+<div class="modal fade" id="imageModal" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content" style="background: rgba(0,0,0,0.9);">
+            <div class="modal-header border-0">
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body d-flex justify-content-center align-items-center">
+                <img id="modalImage" src="" class="img-fluid">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.notification-content {
+    font-size: 16px;
+    line-height: 1.8;
+}
+.notification-content img {
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: 8px;
+    margin: 12px 0;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+.notification-content img:hover {
+    transform: scale(1.02);
+}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = new bootstrap.Modal(document.getElementById('imageModal'));
+    const modalImg = document.getElementById('modalImage');
+    
+    document.querySelectorAll('.notification-content img').forEach(function(img) {
+        img.addEventListener('click', function() {
+            modalImg.src = this.src;
+            modal.show();
+        });
+    });
+});
+</script>
+{% endblock %}

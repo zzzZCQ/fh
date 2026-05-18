@@ -37,6 +37,7 @@
                         <th>所属组别</th>
                         <th>状态</th>
                         <th>钉钉导出</th>
+                        <th>广播通知</th>
                         <th>操作</th>
                     </tr>
                 </thead>
@@ -92,6 +93,13 @@
                             {% else %}
                             <span class="text-muted small">-</span>
                             {% endif %}
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('admin_users.toggle_user_broadcast', user_id=user.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-sm {% if user.can_broadcast %}btn-success{% else %}btn-outline-secondary{% endif %}" title="{% if user.can_broadcast %}点击关闭广播通知权限{% else %}点击开启广播通知权限{% endif %}">
+                                    <i class="bi bi-broadcast"></i> {% if user.can_broadcast %}已开启{% else %}未开启{% endif %}
+                                </button>
+                            </form>
                         </td>
                         <td>
                             {% if user.id != current_user.id and user.username != 'admin' %}

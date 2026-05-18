@@ -52,6 +52,7 @@ class User(UserMixin, db.Model):
     name = db.Column(db.String(80), nullable=False)  # 用户姓名
     is_active = db.Column(db.Boolean, default=True)  # 是否启用
     can_dingtalk_export = db.Column(db.Boolean, default=False)  # 是否有导出时发送钉钉的权限
+    can_broadcast = db.Column(db.Boolean, default=False)  # 是否有发送广播通知的权限
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'))  # 所属组别
     
     group = db.relationship('Group', backref=db.backref('users', lazy=True))
@@ -144,6 +145,7 @@ class Order(db.Model):
     express_type = db.Column(db.String(20))  # 快递类型：顺丰/中通/申通/韵达/极兔/京东
     # 客户与金额信息
     customer_name = db.Column(db.String(80))  # 客户名
+    customer_wechat = db.Column(db.String(80))  # 客户微信名
     paid_amount = db.Column(db.String(200))  # 已付定金（文本，如"100企微410"）
     pay_date = db.Column(db.Date)  # 付款日期
     collect_amount = db.Column(db.Float)  # 代收金额
@@ -151,7 +153,7 @@ class Order(db.Model):
     has_gift = db.Column(db.Boolean, default=False)  # 是否有赠品
     gift_info = db.Column(db.String(200))  # 赠品内容
     # 物流信息
-    logistics_status = db.Column(db.String(20), default='已发货')  # 已发货、派送中、已签收、拒签
+    logistics_status = db.Column(db.String(20), default='已发货')  # 已发货、派送中、待派送、已签收、拒签
     sign_time = db.Column(db.DateTime)  # 签收时间（顺丰API返回）
     # 关联组别（冗余存储，方便查询）
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'))
@@ -177,6 +179,7 @@ class Notification(db.Model):
     is_read = db.Column(db.Boolean, default=False)
     create_time = db.Column(db.DateTime, default=_now_bj)
     order_id = db.Column(db.Integer, db.ForeignKey('order.id'))
+    importance = db.Column(db.String(20), default='normal')  # normal=一般, important=重要, urgent=紧急
 
     user = db.relationship('User', backref=db.backref('notifications', lazy=True))
     order = db.relationship('Order', backref=db.backref('notifications', lazy=True))
@@ -244,12 +247,13 @@ class ImportTemplate(db.Model):
 class CustomerFollowUp(db.Model):
     """客户对接表"""
     id = db.Column(db.Integer, primary_key=True)
-    order_id = db.Column(db.Integer, db.ForeignKey('order.id'), nullable=True)  # 关联发货单
-    group_name = db.Column(db.String(100), default='')  # 组别
-    salesman_name = db.Column(db.String(100), default='')  # 业务员
-    salesman_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # 业务员ID
-    follow_up_person = db.Column(db.String(100), default='')  # 对接人员
-    customer_name = db.Column(db.String(100), default='')  # 客户姓名
+    order_id = db.Column(db.Integer, db.ForeignKey('order.id'), nullable=True)
+    group_name = db.Column(db.String(100), default='')
+    salesman_name = db.Column(db.String(100), default='')
+    salesman_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    follow_up_person = db.Column(db.String(100), default='')
+    customer_name = db.Column(db.String(100), default='')
+    customer_wechat = db.Column(db.String(100), default='')
     gender = db.Column(db.String(10), default='')  # 性别
     phone = db.Column(db.String(50), default='')  # 电话
     address = db.Column(db.String(500), default='')  # 地址

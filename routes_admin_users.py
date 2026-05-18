@@ -126,6 +126,24 @@ def toggle_user_dingtalk(user_id):
     return redirect(url_for('admin_users.admin_users'))
 
 
+@bp.route('/admin/user/toggle_broadcast/<int:user_id>', methods=['POST'])
+@role_required('admin')
+def toggle_user_broadcast(user_id):
+    """切换用户发送广播通知的权限"""
+    user = User.query.get_or_404(user_id)
+    # 非超级管理员只能操作同组及下级组的用户
+    if current_user.username != 'admin' and current_user.group_id:
+        managed_group_ids = current_user.get_managed_group_ids()
+        if user.group_id not in managed_group_ids:
+            flash('只能操作同组及下级组的用户！', 'danger')
+            return redirect(url_for('admin_users.admin_users'))
+    user.can_broadcast = not user.can_broadcast
+    status = '开启' if user.can_broadcast else '关闭'
+    db.session.commit()
+    flash(f'用户 {user.name} 的广播通知权限已{status}！', 'success')
+    return redirect(url_for('admin_users.admin_users'))
+
+
 @bp.route('/admin/user/toggle_active/<int:user_id>', methods=['POST'])
 @role_required('admin')
 def toggle_user_active(user_id):

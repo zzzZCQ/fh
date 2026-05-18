@@ -67,6 +67,7 @@
                             <th>业务员</th>
                             <th>对接人员</th>
                             <th>客户姓名</th>
+                            <th>微信名</th>
                             <th>性别</th>
                             <th>电话</th>
                             <th>地址</th>
@@ -85,6 +86,7 @@
                             <td>{{ r.salesman.name if r.salesman else r.salesman_name }}</td>
                             <td>{{ r.follow_up_person or '-' }}</td>
                             <td>{{ r.customer_name }}</td>
+                            <td>{{ r.customer_wechat or '-' }}</td>
                             <td>{{ r.gender or '-' }}</td>
                             <td>{{ r.phone }}</td>
                             <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.address }}">{{ r.address }}</td>
@@ -144,6 +146,10 @@
                                                     <input type="text" class="form-control" name="customer_name" value="{{ r.customer_name }}">
                                                 </div>
                                                 <div class="col-md-4">
+                                                    <label class="form-label">微信名</label>
+                                                    <input type="text" class="form-control" name="customer_wechat" value="{{ r.customer_wechat or '' }}">
+                                                </div>
+                                                <div class="col-md-4">
                                                     <label class="form-label">性别</label>
                                                     <select name="gender" class="form-select">
                                                         <option value="">未知</option>
@@ -151,7 +157,7 @@
                                                         <option value="女" {% if r.gender == '女' %}selected{% endif %}>女</option>
                                                     </select>
                                                 </div>
-                                                <div class="col-md-4">
+                                                <div class="col-md-3">
                                                     <label class="form-label">电话</label>
                                                     <input type="text" class="form-control" name="phone" value="{{ r.phone }}">
                                                 </div>
@@ -288,21 +294,16 @@
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">对接人员</label>
-                            <select name="follow_up_person" class="form-select">
-                                <option value="">未分配</option>
-                                {% for u in follow_up_users %}
-                                <option value="{{ u.name }}">{{ u.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
                             <label class="form-label">客户姓名 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="customer_name" required placeholder="客户姓名">
                         </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">微信名</label>
+                            <input type="text" class="form-control" name="customer_wechat" placeholder="客户微信名">
+                        </div>
                     </div>
                     <div class="row">
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-3 mb-3">
                             <label class="form-label">性别</label>
                             <select name="gender" class="form-select">
                                 <option value="">未知</option>
@@ -310,13 +311,22 @@
                                 <option value="女">女</option>
                             </select>
                         </div>
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-3 mb-3">
                             <label class="form-label">电话 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="phone" required placeholder="联系电话">
                         </div>
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-3 mb-3">
                             <label class="form-label">金额</label>
                             <input type="text" class="form-control" name="amount" placeholder="金额">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">对接人员</label>
+                            <select name="follow_up_person" class="form-select">
+                                <option value="">未分配</option>
+                                {% for u in follow_up_users %}
+                                <option value="{{ u.name }}">{{ u.name }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
                     <div class="mb-3">

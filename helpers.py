@@ -48,3 +48,87 @@ def notify_users(user_ids, content, order_id=None):
         notification = Notification(user_id=uid, content=content, order_id=order_id)
         db.session.add(notification)
     db.session.commit()
+
+
+def get_nearest_admin_upward(user):
+    """获取用户向上层级最近的管理员
+    
+    查找逻辑：
+    1. 首先检查用户所在组是否有管理员
+    2. 如果没有，向上查找父组
+    3. 继续向上直到找到管理员
+    4. 如果所有层级都没有，返回None
+    """
+    if not user or not user.group_id:
+        return None
+    
+    current_group = user.group
+    if not current_group:
+        return None
+    
+    while current_group:
+        admin = User.query.filter(
+            User.roles.like('%admin%'),
+            User.group_id == current_group.id,
+            User.is_active == True
+        ).first()
+        
+        if admin:
+            return admin
+        
+        current_group = current_group.parent
+    
+    return None
+
+
+def notify_user_upward_admin(user, content, order_id=None):
+    """通知用户向上层级最近的管理员
+    
+    如果没有找到上级管理员，不发送通知
+    """
+    admin = get_nearest_admin_upward(user)
+    if admin:
+        notification = Notification(user_id=admin.id, content=content, order_id=order_id)
+        db.session.add(notification)
+        db.session.commit()
+
+
+def broadcast_notification(sender, content, image_url=None, user_ids=None, importance='normal'):
+    """广播通知给用户（除发送者外）
+    
+    超级管理员发送给所有用户或指定用户；
+    普通用户只发送给自己的组及其下级组的用户；
+    
+    Args:
+        sender: 发送者用户对象
+        content: 通知内容（支持HTML）
+        image_url: 图片URL（可选）
+        user_ids: 指定的用户ID列表，可选（None表示发送给所有人）
+        importance: 重要性级别，'normal'(一般)、'important'(重要)、'urgent'(紧急)
+    """
+    from models import User
+    
+    if image_url:
+        full_content = f'{content}<br><img src="{image_url}" style="max-width:100%; max-height:300px; margin-top:8px; border-radius:4px;">'
+    else:
+        full_content = content
+    
+    users = []
+    
+    if user_ids:
+        users = User.query.filter(User.id.in_(user_ids), User.is_active == True).all()
+    elif sender.username == 'admin':
+        users = User.query.filter(User.is_active == True).all()
+    else:
+        target_group_ids = sender.get_managed_group_ids()
+        if target_group_ids:
+            users = User.query.filter(
+                User.is_active == True,
+                User.group_id.in_(target_group_ids)
+            ).all()
+    
+    for user in users:
+        if user.id != sender.id:
+            notification = Notification(user_id=user.id, content=full_content, importance=importance)
+            db.session.add(notification)
+    db.session.commit()

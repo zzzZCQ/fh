@@ -5,7 +5,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 
 from models import db, User, Order, Group, Category
-from helpers import role_required, get_unread_count, get_active_categories, get_active_gifts, notify_users
+from helpers import role_required, get_unread_count, get_active_categories, get_active_gifts, notify_users, notify_user_upward_admin
 
 bp = Blueprint('orders', __name__)
 
@@ -151,6 +151,7 @@ def create_order_page():
 def create_order():
     group_name = request.form.get('group_name')
     customer_name = request.form.get('customer_name')
+    customer_wechat = request.form.get('customer_wechat')
     paid_amount = request.form.get('paid_amount')
     pay_date = request.form.get('pay_date')
     collect_amount = request.form.get('collect_amount')
@@ -182,12 +183,13 @@ def create_order():
         address=address,
         remark=remark,
         customer_name=customer_name,
+        customer_wechat=customer_wechat,
         paid_amount=paid,
         pay_date=pay_d,
         collect_amount=collect,
         has_gift=has_gift,
         gift_info=gift_info,
-        group_id=current_user.group_id  # 自动带入当前用户的组别
+        group_id=current_user.group_id
     )
 
     if action == 'submit':
@@ -298,6 +300,7 @@ def api_order_detail(order_id):
         'salesman_name': order.salesman.name if order.salesman else '',
         'salesman_id': order.salesman_id,
         'customer_name': order.customer_name or '',
+        'customer_wechat': order.customer_wechat or '',
         'phone': order.phone,
         'address': order.address,
         'product_info': order.product_info,
@@ -450,6 +453,7 @@ def api_order_edit(order_id):
     # 保存旧值用于比较
     old_values = {
         'customer_name': order.customer_name,
+        'customer_wechat': order.customer_wechat,
         'phone': order.phone,
         'address': order.address,
         'product_info': order.product_info,
@@ -462,6 +466,7 @@ def api_order_edit(order_id):
 
     # 获取新值
     new_customer_name = request.form.get('customer_name', '').strip()
+    new_customer_wechat = request.form.get('customer_wechat', '').strip()
     new_phone = request.form.get('phone', '').strip()
     new_address = request.form.get('address', '').strip()
     new_product_info = request.form.get('product_info', '').strip()
@@ -473,6 +478,7 @@ def api_order_edit(order_id):
 
     # 更新字段
     order.customer_name = new_customer_name
+    order.customer_wechat = new_customer_wechat if new_customer_wechat else None
     order.phone = new_phone
     order.address = new_address
     order.product_info = new_product_info
@@ -490,6 +496,7 @@ def api_order_edit(order_id):
     changes = []
     field_labels = {
         'customer_name': '客户姓名',
+        'customer_wechat': '客户微信名',
         'phone': '电话',
         'address': '地址',
         'product_info': '产品信息',
@@ -518,6 +525,34 @@ def api_order_edit(order_id):
         'message': '订单已更新' + ('，已通知业务员' if changes else ''),
         'changes': changes
     })
+
+
+@bp.route('/order/submit/<int:order_id>', methods=['POST'])
+@role_required('salesman')
+def submit_order(order_id):
+    """提交草稿订单"""
+    order = Order.query.get_or_404(order_id)
+    if order.salesman_id != current_user.id:
+        flash('您只能提交自己的订单！', 'danger')
+        return redirect(url_for('orders.dashboard'))
+    
+    if order.status != 'draft':
+        flash('只有草稿状态的订单才能提交！', 'warning')
+        return redirect(url_for('orders.dashboard'))
+    
+    order.status = 'submitted'
+    from models import _now_bj
+    order.update_time = _now_bj()
+    
+    shipper_ids = [s.id for s in User.query.filter(User.roles.like('%shipper%'), User.is_active==True).all()]
+    customer_info = f"{order.customer_name or '未知'}-{order.phone}" if order.customer_name else order.phone
+    notify_users(shipper_ids,
+                 f'新的待发货订单：{order.group_name}，客户：{customer_info}，业务员：{current_user.name}，请及时处理！',
+                 order_id=order.id)
+    
+    db.session.commit()
+    flash('订单已提交，已通知发货员！', 'success')
+    return redirect(url_for('orders.dashboard'))
 
 
 @bp.route('/order/delete/<int:order_id>', methods=['POST'])
@@ -556,9 +591,8 @@ def delete_order(order_id):
     order.delete_requested = True
     order.delete_request_time = _now_bj()
     db.session.commit()
-    admin_ids = [a.id for a in User.query.filter(User.roles.like('%admin%')).all()]
     customer_info = f"{order.customer_name or '未知'}-{order.phone}" if order.customer_name else order.phone
-    notify_users(admin_ids,
+    notify_user_upward_admin(current_user,
                  f'业务员 {current_user.name} 提交了删除订单 {order.group_name}（客户：{customer_info}）的申请，请处理！',
                  order_id=order.id)
     flash('删除申请已提交，等待管理员审批！', 'success')
