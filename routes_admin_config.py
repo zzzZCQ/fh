@@ -382,7 +382,7 @@ def admin_broadcast():
     """广播消息页面"""
     from models import User
     
-    if not (current_user.username == 'admin' or current_user.can_broadcast):
+    if not (current_user.has_role('admin') and current_user.can_broadcast):
         flash('您没有发送广播通知的权限！', 'danger')
         return redirect(url_for('orders.dashboard'))
     
@@ -405,7 +405,7 @@ def send_broadcast():
     """发送广播消息"""
     from models import User
     
-    if not (current_user.username == 'admin' or current_user.can_broadcast):
+    if not (current_user.has_role('admin') and current_user.can_broadcast):
         flash('您没有发送广播通知的权限！', 'danger')
         return redirect(url_for('orders.dashboard'))
     

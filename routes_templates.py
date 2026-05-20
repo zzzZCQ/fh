@@ -59,7 +59,8 @@ def admin_groups():
         groups = []
 
     # 计算当前用户可管理的组别ID（用于前端按钮权限控制）
-    if is_super_admin:
+    # 有admin角色（包括超级管理员）可以管理所有组别
+    if is_super_admin or current_user.has_role('admin'):
         managed_group_ids = [g.id for g in groups]
     elif current_user.group_id:
         managed_group_ids = current_user.get_managed_group_ids()

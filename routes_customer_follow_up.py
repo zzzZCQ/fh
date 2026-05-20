@@ -98,13 +98,27 @@ def _merge_products(existing, new_product):
 @login_required
 def follow_up_list():
     """客户对接列表"""
+    # 获取当前用户可管理的组ID列表
+    managed_group_ids = current_user.get_managed_group_ids()
+    
+    # 获取可管理的业务员ID列表（本级及以下组的业务员和管理员）
+    managed_salesman_ids = []
+    if managed_group_ids:
+        managed_salesmen = User.query.filter(
+            User.group_id.in_(managed_group_ids),
+            (User.roles.like('%salesman%') | User.roles.like('%admin%'))
+        ).all()
+        managed_salesman_ids = [u.id for u in managed_salesmen]
+    
     # 对接员：只看分配给自己的
     if current_user.has_role('follow_up') and not current_user.has_role('admin'):
         query = CustomerFollowUp.query.filter_by(follow_up_person=current_user.name)
-    # 管理员：看所有，可按业务员筛选
+    # 管理员：看本级及以下，可按业务员筛选
     elif current_user.has_role('admin'):
         salesman_id = request.args.get('salesman_id', type=int)
         query = CustomerFollowUp.query
+        if managed_salesman_ids:
+            query = query.filter(CustomerFollowUp.salesman_id.in_(managed_salesman_ids))
         if salesman_id:
             query = query.filter_by(salesman_id=salesman_id)
     # 业务员：只看自己的
@@ -135,13 +149,23 @@ def follow_up_list():
 
     records = query.order_by(CustomerFollowUp.create_time.desc()).all()
 
-    # 获取业务员列表（管理员用）
+    # 获取业务员列表（管理员用，只显示可管理的）
     salesmen = []
     if current_user.has_role('admin'):
-        salesmen = User.query.filter(User.roles.like('%salesman%') | User.roles.like('%admin%')).all()
+        salesmen = User.query.filter(
+            User.group_id.in_(managed_group_ids) if managed_group_ids else True,
+            (User.roles.like('%salesman%') | User.roles.like('%admin%'))
+        ).all()
 
-    # 获取对接员列表（同步时选择用）
-    follow_up_users = User.query.filter(User.roles.like('%follow_up%')).all()
+    # 获取对接员列表（同步时选择用，只显示可管理的）
+    follow_up_users = []
+    if managed_group_ids:
+        follow_up_users = User.query.filter(
+            User.group_id.in_(managed_group_ids),
+            User.roles.like('%follow_up%')
+        ).all()
+    else:
+        follow_up_users = User.query.filter(User.roles.like('%follow_up%')).all()
 
     return render_template('customer_follow_up.html',
                            records=records,
@@ -442,11 +466,25 @@ def export_follow_up():
     is_followed = request.args.get('is_followed', '')
     salesman_id = request.args.get('salesman_id', type=int)
 
+    # 获取当前用户可管理的组ID列表
+    managed_group_ids = current_user.get_managed_group_ids()
+    
+    # 获取可管理的业务员ID列表（本级及以下组的业务员和管理员）
+    managed_salesman_ids = []
+    if managed_group_ids:
+        managed_salesmen = User.query.filter(
+            User.group_id.in_(managed_group_ids),
+            (User.roles.like('%salesman%') | User.roles.like('%admin%'))
+        ).all()
+        managed_salesman_ids = [u.id for u in managed_salesmen]
+
     # 构建查询
     if current_user.has_role('follow_up') and not current_user.has_role('admin'):
         query = CustomerFollowUp.query.filter_by(follow_up_person=current_user.name)
     elif current_user.has_role('admin'):
         query = CustomerFollowUp.query
+        if managed_salesman_ids:
+            query = query.filter(CustomerFollowUp.salesman_id.in_(managed_salesman_ids))
         if salesman_id:
             query = query.filter_by(salesman_id=salesman_id)
     else:

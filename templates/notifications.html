@@ -56,6 +56,21 @@
 .notification-preview {
     font-size: 14px;
     color: #333;
+    pointer-events: none; /* 确保内容不阻止点击 */
 }
 </style>
+<script>
+// 确保通知列表项可以正常点击
+document.addEventListener('DOMContentLoaded', function() {
+    const items = document.querySelectorAll('.list-group-item-action');
+    items.forEach(function(item) {
+        item.addEventListener('click', function(e) {
+            const href = this.getAttribute('href');
+            if (href) {
+                window.location.href = href;
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

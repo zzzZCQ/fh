@@ -13,40 +13,23 @@
         vertical-align: middle;
     }
     
-    /* 固定列 */
-    .order-table th:last-child,
-    .order-table td:last-child,
-    .order-table th:nth-last-child(2),
-    .order-table td:nth-last-child(2) {
-        position: sticky;
-    }
-    
-    /* 导出标记列 */
-    .order-table th:nth-last-child(2),
-    .order-table td:nth-last-child(2) {
-        right: 80px;
-        background: #fff;
-    }
-    
-    /* 操作列 */
+    /* 固定列 - 只固定最后一列（操作列） */
     .order-table th:last-child,
     .order-table td:last-child {
+        position: sticky;
         right: 0;
         background: #fff;
     }
     
     /* 表头 */
-    .order-table thead th:nth-last-child(2),
     .order-table thead th:last-child {
         background: #f8f9fa !important;
     }
     
     /* 斑马纹 */
-    .order-table tbody tr:nth-child(odd) td:nth-last-child(2),
     .order-table tbody tr:nth-child(odd) td:last-child {
         background: #fff !important;
     }
-    .order-table tbody tr:nth-child(even) td:nth-last-child(2),
     .order-table tbody tr:nth-child(even) td:last-child {
         background: #f8f9fa !important;
     }
@@ -58,7 +41,14 @@
 </style>
 
 <div class="container mt-4">
-    <h2>{{ page_title }}</h2>
+    <div class="d-flex align-items-center mb-3">
+        <h2>{{ page_title }}</h2>
+        <div class="flex-1 text-center" style="font-size: 0.95rem;">
+            <span class="text-muted">已签收金额：<strong class="text-info">{{ "%.2f"|format(signed_amount) }}</strong></span>
+            <span class="text-muted mx-4">总金额：<strong class="text-success">{{ "%.2f"|format(total_performance) }}</strong></span>
+        </div>
+        <div class="w-24"></div>
+    </div>
 
     <div class="d-flex gap-2 mb-3 flex-wrap" style="white-space:nowrap;">
         <!-- 搜索表单 -->
@@ -348,17 +338,7 @@
                 {% endif %}
             </div>
 
-            <!-- 汇总信息 -->
-            <div class="row mt-3">
-                <div class="col-12">
-                    <div class="d-flex justify-content-end gap-4" style="font-size: 0.95rem;">
-                        <span class="text-muted">已收金额：<strong class="text-primary">{{ "%.2f"|format(total_paid) }}</strong></span>
-                        <span class="text-muted">代收金额：<strong class="text-warning">{{ "%.2f"|format(total_collect) }}</strong></span>
-                        <span class="text-muted">已签收金额：<strong class="text-info">{{ "%.2f"|format(signed_amount) }}</strong></span>
-                        <span class="text-muted">总业绩：<strong class="text-success" style="font-size: 1.1rem;">{{ "%.2f"|format(total_performance) }}</strong></span>
-                    </div>
-                </div>
-            </div>
+
         </div>
     </div>
 </div>

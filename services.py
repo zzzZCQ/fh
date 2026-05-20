@@ -15,7 +15,7 @@ from config import (
     DINGTALK_CORP_ID, DINGTALK_APP_KEY, DINGTALK_APP_SECRET, DINGTALK_AGENT_ID,
     DINGTALK_CHAT_ID, DINGTALK_UNION_ID, DINGTALK_SPACE_ID, DINGTALK_OPERATOR_ID, DINGTALK_WORKSPACE_ID
 )
-from models import db, Order
+from models import db, Order, OrderReminder
 
 # ============ 物流信息缓存 ============
 CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cache')
@@ -443,27 +443,34 @@ def update_single_order_logistics(order):
         return {'success': False, 'error': str(e)}
 
 
-def update_sf_logistics(order_ids=None):
-    """批量更新顺丰物流信息"""
-    query = Order.query.filter(
-        Order.express_type == '顺丰',
-        Order.tracking_no.isnot(None)
-    )
-    if order_ids:
-        query = query.filter(Order.id.in_(order_ids))
+def update_sf_logistics(order_ids=None, app=None):
+    """批量更新顺丰物流信息（支持定时任务调用）"""
+    def _do_update():
+        query = Order.query.filter(
+            Order.express_type == '顺丰',
+            Order.tracking_number.isnot(None)
+        )
+        if order_ids:
+            query = query.filter(Order.id.in_(order_ids))
 
-    orders = query.all()
-    updated = 0
-    failed = 0
+        orders = query.all()
+        updated = 0
+        failed = 0
 
-    for order in orders:
-        result = update_single_order_logistics(order)
-        if result['success']:
-            updated += 1
-        else:
-            failed += 1
+        for order in orders:
+            result = update_single_order_logistics(order)
+            if result['success']:
+                updated += 1
+            else:
+                failed += 1
 
-    return {'updated': updated, 'failed': failed, 'total': len(orders)}
+        return {'updated': updated, 'failed': failed, 'total': len(orders)}
+    
+    if app:
+        with app.app_context():
+            return _do_update()
+    else:
+        return _do_update()
 
 
 # ============ 钉钉API Token缓存 ============
@@ -1725,5 +1732,87 @@ def _send_file_legacy_api(token, media_id):
         error_msg = f"发送文件失败: {result}"
         print(f"[ERROR] {error_msg}")
         return {'success': False, 'error': error_msg}
+
+
+# ============ 订单发货提醒功能 ============
+def check_order_reminders(app=None):
+    """
+    检查并发送订单发货提醒
+    
+    定时任务调用此函数，检查所有未发送的提醒，
+    如果预计发货时间已到或即将到达，发送桌面通知给业务员
+    
+    Args:
+        app: Flask应用实例（用于创建应用上下文）
+    
+    Returns:
+        dict with 'sent_count' and 'total_count'
+    """
+    def _do_check():
+        from datetime import datetime
+        
+        now = datetime.now()
+        print(f"[REMINDER] 检查订单发货提醒 - {now.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # 查询所有未发送的提醒，且预计时间已到或在5分钟内
+        reminders = OrderReminder.query.filter(
+            OrderReminder.is_sent == False,
+            OrderReminder.expected_shipping_time <= now
+        ).all()
+        
+        print(f"[REMINDER] 找到 {len(reminders)} 条待发送提醒")
+        
+        sent_count = 0
+        for reminder in reminders:
+            try:
+                # 获取订单和用户信息
+                order = reminder.order
+                user = reminder.user
+                
+                if not order or not user:
+                    print(f"[REMINDER] 订单或用户不存在，跳过提醒 ID:{reminder.id}")
+                    continue
+                
+                # 构建提醒消息
+                customer_info = f"{order.customer_name or '未知客户'}-{order.phone}"
+                message = f"【发货提醒】订单 #{order.id} ({customer_info}) 已到预计发货时间，请及时处理！"
+                
+                print(f"[REMINDER] 发送提醒给 {user.name} (ID:{user.id}): {message}")
+                
+                # 通过Socket.IO发送通知（需要应用上下文）
+                try:
+                    from flask_socketio import emit
+                    emit('notification', {
+                        'type': 'shipping_reminder',
+                        'title': '发货提醒',
+                        'content': message,
+                        'order_id': order.id,
+                        'user_id': user.id,
+                        'time': now.strftime('%Y-%m-%d %H:%M:%S')
+                    }, room=f'user_{user.id}')
+                    print(f"[REMINDER] Socket.IO 发送成功")
+                except Exception as e:
+                    print(f"[REMINDER] Socket.IO 发送失败: {e}")
+                    # 降级处理：记录到日志，后续可通过其他方式通知
+                
+                # 更新提醒状态
+                reminder.is_sent = True
+                reminder.sent_time = now
+                db.session.commit()
+                sent_count += 1
+                
+                print(f"[REMINDER] 提醒 ID:{reminder.id} 已标记为已发送")
+                
+            except Exception as e:
+                print(f"[REMINDER] 处理提醒 ID:{reminder.id} 失败: {e}")
+        
+        print(f"[REMINDER] 检查完成，成功发送 {sent_count} 条提醒")
+        return {'sent_count': sent_count, 'total_count': len(reminders)}
+    
+    if app:
+        with app.app_context():
+            return _do_check()
+    else:
+        return _do_check()
 
 

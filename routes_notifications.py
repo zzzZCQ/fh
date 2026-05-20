@@ -24,23 +24,40 @@ def notification_stream():
     
     def generate():
         last_count = initial_count
-        yield f"data: {last_count}\n\n"
+        try:
+            yield f"data: {last_count}\n\n"
+        except (GeneratorExit, Exception):
+            return
         
+        consecutive_errors = 0
         while True:
-            time.sleep(10)
             try:
+                time.sleep(10)
                 # 在新的应用上下文中查询
                 with app.app_context():
                     new_count = Notification.query.filter_by(user_id=user_id, is_read=False).count()
                 if new_count != last_count:
                     yield f"data: {new_count}\n\n"
                     last_count = new_count
+                consecutive_errors = 0
+            except GeneratorExit:
+                return
             except Exception as e:
-                # 静默处理错误，继续尝试
-                pass
+                consecutive_errors += 1
+                if consecutive_errors >= 3:
+                    return
+                time.sleep(1)
+    
+    def event_stream():
+        """包装生成器，处理连接断开"""
+        try:
+            for data in generate():
+                yield data
+        except (GeneratorExit, ConnectionResetError, BrokenPipeError):
+            pass
     
     return Response(
-        generate(),
+        event_stream(),
         mimetype='text/event-stream',
         headers={
             'Cache-Control': 'no-cache',

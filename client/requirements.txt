@@ -1,0 +1,4 @@
+PyQt5==5.15.10
+python-socketio[client]==5.10.0
+Pillow>=11.0.0
+requests>=2.31.0

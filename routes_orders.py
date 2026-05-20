@@ -4,7 +4,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from datetime import datetime
 
-from models import db, User, Order, Group, Category
+from models import db, User, Order, Group, Category, OrderReminder
 from helpers import role_required, get_unread_count, get_active_categories, get_active_gifts, notify_users, notify_user_upward_admin
 
 bp = Blueprint('orders', __name__)
@@ -67,7 +67,25 @@ def dashboard():
             query = query.filter(Order.create_time >= start_date, Order.create_time <= end_date)
         except (ValueError, IndexError):
             pass
-    orders = query.order_by(Order.create_time.desc()).paginate(page=page, per_page=per_page)
+    orders = query.order_by(Order.create_time.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    
+    # 如果当前页码超出范围，自动跳转到第一页
+    if page > 1 and orders.total == 0:
+        orders = query.order_by(Order.create_time.desc()).paginate(page=1, per_page=per_page, error_out=False)
+    
+    # 当前页汇总统计（使用数据库聚合，避开paid_amount的文本解析问题）
+    page_count = orders.total
+    # 由于paid_amount是文本格式（如"100企微410"），只能统计当前页并在Python中解析
+    import re
+    page_paid = 0
+    page_collect = 0
+    for o in orders.items:
+        if o.paid_amount:
+            num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
+            if num_match:
+                page_paid += float(num_match.group(1))
+        if o.collect_amount:
+            page_collect += float(o.collect_amount)
     
     # 业务员筛选：可见范围是本级及下级
     salesman_query = User.query.filter(User.roles.like('%salesman%'))
@@ -80,30 +98,35 @@ def dashboard():
         salesman_query = salesman_query.filter(User.group_id.in_(visible_group_ids))
     salesmen = salesman_query.all()
 
-    # 汇总统计（基于当前筛选条件的全部数据，不分页）
-    import re
-    summary_query = query  # 复用当前筛选条件
-    all_orders = summary_query.all()
-
-    total_paid = 0  # 已付定金汇总（只取数字部分）
-    total_collect = 0  # 代收金额汇总
-    signed_amount = 0  # 已签收金额
-    for o in all_orders:
-        if o.paid_amount:
-            num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
-            if num_match:
-                total_paid += float(num_match.group(1))
-        if o.collect_amount:
-            total_collect += float(o.collect_amount)
-        # 已签收金额
-        if o.logistics_status == '已签收':
+    # 汇总统计（基于当前筛选条件的全部数据，不加载到内存）
+    # 由于paid_amount是文本格式，使用子查询获取ID列表，然后在Python中批量解析
+    # 为了性能，只取前1000条进行汇总统计
+    summary_ids = [o.id for o in query.with_entities(Order.id).limit(1000).all()]
+    
+    total_paid = 0
+    total_collect = 0
+    signed_amount = 0
+    
+    if summary_ids:
+        # 批量查询这些订单的数据
+        summary_orders = Order.query.filter(Order.id.in_(summary_ids)).all()
+        for o in summary_orders:
             if o.paid_amount:
                 num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
                 if num_match:
-                    signed_amount += float(num_match.group(1))
+                    total_paid += float(num_match.group(1))
             if o.collect_amount:
-                signed_amount += float(o.collect_amount)
-    total_performance = total_paid + total_collect  # 总业绩
+                total_collect += float(o.collect_amount)
+            # 已签收金额
+            if o.logistics_status == '已签收':
+                if o.paid_amount:
+                    num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
+                    if num_match:
+                        signed_amount += float(num_match.group(1))
+                if o.collect_amount:
+                    signed_amount += float(o.collect_amount)
+    
+    total_performance = total_paid + total_collect
 
     # 组别筛选列表：管理员本级及以下
     filter_groups = []
@@ -134,7 +157,10 @@ def dashboard():
                            total_paid=total_paid,
                            total_collect=total_collect,
                            signed_amount=signed_amount,
-                           total_performance=total_performance)
+                           total_performance=total_performance,
+                           page_paid=page_paid,
+                           page_collect=page_collect,
+                           page_count=page_count)
 
 
 @bp.route('/order/create', methods=['GET'])
@@ -161,13 +187,26 @@ def create_order():
     address = request.form.get('address')
     remark = request.form.get('remark', '')
     action = request.form.get('action')
+    expected_shipping_time_str = request.form.get('expected_shipping_time')
     # 赠品字段
     has_gift = request.form.get('has_gift') == 'on'
     gift_list = request.form.getlist('gift_info') if has_gift else []
     gift_info = '、'.join([g.strip() for g in gift_list if g.strip()])
 
+    # 判断是否是AJAX请求
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+              request.is_json or \
+              request.form.get('_ajax') == '1'
+    
+    # 添加隐藏字段用于识别AJAX请求
+    if request.form.get('_ajax') == '1':
+        is_ajax = True
+    
     if not all([group_name, product_info, category, phone, address]):
-        flash('请填写所有必填字段！', 'danger')
+        error_msg = '请填写所有必填字段！'
+        if is_ajax:
+            return jsonify({'success': False, 'error': error_msg})
+        flash(error_msg, 'danger')
         return redirect(url_for('orders.create_order_page'))
 
     paid = paid_amount.strip() if paid_amount else None
@@ -205,6 +244,31 @@ def create_order():
         flash('草稿已保存！', 'success')
 
     db.session.add(order)
+    db.session.flush()  # 先获取order.id
+
+    # 如果是保存草稿（AJAX请求），返回JSON
+    if action == 'save_draft':
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'order_id': order.id,
+            'message': '草稿已保存'
+        })
+    
+    # 如果有设置预计发货时间，保存提醒
+    if expected_shipping_time_str:
+        try:
+            expected_shipping_time = datetime.strptime(expected_shipping_time_str, '%Y-%m-%dT%H:%M')
+            reminder = OrderReminder(
+                order_id=order.id,
+                user_id=current_user.id,
+                expected_shipping_time=expected_shipping_time,
+                is_sent=False
+            )
+            db.session.add(reminder)
+        except ValueError:
+            pass  # 时间格式错误，忽略提醒
+
     db.session.commit()
     return redirect(url_for('orders.dashboard'))
 
@@ -564,6 +628,8 @@ def delete_order(order_id):
         return redirect(url_for('orders.dashboard'))
 
     if order.status == 'draft':
+        # 先删除关联的提醒记录
+        OrderReminder.query.filter_by(order_id=order.id).delete()
         db.session.delete(order)
         db.session.commit()
         flash('草稿已删除！', 'success')
@@ -582,6 +648,8 @@ def delete_order(order_id):
             paid = float(num_match.group(1))
     collect = float(order.collect_amount or 0)
     if paid == 0 and collect == 0:
+        # 先删除关联的提醒记录
+        OrderReminder.query.filter_by(order_id=order.id).delete()
         db.session.delete(order)
         db.session.commit()
         flash('订单已删除！（金额为0，无需审批）', 'success')
@@ -597,3 +665,47 @@ def delete_order(order_id):
                  order_id=order.id)
     flash('删除申请已提交，等待管理员审批！', 'success')
     return redirect(url_for('orders.dashboard'))
+
+
+# ============ 订单提醒API ============
+@bp.route('/api/order/<int:order_id>/reminder', methods=['POST'])
+@login_required
+def update_order_reminder(order_id):
+    """更新订单的预计发货时间和提醒"""
+    order = Order.query.get_or_404(order_id)
+    
+    # 检查权限：只有订单的业务员才能设置提醒
+    if order.salesman_id != current_user.id:
+        return jsonify({'success': False, 'error': '没有权限操作此订单'})
+    
+    data = request.get_json()
+    if not data or 'expected_shipping_time' not in data:
+        return jsonify({'success': False, 'error': '缺少预计发货日期'})
+    
+    expected_shipping_date_str = data['expected_shipping_time']
+    
+    try:
+        # 解析日期（格式为 YYYY-MM-DD）
+        expected_shipping_date = datetime.strptime(expected_shipping_date_str, '%Y-%m-%d')
+        # 设置时间为当天凌晨1点
+        expected_shipping_time = expected_shipping_date.replace(hour=1, minute=0, second=0, microsecond=0)
+    except ValueError:
+        return jsonify({'success': False, 'error': '日期格式错误'})
+    
+    # 删除该订单之前的所有未发送提醒
+    OrderReminder.query.filter_by(order_id=order_id, is_sent=False).delete()
+    
+    # 创建新的提醒
+    reminder = OrderReminder(
+        order_id=order_id,
+        user_id=current_user.id,
+        expected_shipping_time=expected_shipping_time,
+        is_sent=False
+    )
+    db.session.add(reminder)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': '提醒已设置，将在预计发货时间前通知您'
+    })

@@ -14,7 +14,13 @@ bp = Blueprint('admin_users', __name__)
 @role_required('admin')
 def admin_users():
     page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
     keyword = request.args.get('keyword', '').strip()
+
+    # 验证每页条数
+    valid_per_page = [10, 20, 50, 100]
+    if per_page not in valid_per_page:
+        per_page = 10
 
     # 超级管理员看所有用户，其他管理员只看同级及下级组
     if current_user.username == 'admin':
@@ -29,7 +35,15 @@ def admin_users():
     if keyword:
         query = query.filter(db.or_(User.username.contains(keyword), User.name.contains(keyword)))
 
-    users = query.order_by(User.id.asc()).paginate(page=page, per_page=10)
+    # 按组别排序，未分配的排最后
+    from sqlalchemy import asc, desc
+    query = query.outerjoin(Group, User.group_id == Group.id).order_by(
+        Group.level.asc().nullslast(),
+        Group.id.asc().nullslast(),
+        User.username.asc()
+    )
+
+    users = query.paginate(page=page, per_page=per_page)
 
     # 组别下拉框：超级管理员看所有，其他管理员只看本级及下级
     if current_user.username == 'admin':
@@ -40,8 +54,79 @@ def admin_users():
     else:
         groups = []
 
-    return render_template('admin_users.html', users=users, groups=groups, keyword=keyword,
+    return render_template('admin_users.html', users=users, groups=groups, keyword=keyword, per_page=per_page,
                            unread_count=get_unread_count(current_user.id))
+
+
+@bp.route('/admin/user/<int:user_id>')
+@role_required('admin')
+def user_detail(user_id):
+    """用户详情页"""
+    user = User.query.get_or_404(user_id)
+    
+    if current_user.username != 'admin' and current_user.group_id:
+        managed_group_ids = current_user.get_managed_group_ids()
+        if user.group_id not in managed_group_ids:
+            flash('您没有权限查看该用户信息！', 'danger')
+            return redirect(url_for('admin_users.admin_users'))
+    
+    if current_user.username == 'admin':
+        groups = Group.query.filter_by(is_active=True).order_by(Group.level.asc(), Group.create_time.asc()).all()
+    elif current_user.group_id:
+        managed_group_ids = current_user.get_managed_group_ids()
+        groups = Group.query.filter(Group.id.in_(managed_group_ids), Group.is_active==True).order_by(Group.level.asc(), Group.create_time.asc()).all()
+    else:
+        groups = []
+    
+    order_count = Order.query.filter_by(salesman_id=user.id).count()
+    
+    return render_template('user_detail.html', user=user, groups=groups, order_count=order_count,
+                           unread_count=get_unread_count(current_user.id))
+
+
+@bp.route('/admin/user/update/<int:user_id>', methods=['POST'])
+@role_required('admin')
+def update_user(user_id):
+    """更新用户信息"""
+    user = User.query.get_or_404(user_id)
+    
+    if current_user.username != 'admin' and current_user.group_id:
+        managed_group_ids = current_user.get_managed_group_ids()
+        if user.group_id not in managed_group_ids:
+            flash('您没有权限修改该用户信息！', 'danger')
+            return redirect(url_for('admin_users.admin_users'))
+    
+    selected_roles = request.form.getlist('roles')
+    valid_roles = ['salesman', 'shipper', 'admin', 'follow_up']
+    roles = [r for r in selected_roles if r in valid_roles]
+    if roles:
+        user.roles = ','.join(roles)
+    
+    group_id = request.form.get('group_id', type=int)
+    if group_id:
+        if current_user.username != 'admin' and current_user.group_id:
+            managed_group_ids = current_user.get_managed_group_ids()
+            if group_id not in managed_group_ids:
+                flash('只能将用户分配到同组及下级组！', 'danger')
+                return redirect(url_for('admin_users.user_detail', user_id=user_id))
+        user.group_id = group_id
+    else:
+        user.group_id = None
+    
+    if user.has_role('shipper') or user.has_role('admin'):
+        can_dingtalk = request.form.get('can_dingtalk_export') == 'on'
+        user.can_dingtalk_export = can_dingtalk
+    
+    can_broadcast = request.form.get('can_broadcast') == 'on'
+    user.can_broadcast = can_broadcast
+    
+    is_active = request.form.get('is_active') == 'on'
+    if user.id != current_user.id:
+        user.is_active = is_active
+    
+    db.session.commit()
+    flash(f'用户 {user.name} 信息已更新！', 'success')
+    return redirect(url_for('admin_users.user_detail', user_id=user_id))
 
 
 @bp.route('/admin/user/change_role/<int:user_id>', methods=['POST'])
@@ -205,13 +290,14 @@ def delete_user(user_id):
 def reset_user_password(user_id):
     user = User.query.get_or_404(user_id)
     new_password = request.form.get('new_password', '').strip()
+    redirect_url = request.form.get('redirect_url') or url_for('admin_users.admin_users')
     if not new_password or len(new_password) < 6:
         flash('密码长度不能少于6位！', 'danger')
-        return redirect(url_for('admin_users.admin_users'))
+        return redirect(redirect_url)
     user.set_password(new_password)
     db.session.commit()
     flash(f'用户 {user.name} 的密码已重置！', 'success')
-    return redirect(url_for('admin_users.admin_users'))
+    return redirect(redirect_url)
 
 
 @bp.route('/admin/user/add', methods=['POST'])

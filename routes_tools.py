@@ -28,7 +28,7 @@ def allowed_file(filename):
 
 
 def has_file_permission(file_obj):
-    """检查当前用户是否有权限访问该文件"""
+    """检查当前用户是否有权限访问该文件：文件对上传者的本级组及下级组用户可见"""
     uploader = file_obj.uploader
     if not uploader or not uploader.group_id:
         return False
@@ -37,29 +37,15 @@ def has_file_permission(file_obj):
     if not uploader_group:
         return False
     
-    current_user_group = Group.query.get(current_user.group_id)
-    if not current_user_group:
+    # 获取上传者组及其所有下级组的ID列表
+    visible_group_ids = [uploader_group.id]
+    visible_group_ids.extend(uploader_group.get_all_children_ids())
+    
+    # 检查当前用户组是否在可见范围内
+    if not current_user.group_id:
         return False
     
-    # 检查：当前用户组是否在上传者组的下级（包括本级、子级、孙级等）
-    # 即：当前用户组是否是上传者组本身，或者上传者组是当前用户组的祖先
-    def is_self_or_descendant(uploader_grp, check_grp):
-        """检查 check_grp 是否是 uploader_grp 本身或其后代"""
-        if check_grp.id == uploader_grp.id:
-            return True
-        
-        # 递归检查祖先
-        temp_group = check_grp
-        while temp_group.parent_id:
-            if temp_group.parent_id == uploader_grp.id:
-                return True
-            temp_group = Group.query.get(temp_group.parent_id)
-            if not temp_group:
-                break
-        
-        return False
-    
-    return is_self_or_descendant(uploader_group, current_user_group)
+    return current_user.group_id in visible_group_ids
 
 
 @bp.route('/tools')

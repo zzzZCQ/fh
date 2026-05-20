@@ -2,6 +2,17 @@
 
 {% block title %}用户管理 - 发货通知系统{% endblock %}
 
+{% block extra_css %}
+<style>
+.cursor-pointer {
+    cursor: pointer;
+}
+.user-row:hover {
+    background-color: rgba(0, 123, 255, 0.1) !important;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
     <h2>用户管理</h2>
@@ -16,172 +27,176 @@
         <div class="card-body">
             <!-- 搜索栏 -->
             <form method="GET" action="{{ url_for('admin_users.admin_users') }}" class="row g-2 mb-3">
-                <div class="col-auto">
+                <div class="col-md-4">
                     <input type="text" name="keyword" class="form-control form-control-sm" placeholder="搜索用户名或姓名" value="{{ keyword or '' }}">
                 </div>
+                <input type="hidden" name="per_page" value="{{ per_page }}">
                 <div class="col-auto">
                     <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> 搜索</button>
                     {% if keyword %}
-                    <a href="{{ url_for('admin_users.admin_users') }}" class="btn btn-outline-secondary btn-sm">清除</a>
+                    <a href="{{ url_for('admin_users.admin_users', per_page=per_page) }}" class="btn btn-outline-secondary btn-sm">清除</a>
                     {% endif %}
                 </div>
             </form>
             
             {% if users.items %}
-            <table class="table table-striped table-hover">
-                <thead>
-                    <tr>
-                        <th>用户名</th>
-                        <th>姓名</th>
-                        <th>角色</th>
-                        <th>所属组别</th>
-                        <th>状态</th>
-                        <th>钉钉导出</th>
-                        <th>广播通知</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for user in users.items %}
-                    <tr class="{% if not user.is_active %}table-secondary{% endif %}">
-                        <td>{{ user.username }}</td>
-                        <td>{{ user.name }}</td>
-                        <td>
-                            <form method="POST" action="{{ url_for('admin_users.change_user_role', user_id=user.id) }}" class="d-inline">
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="checkbox" name="roles" value="salesman" id="role_salesman_{{ user.id }}" {% if user.has_role('salesman') %}checked{% endif %} onchange="this.form.submit()">
-                                    <label class="form-check-label" for="role_salesman_{{ user.id }}">业务员</label>
-                                </div>
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="checkbox" name="roles" value="shipper" id="role_shipper_{{ user.id }}" {% if user.has_role('shipper') %}checked{% endif %} onchange="this.form.submit()">
-                                    <label class="form-check-label" for="role_shipper_{{ user.id }}">发货员</label>
-                                </div>
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="checkbox" name="roles" value="admin" id="role_admin_{{ user.id }}" {% if user.has_role('admin') %}checked{% endif %} onchange="this.form.submit()">
-                                    <label class="form-check-label" for="role_admin_{{ user.id }}">管理员</label>
-                                </div>
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="checkbox" name="roles" value="follow_up" id="role_follow_up_{{ user.id }}" {% if user.has_role('follow_up') %}checked{% endif %} onchange="this.form.submit()">
-                                    <label class="form-check-label" for="role_follow_up_{{ user.id }}">对接员</label>
-                                </div>
-                            </form>
-                        </td>
-                        <td>
-                            <form method="POST" action="{{ url_for('admin_users.change_user_group', user_id=user.id) }}" class="d-inline">
-                                <select name="group_id" class="form-select form-select-sm" style="width: auto; display: inline-block;" onchange="this.form.submit()">
-                                    <option value="">未分配</option>
-                                    {% for group in groups if group.is_active %}
-                                    <option value="{{ group.id }}" {% if user.group_id == group.id %}selected{% endif %}>{{ group.get_full_path() }}</option>
-                                    {% endfor %}
-                                </select>
-                            </form>
-                        </td>
-                        <td>
-                            {% if user.is_active %}
-                            <span class="badge bg-success">正常</span>
-                            {% else %}
-                            <span class="badge bg-danger">已停用</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if user.has_role('shipper') or user.has_role('admin') %}
-                            <form method="POST" action="{{ url_for('admin_users.toggle_user_dingtalk', user_id=user.id) }}" class="d-inline">
-                                <button type="submit" class="btn btn-sm {% if user.can_dingtalk_export %}btn-primary{% else %}btn-outline-secondary{% endif %}" title="{% if user.can_dingtalk_export %}点击关闭钉钉导出权限{% else %}点击开启钉钉导出权限{% endif %}">
-                                    <i class="bi bi-megaphone"></i> {% if user.can_dingtalk_export %}已开启{% else %}未开启{% endif %}
-                                </button>
-                            </form>
-                            {% else %}
-                            <span class="text-muted small">-</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <form method="POST" action="{{ url_for('admin_users.toggle_user_broadcast', user_id=user.id) }}" class="d-inline">
-                                <button type="submit" class="btn btn-sm {% if user.can_broadcast %}btn-success{% else %}btn-outline-secondary{% endif %}" title="{% if user.can_broadcast %}点击关闭广播通知权限{% else %}点击开启广播通知权限{% endif %}">
-                                    <i class="bi bi-broadcast"></i> {% if user.can_broadcast %}已开启{% else %}未开启{% endif %}
-                                </button>
-                            </form>
-                        </td>
-                        <td>
-                            {% if user.id != current_user.id and user.username != 'admin' %}
-                            <div class="btn-group btn-group-sm">
-                                <!-- 停用/启用 -->
-                                <form method="POST" action="{{ url_for('admin_users.toggle_user_active', user_id=user.id) }}" class="d-inline">
-                                    {% if user.is_active %}
-                                    <button type="submit" class="btn btn-outline-warning" onclick="return confirm('确定要停用该用户吗？停用后将无法登录。')">停用</button>
-                                    {% else %}
-                                    <button type="submit" class="btn btn-outline-success">启用</button>
-                                    {% endif %}
-                                </form>
-                                <!-- 重置密码 -->
-                                <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#resetPwdModal{{ user.id }}">重置密码</button>
-                                <!-- 删除 -->
-                                <form method="POST" action="{{ url_for('admin_users.delete_user', user_id=user.id) }}" class="d-inline" onsubmit="return confirm('确定要删除用户 {{ user.name }} 吗？删除后不可恢复，该用户的订单将转移给您。')">
-                                    <button type="submit" class="btn btn-outline-danger">删除</button>
-                                </form>
-                            </div>
-                            {% elif user.username == 'admin' %}
-                            <span class="text-muted small">超级管理员</span>
-                            {% else %}
-                            <span class="text-muted small">当前账号</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    
-                    <!-- 重置密码模态框 -->
-                    <div class="modal fade" id="resetPwdModal{{ user.id }}" tabindex="-1" aria-hidden="true">
-                        <div class="modal-dialog">
-                            <div class="modal-content">
-                                <form method="POST" action="{{ url_for('admin_users.reset_user_password', user_id=user.id) }}">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>所属组别</th>
+                            <th>用户名</th>
+                            <th>姓名</th>
+                            <th>角色</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users.items %}
+                        <tr class="{% if not user.is_active %}table-secondary{% endif %} cursor-pointer user-row" 
+                            data-href="{{ url_for('admin_users.user_detail', user_id=user.id) }}">
+                            <td>
+                                {% if user.group %}
+                                    <span class="text-truncate d-inline-block" style="max-width: 150px;" title="{{ user.group.get_full_path() }}">
+                                        {{ user.group.name }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">未分配</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ user.username }}</strong>
+                            </td>
+                            <td>{{ user.name }}</td>
+                            <td>
+                                {% set user_roles = user.get_roles() %}
+                                {% if 'admin' in user_roles %}
+                                    <span class="badge bg-danger">管理员</span>
+                                {% endif %}
+                                {% if 'salesman' in user_roles %}
+                                    <span class="badge bg-primary">业务员</span>
+                                {% endif %}
+                                {% if 'shipper' in user_roles %}
+                                    <span class="badge bg-success">发货员</span>
+                                {% endif %}
+                                {% if 'follow_up' in user_roles %}
+                                    <span class="badge bg-info">对接员</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user.is_active %}
+                                <span class="badge bg-success">正常</span>
+                                {% else %}
+                                <span class="badge bg-secondary">已停用</span>
+                                {% endif %}
+                            </td>
+                            <td onclick="event.stopPropagation();">
+                                {% if user.id != current_user.id and user.username != 'admin' %}
+                                        <button type="button" class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#resetPwdModal{{ user.id }}" title="重置密码">
+                                            <i class="bi bi-key"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteUserModal{{ user.id }}" title="删除用户">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        
+                        <!-- 删除用户模态框 -->
+                        <div class="modal fade" id="deleteUserModal{{ user.id }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
                                     <div class="modal-header">
-                                        <h5 class="modal-title">重置密码 - {{ user.name }}</h5>
+                                        <h5 class="modal-title text-danger">确认删除用户</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
-                                        <div class="mb-3">
-                                            <label class="form-label">新密码 <span class="text-danger">*</span></label>
-                                            <input type="password" class="form-control" name="new_password" required minlength="6" placeholder="至少6位">
-                                        </div>
+                                        <p>确定要删除用户 <strong>{{ user.name }}</strong> ({{ user.username }}) 吗？</p>
+                                        <p class="text-danger small">⚠️ 此操作不可恢复！</p>
                                     </div>
                                     <div class="modal-footer">
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                                        <button type="submit" class="btn btn-primary">确认重置</button>
+                                        <form method="POST" action="{{ url_for('admin_users.delete_user', user_id=user.id) }}" style="display: inline;">
+                                            <input type="hidden" name="redirect_url" value="{{ request.url }}">
+                                            <button type="submit" class="btn btn-danger">确认删除</button>
+                                        </form>
                                     </div>
-                                </form>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    {% endfor %}
-                </tbody>
-            </table>
+                        
+                        <!-- 重置密码模态框 -->
+                        <div class="modal fade" id="resetPwdModal{{ user.id }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <form method="POST" action="{{ url_for('admin_users.reset_user_password', user_id=user.id) }}">
+                                        <input type="hidden" name="redirect_url" value="{{ request.url }}">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">重置密码 - {{ user.name }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <div class="mb-3">
+                                                <label class="form-label">新密码 <span class="text-danger">*</span></label>
+                                                <input type="password" class="form-control" name="new_password" required minlength="6" placeholder="至少6位">
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                            <button type="submit" class="btn btn-primary">确认重置</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
             
             <!-- 分页 -->
-            {% if users.pages > 1 %}
-            <nav>
-                <ul class="pagination pagination-sm justify-content-center">
-                    {% if users.has_prev %}
-                    <li class="page-item">
-                        <a class="page-link" href="{{ url_for('admin_users.admin_users', page=users.prev_num, keyword=keyword) }}">上一页</a>
-                    </li>
-                    {% endif %}
-                    
-                    {% for p in users.iter_pages() %}
-                        {% if p %}
-                            <li class="page-item {% if p == users.page %}active{% endif %}">
-                                <a class="page-link" href="{{ url_for('admin_users.admin_users', page=p, keyword=keyword) }}">{{ p }}</a>
-                            </li>
-                        {% else %}
-                            <li class="page-item disabled"><span class="page-link">...</span></li>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <!-- 每页条数选择器 -->
+                <div class="d-flex align-items-center">
+                    <span class="text-muted me-2">每页</span>
+                    <select id="perPageSelect" class="form-select form-select-sm" style="width: auto;" onchange="changePerPage()">
+                        {% for num in [10, 20, 50, 100] %}
+                        <option value="{{ num }}" {% if per_page == num %}selected{% endif %}>{{ num }}条</option>
+                        {% endfor %}
+                    </select>
+                    <span class="text-muted ms-2">共 {{ users.total }} 条</span>
+                </div>
+                
+                <!-- 分页链接 -->
+                {% if users.pages > 1 %}
+                <nav>
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if users.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('admin_users.admin_users', page=users.prev_num, keyword=keyword, per_page=per_page) }}">上一页</a>
+                        </li>
                         {% endif %}
-                    {% endfor %}
-                    
-                    {% if users.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="{{ url_for('admin_users.admin_users', page=users.next_num, keyword=keyword) }}">下一页</a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </nav>
-            {% endif %}
+                        
+                        {% for p in users.iter_pages() %}
+                            {% if p %}
+                                <li class="page-item {% if p == users.page %}active{% endif %}">
+                                    <a class="page-link" href="{{ url_for('admin_users.admin_users', page=p, keyword=keyword, per_page=per_page) }}">{{ p }}</a>
+                                </li>
+                            {% else %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if users.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('admin_users.admin_users', page=users.next_num, keyword=keyword, per_page=per_page) }}">下一页</a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+                {% endif %}
+            </div>
             
             {% else %}
             <div class="text-center text-muted py-4">
@@ -197,6 +212,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="POST" action="{{ url_for('admin_users.add_user') }}">
+                <input type="hidden" name="redirect_url" value="{{ request.url }}">
                 <div class="modal-header">
                     <h5 class="modal-title">新增用户</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -216,21 +232,27 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">角色</label>
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="checkbox" name="roles" value="salesman" id="new_role_salesman" checked>
-                            <label class="form-check-label" for="new_role_salesman">业务员</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="checkbox" name="roles" value="shipper" id="new_role_shipper">
-                            <label class="form-check-label" for="new_role_shipper">发货员</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="checkbox" name="roles" value="admin" id="new_role_admin">
-                            <label class="form-check-label" for="new_role_admin">管理员</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="checkbox" name="roles" value="follow_up" id="new_role_follow_up">
-                            <label class="form-check-label" for="new_role_follow_up">对接员</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="roles" value="salesman" id="new_role_salesman" checked>
+                                    <label class="form-check-label" for="new_role_salesman">业务员</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="roles" value="shipper" id="new_role_shipper">
+                                    <label class="form-check-label" for="new_role_shipper">发货员</label>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="roles" value="admin" id="new_role_admin">
+                                    <label class="form-check-label" for="new_role_admin">管理员</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="roles" value="follow_up" id="new_role_follow_up">
+                                    <label class="form-check-label" for="new_role_follow_up">对接员</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     {% if groups %}
@@ -253,4 +275,32 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+function changePerPage() {
+    const select = document.getElementById('perPageSelect');
+    const perPage = select.value;
+    const keyword = '{{ keyword or '' }}';
+    let url = '{{ url_for('admin_users.admin_users') }}?per_page=' + perPage;
+    if (keyword) {
+        url += '&keyword=' + encodeURIComponent(keyword);
+    }
+    window.location.href = url;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // 点击行打开详情页
+    document.querySelectorAll('.user-row').forEach(row => {
+        row.addEventListener('click', function(e) {
+            const href = this.dataset.href;
+            if (href) {
+                window.location.href = href;
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

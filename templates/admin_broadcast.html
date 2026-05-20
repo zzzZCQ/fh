@@ -1,125 +1,298 @@
 {% extends "base.html" %}
 
-{% block title %}广播消息 - 发货通知系统{% endblock %}
+{% block title %}广播通知管理{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2><i class="bi bi-broadcast"></i> 广播消息</h2>
+<!-- 右上角提示 -->
+<div id="toastContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 1100;"></div>
+
+<div class="container-fluid">
+    <h2 class="mb-4">
+        <i class="bi bi-megaphone"></i> 广播通知管理
+    </h2>
     
-    <div class="row mt-4">
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-send"></i> 发送广播消息</h5>
+    <ul class="nav nav-tabs mb-4" id="broadcastTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="desktop-tab" data-bs-toggle="tab" data-bs-target="#desktop" type="button">
+                <i class="bi bi-laptop"></i> 推送桌面客户端
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="message-tab" data-bs-toggle="tab" data-bs-target="#message" type="button">
+                <i class="bi bi-chat-dots"></i> 发送消息中心通知
+            </button>
+        </li>
+    </ul>
+    
+    <div class="tab-content" id="broadcastTabsContent">
+        <!-- 推送桌面客户端 -->
+        <div class="tab-pane fade show active" id="desktop" role="tabpanel">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-plus-circle"></i> 发布新通知</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('admin_config.send_broadcast') }}" enctype="multipart/form-data">
-                        <div class="mb-3">
-                            <label class="form-label">消息内容 <span class="text-danger">*</span></label>
-                            <textarea class="form-control" name="content" rows="4" placeholder="输入要广播的消息内容..." required></textarea>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">消息重要性</label>
-                            <div>
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="radio" name="importance" id="importance_normal" value="normal" checked>
-                                    <label class="form-check-label" for="importance_normal">
-                                        <span class="badge bg-secondary">一般</span>
-                                    </label>
+                    <form id="notificationForm">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="mb-3">
+                                    <label class="form-label">通知标题</label>
+                                    <input type="text" class="form-control" id="title" 
+                                           maxlength="200" placeholder="请输入通知标题" required>
                                 </div>
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="radio" name="importance" id="importance_important" value="important">
-                                    <label class="form-check-label" for="importance_important">
-                                        <span class="badge bg-warning text-dark">重要</span>
-                                    </label>
-                                </div>
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="radio" name="importance" id="importance_urgent" value="urgent">
-                                    <label class="form-check-label" for="importance_urgent">
-                                        <span class="badge bg-danger">紧急</span> <small class="text-muted">（自动弹窗提醒）</small>
-                                    </label>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">通知内容</label>
+                                    <textarea class="form-control" id="content" rows="8" 
+                                              placeholder="请输入通知内容" required></textarea>
                                 </div>
                             </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">接收人</label>
-                            <div class="border rounded p-2 bg-light">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="selectAllUsers">
-                                    <label class="form-check-label fw-bold" for="selectAllUsers">发送给所有人</label>
+                            
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">优先级</label>
+                                    <select class="form-select" id="priority">
+                                        <option value="normal">普通（蓝色）</option>
+                                        <option value="important">重要（黄色）</option>
+                                        <option value="urgent">紧急（红色）</option>
+                                    </select>
                                 </div>
-                                <hr class="my-2">
-                                <div style="max-height: 200px; overflow-y: auto;">
-                                    {% for user in users %}
-                                    <div class="form-check">
-                                        <input class="form-check-input user-checkbox" type="checkbox" name="user_ids" value="{{ user.id }}" id="user_{{ user.id }}">
-                                        <label class="form-check-label" for="user_{{ user.id }}">
-                                            {{ user.username }}
-                                            {% if user.group %}
-                                            <small class="text-muted">({{ user.group.name }})</small>
-                                            {% endif %}
-                                        </label>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">发送范围</label>
+                                    <select class="form-select" id="target_type">
+                                        <option value="all">🌐 全员发送</option>
+                                        <option value="role">👥 按角色发送</option>
+                                        <option value="department">🏢 按部门发送</option>
+                                        <option value="user">👤 指定人员发送</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="mb-3" id="targetIdsContainer" style="display:none;">
+                                    <label class="form-label" id="targetLabel">选择目标</label>
+                                    <div id="target_ids" class="border rounded p-3 bg-light max-h-[200px] overflow-y-auto">
                                     </div>
-                                    {% endfor %}
+                                    <div id="selectedUsersDisplay" class="flex-wrap gap-2 mt-2">
+                                        <span class="text-muted" id="selectedCount" style="display:none;">0 已选</span>
+                                    </div>
+                                    <input type="hidden" id="selected_user_ids">
+                                    <button type="button" class="btn btn-outline-primary btn-sm mt-2 w-full" id="selectUserBtn" style="display:none;" onclick="openUserSelector()">
+                                        <i class="bi bi-search"></i> 选择人员
+                                    </button>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">定时发送（可选）</label>
+                                    <input type="datetime-local" class="form-control" id="scheduled_time">
                                 </div>
                             </div>
-                            <div class="form-text">留空则发送给所有人，或选择特定用户</div>
                         </div>
                         
-                        <div class="mb-3">
-                            <label class="form-label">附带图片（可选）</label>
-                            <input type="file" class="form-control" name="image" accept="image/*" id="imageInput" onchange="previewImage(this)">
-                            <div class="form-text">支持 JPG、PNG、GIF 等图片格式</div>
-                        </div>
-                        
-                        <div id="imagePreview" class="mb-3" style="display: none;">
-                            <label class="form-label">图片预览</label>
-                            <div>
-                                <img id="previewImg" src="" alt="预览" style="max-width: 300px; max-height: 200px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                            </div>
-                            <button type="button" class="btn btn-outline-danger btn-sm mt-2" onclick="removeImage()">移除图片</button>
-                        </div>
-                        
-                        <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary" id="sendBtn">
-                                <i class="bi bi-send"></i> 发送广播
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary me-2" onclick="previewNotification()">
+                                <i class="bi bi-eye"></i> 预览图片
                             </button>
-                            <button type="button" class="btn btn-outline-secondary" onclick="clearForm()">清空</button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-send"></i> 立即发送
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-list-ul"></i> 通知列表</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>发送人</th>
+                                <th>标题</th>
+                                <th>优先级</th>
+                                <th>发送范围</th>
+                                <th>状态</th>
+                                <th>发送时间</th>
+                                <th>确认率</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="notificationTable">
+                            <tr>
+                                <td colspan="9" class="text-center text-muted">加载中...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <nav>
+                        <ul class="pagination justify-content-center" id="pagination">
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 发送消息中心通知 -->
+        <div class="tab-pane fade" id="message" role="tabpanel">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-plus-circle"></i> 发送消息中心通知</h5>
+                </div>
+                <div class="card-body">
+                    <form id="messageCenterForm" method="post" action="{{ url_for('admin_config.send_broadcast') }}" enctype="multipart/form-data">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="mb-3">
+                                    <label class="form-label">消息内容</label>
+                                    <textarea class="form-control" name="content" rows="5" 
+                                              placeholder="请输入消息内容" required></textarea>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">图片（可选）</label>
+                                    <input type="file" class="form-control" name="image" accept="image/*">
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">重要程度</label>
+                                    <select class="form-select" name="importance">
+                                        <option value="normal">一般</option>
+                                        <option value="important">重要</option>
+                                        <option value="urgent">紧急</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">选择接收人员（不选则发送给所有人）</label>
+                                    <div class="border rounded p-3 bg-light" style="max-height: 300px; overflow-y: auto;">
+                                        {% for user in users %}
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="user_ids" value="{{ user.id }}" id="user_{{ user.id }}">
+                                            <label class="form-check-label" for="user_{{ user.id }}">
+                                                {{ user.name }}
+                                                {% if user.group %}
+                                                <span class="text-muted small">({{ user.group.name }})</span>
+                                                {% endif %}
+                                            </label>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-send"></i> 发送消息
+                            </button>
                         </div>
                     </form>
                 </div>
             </div>
         </div>
-        
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> 说明</h5>
-                </div>
-                <div class="card-body">
-                    <ul class="mb-0">
-                        <li>广播消息将发送给选定的用户</li>
-                        <li>消息支持添加一张图片</li>
-                        <li>发送者不会收到自己发送的消息</li>
-                        <li>紧急消息会自动弹窗提醒</li>
-                        <li>用户可在通知中心查看消息</li>
-                    </ul>
-                </div>
+    </div>
+</div>
+
+<!-- 预览和详情的模态框 -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">通知预览</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-bar-chart"></i> 重要性说明</h5>
+            <div class="modal-body text-center">
+                <img id="previewImage" src="" alt="通知预览" class="img-fluid">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="receiptsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <strong>总人数：</strong><span id="totalReceivers">0</span>，
+                    <strong>已确认：</strong><span id="confirmedCount">0</span>，
+                    <strong>未确认：</strong><span id="unconfirmedCount">0</span>，
+                    <strong>确认率：</strong><span id="confirmationRate">0%</span>
                 </div>
-                <div class="card-body">
-                    <ul class="mb-0 small">
-                        <li><span class="badge bg-secondary">一般</span> 普通通知，显示在列表中</li>
-                        <li><span class="badge bg-warning text-dark">重要</span> 重要提醒，更醒目</li>
-                        <li><span class="badge bg-danger">紧急</span> 自动弹窗，需确认</li>
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>姓名</th>
+                            <th>收到时间</th>
+                            <th>确认时间</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="receiptsTable">
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-warning" onclick="remindNotification()">
+                    <i class="bi bi-bell"></i> 催读提醒
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 人员选择模态框 -->
+<div class="modal fade" id="userSelectorModal" tabindex="-1" aria-labelledby="userSelectorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="userSelectorModalLabel">选择人员</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <select class="form-select" id="groupFilter" onchange="loadUserPage(1)">
+                            <option value="all">全部组别</option>
+                        </select>
+                    </div>
+                    <div class="col-md-8">
+                        <input type="text" class="form-control" id="userSearchInput" placeholder="搜索姓名或工号..." onkeyup="loadUserPage(1)">
+                    </div>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="selectAllUsers" onclick="toggleSelectAllUsers()"></th>
+                                <th>姓名</th>
+                                <th>工号</th>
+                                <th>组别</th>
+                                <th>部门</th>
+                            </tr>
+                        </thead>
+                        <tbody id="userTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                
+                <nav aria-label="Page navigation">
+                    <ul class="pagination justify-content-center" id="userPagination">
                     </ul>
-                </div>
+                </nav>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="confirmUserSelection()">确认选择</button>
             </div>
         </div>
     </div>
@@ -128,53 +301,669 @@
 
 {% block scripts %}
 <script>
-document.getElementById('selectAllUsers').addEventListener('change', function() {
-    const checkboxes = document.querySelectorAll('.user-checkbox');
-    checkboxes.forEach(cb => cb.checked = this.checked);
+let currentNotificationId = null;
+let broadcastPage = 1;
+let selectedUserIds = [];
+let currentUserPage = 1;
+
+// 右上角提示
+function showToast(message, type = 'success') {
+    const toast = $(`
+        <div class="toast align-items-center text-white bg-${type} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `);
+    $('#toastContainer').append(toast);
+    const bootstrapToast = new bootstrap.Toast(toast[0], { delay: 3000 });
+    bootstrapToast.show();
+    toast.on('hidden.bs.toast', function() {
+        toast.remove();
+    });
+}
+
+$(document).ready(function() {
+    loadNotifications(1);
+    loadTargetOptions();
+    
+    $('#notificationForm').submit(function(e) {
+        e.preventDefault();
+        sendNotification();
+    });
+    
+    $('#target_type').change(function() {
+        const targetType = $(this).val();
+        if (targetType === 'all') {
+            $('#targetIdsContainer').hide();
+        } else {
+            $('#targetIdsContainer').show();
+            loadTargetOptions(targetType);
+        }
+    });
 });
 
-document.getElementById('sendBtn').addEventListener('click', function(e) {
-    const selectedUsers = document.querySelectorAll('.user-checkbox:checked');
-    const isUrgent = document.getElementById('importance_urgent').checked;
-    const content = document.querySelector('textarea[name="content"]').value.trim();
+function loadTargetOptions(targetType) {
+    const targetContainer = $('#target_ids');
+    const selectedCount = $('#selectedCount');
+    const selectUserBtn = $('#selectUserBtn');
+    const selectedUsersDisplay = $('#selectedUsersDisplay');
     
-    if (!content) {
-        alert('请输入消息内容！');
-        e.preventDefault();
+    targetContainer.empty();
+    selectedCount.hide();
+    selectUserBtn.hide();
+    
+    if (targetType === 'role') {
+        $('#targetLabel').text('选择角色');
+        const roles = [
+            {value: 'salesman', name: '销售'},
+            {value: 'shipper', name: '发货员'},
+            {value: 'admin', name: '管理员'}
+        ];
+        roles.forEach(role => {
+            targetContainer.append(`
+                <div class="form-check">
+                    <input class="form-check-input target-checkbox" type="checkbox" value="${role.value}" id="role_${role.value}">
+                    <label class="form-check-label" for="role_${role.value}">${role.name}</label>
+                </div>
+            `);
+        });
+        updateSelectedCount();
+    } else if (targetType === 'department') {
+        $('#targetLabel').text('选择部门');
+        $.get('/api/broadcast/departments', function(response) {
+            if (response.success) {
+                response.departments.forEach(dept => {
+                    const indent = (dept.level - 1) * 20;
+                    targetContainer.append(`
+                        <div class="form-check" style="padding-left: ${indent + 24}px;">
+                            <input class="form-check-input target-checkbox" type="checkbox" value="${dept.id}" id="dept_${dept.id}">
+                            <label class="form-check-label" for="dept_${dept.id}">${dept.name}</label>
+                        </div>
+                    `);
+                });
+                updateSelectedCount();
+            }
+        });
+    } else if (targetType === 'user') {
+        $('#targetLabel').text('选择人员');
+        selectUserBtn.show();
+        selectedUsersDisplay.html('<span class="text-muted">点击下方按钮选择人员</span>');
+        targetContainer.hide();
         return;
     }
     
-    const targetText = selectedUsers.length > 0 ? `选定的 ${selectedUsers.length} 位用户` : '所有用户';
-    const importanceText = isUrgent ? '紧急' : (document.getElementById('importance_important').checked ? '重要' : '一般');
-    
-    if (!confirm(`确定要发送${importanceText}消息给${targetText}吗？` + (isUrgent ? '\n\n紧急消息将自动弹窗提醒接收人！' : ''))) {
-        e.preventDefault();
-    }
-});
+    targetContainer.show();
+    targetContainer.on('change', '.target-checkbox', updateSelectedCount);
+}
 
-function previewImage(input) {
-    if (input.files && input.files[0]) {
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            document.getElementById('previewImg').src = e.target.result;
-            document.getElementById('imagePreview').style.display = 'block';
-        };
-        reader.readAsDataURL(input.files[0]);
+function updateSelectedCount() {
+    const selectedCount = $('#selectedCount');
+    const count = $('.target-checkbox:checked').length;
+    if (count > 0) {
+        selectedCount.text(count + ' 已选').show();
+    } else {
+        selectedCount.hide();
     }
 }
 
-function removeImage() {
-    document.getElementById('imageInput').value = '';
-    document.getElementById('previewImg').src = '';
-    document.getElementById('imagePreview').style.display = 'none';
+function selectAllTargets() {
+    $('.target-checkbox').prop('checked', true);
+    updateSelectedCount();
+}
+
+function deselectAllTargets() {
+    $('.target-checkbox').prop('checked', false);
+    updateSelectedCount();
+}
+
+function sendNotification() {
+    const title = $('#title').val();
+    const content = $('#content').val();
+    const priority = $('#priority').val();
+    const targetType = $('#target_type').val();
+    
+    let targetIds = '';
+    if (targetType === 'user') {
+        targetIds = $('#selected_user_ids').val();
+        if (!targetIds || targetIds.length === 0) {
+            showToast('请至少选择一名人员', 'warning');
+            return;
+        }
+    } else if (targetType !== 'all') {
+        const selected = [];
+        $('.target-checkbox:checked').each(function() {
+            selected.push($(this).val());
+        });
+        targetIds = selected.join(',');
+        
+        if (targetType !== 'role' && selected.length === 0) {
+            showToast('请至少选择一名目标', 'warning');
+            return;
+        }
+    }
+    
+    const scheduledTime = $('#scheduled_time').val();
+    
+    const $submitBtn = $('#submitBtn');
+    $submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>提交中...');
+    
+    $.ajax({
+        url: '/api/broadcast/notifications',
+        method: 'POST',
+        contentType: 'application/json',
+        timeout: 10000,
+        data: JSON.stringify({
+            title: title,
+            content: content,
+            priority: priority,
+            target_type: targetType,
+            target_ids: targetIds,
+            scheduled_time: scheduledTime || null
+        }),
+        success: function(response) {
+            if (response.success) {
+                if (!scheduledTime) {
+                    sendNotificationToUsers(response.notification.id);
+                } else {
+                    showToast('通知已设置为定时发送！');
+                    loadNotifications(1);
+                    clearForm();
+                }
+            } else {
+                showToast('创建失败：' + response.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            if (status === 'timeout') {
+                showToast('创建通知超时，请重试！', 'danger');
+            } else {
+                showToast('创建通知失败！', 'danger');
+            }
+        },
+        complete: function() {
+            $submitBtn.prop('disabled', false).html('发送消息');
+        }
+    });
+}
+
+function sendNotificationToUsers(notificationId) {
+    const $submitBtn = $('#submitBtn');
+    $submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>发送中...');
+    
+    $.ajax({
+        url: `/api/broadcast/notifications/${notificationId}/send`,
+        method: 'POST',
+        timeout: 10000,
+        success: function(response) {
+            if (response.success) {
+                showToast('通知发送成功！');
+                loadNotifications(1);
+                clearForm();
+            } else {
+                showToast('发送失败：' + response.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            if (status === 'timeout') {
+                showToast('发送超时，请重试！', 'danger');
+            } else {
+                showToast('发送通知失败！', 'danger');
+            }
+        },
+        complete: function() {
+            $submitBtn.prop('disabled', false).html('发送消息');
+        }
+    });
+}
+
+function loadNotifications(page) {
+    broadcastPage = page;
+    const $tbody = $('#notificationTable');
+    $tbody.html('<tr><td colspan="9" class="text-center"><span class="spinner-border spinner-border-sm me-1"></span>加载中...</td></tr>');
+    
+    $.ajax({
+        url: `/api/broadcast/notifications?page=${page}`,
+        method: 'GET',
+        timeout: 8000,
+        success: function(response) {
+        const tbody = $('#notificationTable');
+        tbody.empty();
+        
+        if (response.items.length === 0) {
+            tbody.append('<tr><td colspan="9" class="text-center text-muted">暂无通知</td></tr>');
+            return;
+        }
+        
+        response.items.forEach(item => {
+            const priorityBadge = {
+                'normal': '<span class="badge bg-primary">普通</span>',
+                'important': '<span class="badge bg-warning">重要</span>',
+                'urgent': '<span class="badge bg-danger">紧急</span>'
+            }[item.priority];
+            
+            const statusBadge = {
+                'draft': '<span class="badge bg-secondary">草稿</span>',
+                'scheduled': '<span class="badge bg-info">待发送</span>',
+                'sent': '<span class="badge bg-success">已发送</span>',
+                'cancelled': '<span class="badge bg-dark">已取消</span>'
+            }[item.status];
+            
+            let actionButtons = `
+                <button class="btn btn-sm btn-info" onclick="showReceipts(${item.id})">
+                    <i class="bi bi-check-circle"></i> 详情
+                </button>
+            `;
+            
+            // 草稿或已发送的都可以重新发送
+            if (item.status === 'draft' || item.status === 'sent') {
+                actionButtons += `
+                    <button class="btn btn-sm btn-warning" onclick="resendNotification(${item.id})">
+                        <i class="bi bi-send"></i> 重发
+                    </button>
+                `;
+            }
+            
+            // 所有状态都可以删除
+            actionButtons += `
+                <button class="btn btn-sm btn-danger" onclick="deleteNotification(${item.id})">
+                    <i class="bi bi-trash"></i> 删除
+                </button>
+            `;
+            
+            tbody.append(`
+                <tr>
+                    <td>${item.id}</td>
+                    <td>${item.sender_name || '-'}</td>
+                    <td>${item.title}</td>
+                    <td>${priorityBadge}</td>
+                    <td>${getTargetTypeName(item.target_type)}</td>
+                    <td>${statusBadge}</td>
+                    <td>${item.sent_time ? item.sent_time.substring(0, 16) : '-'}</td>
+                    <td>-</td>
+                    <td>${actionButtons}</td>
+                </tr>
+            `);
+        });
+        
+        renderPagination(response);
+        },
+        error: function(xhr, status, error) {
+            const tbody = $('#notificationTable');
+            if (status === 'timeout') {
+                tbody.html('<tr><td colspan="9" class="text-center text-danger">加载超时，请刷新重试</td></tr>');
+            } else {
+                tbody.html('<tr><td colspan="9" class="text-center text-danger">加载失败，请重试</td></tr>');
+            }
+        }
+    });
+}
+
+function getTargetTypeName(type) {
+    const names = {
+        'all': '全员',
+        'department': '部门',
+        'role': '角色',
+        'user': '指定人员'
+    };
+    return names[type] || type;
+}
+
+function renderPagination(response) {
+    const pagination = $('#pagination');
+    pagination.empty();
+    
+    if (response.pages <= 1) return;
+    
+    if (response.has_prev) {
+        pagination.append(`<li class="page-item"><a class="page-link" href="#" onclick="loadNotifications(${response.page - 1}); return false;">上一页</a></li>`);
+    }
+    
+    for (let i = 1; i <= response.pages; i++) {
+        pagination.append(`<li class="page-item ${i === response.page ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="loadNotifications(${i}); return false;">${i}</a>
+        </li>`);
+    }
+    
+    if (response.has_next) {
+        pagination.append(`<li class="page-item"><a class="page-link" href="#" onclick="loadNotifications(${response.page + 1}); return false;">下一页</a></li>`);
+    }
+}
+
+function previewNotification() {
+    const title = $('#title').val() || '通知标题预览';
+    const content = $('#content').val() || '通知内容预览';
+    const priority = $('#priority').val();
+    
+    if (!$('#title').val() && !$('#content').val()) {
+        showToast('请输入标题或内容', 'warning');
+        return;
+    }
+    
+    $('#previewBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>生成中...');
+    
+    $.ajax({
+        url: '/api/broadcast/notifications',
+        method: 'POST',
+        contentType: 'application/json',
+        timeout: 10000,
+        data: JSON.stringify({
+            title: title,
+            content: content,
+            priority: priority,
+            target_type: 'all'
+        }),
+        success: function(response) {
+            if (response.success) {
+                $('#previewImage').attr('src', response.notification.image_path + '?t=' + new Date().getTime());
+                $('#previewModal').modal('show');
+            } else {
+                showToast('预览失败：' + response.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            if (status === 'timeout') {
+                showToast('预览生成超时，请重试！', 'danger');
+            } else {
+                showToast('预览失败，请检查服务器是否运行', 'danger');
+            }
+        },
+        complete: function() {
+            $('#previewBtn').prop('disabled', false).html('生成预览');
+        }
+    });
+}
+
+function showReceipts(notificationId) {
+    currentNotificationId = notificationId;
+    $('#receiptsTable').html('<tr><td colspan="4" class="text-center"><span class="spinner-border spinner-border-sm me-1"></span>加载中...</td></tr>');
+    $('#receiptsModal').modal('show');
+    
+    $.ajax({
+        url: `/api/broadcast/notifications/${notificationId}/receipts`,
+        method: 'GET',
+        timeout: 8000,
+        success: function(response) {
+            $('#totalReceivers').text(response.total_receivers);
+            $('#confirmedCount').text(response.confirmed_count);
+            $('#unconfirmedCount').text(response.unconfirmed_count);
+            $('#confirmationRate').text(response.confirmation_rate + '%');
+            
+            const tbody = $('#receiptsTable');
+            tbody.empty();
+            
+            if (response.receipts.length === 0) {
+                tbody.html('<tr><td colspan="4" class="text-center text-muted">暂无确认记录</td></tr>');
+                return;
+            }
+            
+            response.receipts.forEach(receipt => {
+                tbody.append(`
+                    <tr>
+                        <td>${receipt.user_name}</td>
+                        <td>${receipt.received_time ? receipt.received_time.substring(0, 19) : '-'}</td>
+                        <td>${receipt.confirmed_time ? receipt.confirmed_time.substring(0, 19) : '-'}</td>
+                        <td>${receipt.is_confirmed ? '<span class="badge bg-success">已确认</span>' : '<span class="badge bg-warning">未确认</span>'}</td>
+                    </tr>
+                `);
+            });
+        },
+        error: function(xhr, status, error) {
+            const tbody = $('#receiptsTable');
+            if (status === 'timeout') {
+                tbody.html('<tr><td colspan="4" class="text-center text-danger">加载超时，请重试</td></tr>');
+            } else {
+                tbody.html('<tr><td colspan="4" class="text-center text-danger">加载失败</td></tr>');
+            }
+        }
+    });
+}
+
+function remindNotification() {
+    if (!currentNotificationId) return;
+    
+    const $remindBtn = $('#remindBtn');
+    if ($remindBtn.prop('disabled')) return;
+    $remindBtn.prop('disabled', true);
+    
+    $.ajax({
+        url: `/api/broadcast/notifications/${currentNotificationId}/remind`,
+        method: 'POST',
+        timeout: 10000,
+        success: function(response) {
+            if (response.success) {
+                showToast(response.message || '催读提醒已发送！');
+                showReceipts(currentNotificationId);
+            } else {
+                showToast('提醒失败：' + response.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            if (status === 'timeout') {
+                showToast('催读超时，请重试！', 'danger');
+            } else {
+                showToast('发送提醒失败！', 'danger');
+            }
+        },
+        complete: function() {
+            $remindBtn.prop('disabled', false);
+        }
+    });
 }
 
 function clearForm() {
-    document.querySelector('textarea[name="content"]').value = '';
-    document.getElementById('importance_normal').checked = true;
-    document.getElementById('selectAllUsers').checked = false;
-    document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = false);
-    removeImage();
+    $('#title').val('');
+    $('#content').val('');
+    $('#priority').val('normal');
+    $('#target_type').val('all');
+    $('#target_ids').val('');
+    $('#scheduled_time').val('');
+    $('#targetIdsContainer').hide();
+}
+
+function openUserSelector() {
+    selectedUserIds = [];
+    const currentIds = $('#selected_user_ids').val();
+    if (currentIds) {
+        selectedUserIds = currentIds.split(',').map(id => parseInt(id));
+    }
+    loadGroups();
+    loadUserPage(1);
+    $('#userSelectorModal').modal('show');
+}
+
+function loadGroups() {
+    const select = $('#groupFilter');
+    select.html('<option value="all">全部组别</option>');
+    
+    $.get('/api/broadcast/departments', function(response) {
+        if (response.success) {
+            response.departments.forEach(dept => {
+                select.append(`<option value="${dept.id}">${dept.name}</option>`);
+            });
+        }
+    });
+}
+
+function loadUserPage(page) {
+    currentUserPage = page;
+    const groupId = $('#groupFilter').val();
+    const search = $('#userSearchInput').val();
+    
+    $.get('/api/broadcast/users', {
+        page: page,
+        per_page: 10,
+        group_id: groupId,
+        search: search
+    }, function(response) {
+        if (response && response.success) {
+            const users = response.items || response.users;
+            renderUserTable(users);
+            renderUserPagination(response);
+        } else {
+            const tbody = $('#userTableBody');
+            tbody.empty();
+            tbody.append('<tr><td colspan="5" class="text-center text-muted">加载失败</td></tr>');
+        }
+    }).fail(function() {
+        const tbody = $('#userTableBody');
+        tbody.empty();
+        tbody.append('<tr><td colspan="5" class="text-center text-muted">请求失败</td></tr>');
+    });
+}
+
+function renderUserTable(users) {
+    const tbody = $('#userTableBody');
+    tbody.empty();
+    
+    if (!users || users.length === 0) {
+        tbody.append('<tr><td colspan="5" class="text-center text-muted">暂无数据</td></tr>');
+        return;
+    }
+    
+    users.forEach(user => {
+        const isSelected = selectedUserIds.includes(user.id);
+        tbody.append(`
+            <tr>
+                <td><input type="checkbox" class="user-checkbox" value="${user.id}" ${isSelected ? 'checked' : ''} onchange="toggleUserSelection(${user.id})"></td>
+                <td>${user.name}</td>
+                <td>${user.username}</td>
+                <td>${user.group_name || '-'}</td>
+                <td>-</td>
+            </tr>
+        `);
+    });
+}
+
+function renderUserPagination(response) {
+    const pagination = $('#userPagination');
+    pagination.empty();
+    
+    if (response.pages <= 1) return;
+    
+    if (response.has_prev) {
+        pagination.append(`<li class="page-item"><a class="page-link" href="#" onclick="loadUserPage(${response.page - 1}); return false;">上一页</a></li>`);
+    }
+    
+    for (let i = 1; i <= response.pages; i++) {
+        pagination.append(`<li class="page-item ${i === response.page ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="loadUserPage(${i}); return false;">${i}</a>
+        </li>`);
+    }
+    
+    if (response.has_next) {
+        pagination.append(`<li class="page-item"><a class="page-link" href="#" onclick="loadUserPage(${response.page + 1}); return false;">下一页</a></li>`);
+    }
+}
+
+function toggleUserSelection(userId) {
+    const index = selectedUserIds.indexOf(userId);
+    if (index === -1) {
+        selectedUserIds.push(userId);
+    } else {
+        selectedUserIds.splice(index, 1);
+    }
+}
+
+function toggleSelectAllUsers() {
+    const isChecked = $('#selectAllUsers').prop('checked');
+    
+    $.get('/api/broadcast/users', {
+        page: currentUserPage,
+        per_page: 10,
+        group_id: $('#groupFilter').val(),
+        search: $('#userSearchInput').val()
+    }, function(response) {
+        if (response.success) {
+            response.items.forEach(user => {
+                const index = selectedUserIds.indexOf(user.id);
+                if (isChecked && index === -1) {
+                    selectedUserIds.push(user.id);
+                } else if (!isChecked && index !== -1) {
+                    selectedUserIds.splice(index, 1);
+                }
+            });
+            loadUserPage(currentUserPage);
+        }
+    });
+}
+
+function deleteNotification(notificationId) {
+    const $btn = $(`button[onclick="deleteNotification(${notificationId})"]`);
+    if ($btn.prop('disabled')) return;
+    $btn.prop('disabled', true);
+    
+    $.ajax({
+        url: `/api/broadcast/notifications/${notificationId}`,
+        method: 'DELETE',
+        timeout: 8000,
+        success: function(response) {
+            if (response.success) {
+                showToast('删除成功');
+                loadNotifications(broadcastPage);
+            } else {
+                showToast('删除失败：' + response.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            if (status === 'timeout') {
+                showToast('删除超时，请重试！', 'danger');
+            } else {
+                showToast('删除失败', 'danger');
+            }
+        },
+        complete: function() {
+            $btn.prop('disabled', false);
+        }
+    });
+}
+
+function resendNotification(notificationId) {
+    const $btn = $(`button[onclick="resendNotification(${notificationId})"]`);
+    if ($btn.prop('disabled')) return;
+    $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+    
+    $.ajax({
+        url: `/api/broadcast/notifications/${notificationId}/resend`,
+        method: 'POST',
+        timeout: 10000,
+        success: function(response) {
+            if (response.success) {
+                showToast('重新发送成功！');
+                loadNotifications(broadcastPage);
+            } else {
+                showToast('发送失败：' + response.error, 'danger');
+            }
+        },
+        error: function(xhr, status, error) {
+            if (status === 'timeout') {
+                showToast('重发超时，请重试！', 'danger');
+            } else {
+                showToast('发送失败', 'danger');
+            }
+        },
+        complete: function() {
+            $btn.prop('disabled', false).html('<i class="bi bi-send"></i> 重发');
+        }
+    });
+}
+
+function confirmUserSelection() {
+    $('#selected_user_ids').val(selectedUserIds.join(','));
+    
+    const display = $('#selectedUsersDisplay');
+    display.empty();
+    
+    if (selectedUserIds.length > 0) {
+        display.append(`<span class="badge bg-primary">已选择 ${selectedUserIds.length} 人</span>`);
+    } else {
+        display.append('<span class="text-muted">点击下方按钮选择人员</span>');
+    }
+    
+    $('#userSelectorModal').modal('hide');
 }
 </script>
 {% endblock %}

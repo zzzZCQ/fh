@@ -10,6 +10,8 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'delivery-notification-secret-key')
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///delivery.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # 静态文件缓存（秒）
+    SEND_FILE_MAX_AGE_DEFAULT = 3600
 
 
 # 顺丰API配置

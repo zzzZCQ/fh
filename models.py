@@ -282,3 +282,49 @@ class ToolFile(db.Model):
     
     uploader = db.relationship('User', backref=db.backref('tool_files', lazy=True))
     group = db.relationship('Group', backref=db.backref('tool_files', lazy=True))
+
+
+class BroadcastNotification(db.Model):
+    """广播通知模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200))  # 通知标题
+    content = db.Column(db.Text, nullable=False)  # 通知内容
+    image_path = db.Column(db.String(500))  # 生成的图片相对路径
+    priority = db.Column(db.String(20), default='normal')  # normal/important/urgent
+    target_type = db.Column(db.String(20))  # all/department/role/user
+    target_ids = db.Column(db.Text)  # 目标ID列表，逗号分隔
+    scheduled_time = db.Column(db.DateTime)  # 定时发送时间
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    status = db.Column(db.String(20), default='draft')  # draft/scheduled/sent/cancelled
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    sent_time = db.Column(db.DateTime)  # 实际发送时间
+    
+    sender = db.relationship('User', backref=db.backref('sent_notifications', lazy=True))
+
+
+class OrderReminder(db.Model):
+    """订单发货提醒模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('order.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    expected_shipping_time = db.Column(db.DateTime, nullable=False)  # 预计发货时间
+    is_sent = db.Column(db.Boolean, default=False)  # 是否已发送提醒
+    sent_time = db.Column(db.DateTime)  # 提醒发送时间
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    
+    order = db.relationship('Order', backref=db.backref('reminders', lazy=True))
+    user = db.relationship('User', backref=db.backref('order_reminders', lazy=True))
+
+
+class NotificationReceipt(db.Model):
+    """通知确认记录模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    notification_id = db.Column(db.Integer, db.ForeignKey('broadcast_notification.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    received_time = db.Column(db.DateTime)  # 客户端收到时间
+    confirmed_time = db.Column(db.DateTime)  # 确认时间
+    is_confirmed = db.Column(db.Boolean, default=False)
+    
+    notification = db.relationship('BroadcastNotification', 
+                                   backref=db.backref('receipts', lazy=True))
+    user = db.relationship('User', backref=db.backref('notification_receipts', lazy=True))

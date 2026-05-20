@@ -49,25 +49,28 @@ def ship_order(order_id):
 @bp.route('/update_logistics', methods=['POST'])
 @login_required
 def update_logistics():
-    # 检查点击频率限制（1小时 = 3600秒）
+    # 检查点击频率限制（1小时 = 3600秒），超级管理员不受限制
     user_id = current_user.id
     now = time.time()
-    last_click = _update_logistics_click_cache.get(user_id, 0)
     
-    if now - last_click < 3600:  # 1小时内已点击过
-        remaining_seconds = int(3600 - (now - last_click))
-        remaining_minutes = remaining_seconds // 60
-        flash(f'更新物流按钮每小时只能点击一次，请 {remaining_minutes} 分钟后再试！', 'warning')
-        return redirect(url_for('orders.dashboard',
-            page=request.form.get('page', 1),
-            customer_keyword=request.form.get('customer_keyword', ''),
-            tracking_keyword=request.form.get('tracking_keyword', ''),
-            status=request.form.get('status', ''),
-            category=request.form.get('category', ''),
-            salesman_id=request.form.get('salesman_id', '')))
-    
-    # 记录本次点击时间
-    _update_logistics_click_cache[user_id] = now
+    # 超级管理员（用户名=admin）不受时间限制
+    if current_user.username != 'admin':
+        last_click = _update_logistics_click_cache.get(user_id, 0)
+        
+        if now - last_click < 3600:  # 1小时内已点击过
+            remaining_seconds = int(3600 - (now - last_click))
+            remaining_minutes = remaining_seconds // 60
+            flash(f'更新物流按钮每小时只能点击一次，请 {remaining_minutes} 分钟后再试！', 'warning')
+            return redirect(url_for('orders.dashboard',
+                page=request.form.get('page', 1),
+                customer_keyword=request.form.get('customer_keyword', ''),
+                tracking_keyword=request.form.get('tracking_keyword', ''),
+                status=request.form.get('status', ''),
+                category=request.form.get('category', ''),
+                salesman_id=request.form.get('salesman_id', '')))
+        
+        # 记录本次点击时间
+        _update_logistics_click_cache[user_id] = now
     
     print(f"[update_logistics] 收到请求, page={request.form.get('page')}")
     page = request.form.get('page', 1, type=int)
@@ -126,6 +129,9 @@ def approve_delete(order_id):
     customer_info = f"{order.customer_name or '未知'}-{order.phone}" if order.customer_name else order.phone
     group_name = order.group_name
     salesman_id = order.salesman_id
+    # 先删除关联的提醒记录
+    from models import OrderReminder
+    OrderReminder.query.filter_by(order_id=order.id).delete()
     db.session.delete(order)
     db.session.commit()
     notify_users([salesman_id], f'您的删除订单 {group_name}（客户：{customer_info}）的申请，管理员已通过！')

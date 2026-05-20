@@ -7,7 +7,7 @@ from flask_login import LoginManager
 
 from config import Config
 from models import db, User, _now_bj
-from services import update_sf_logistics
+from services import update_sf_logistics, check_order_reminders
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # ============ 应用初始化 ============
@@ -47,6 +47,7 @@ from routes_behavior import bp as behavior_bp
 from routes_dingtalk import bp as dingtalk_bp
 from routes_customer_follow_up import bp as customer_follow_up_bp
 from routes_tools import bp as tools_bp
+from routes_broadcast import bp as broadcast_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(orders_bp)
@@ -62,6 +63,15 @@ app.register_blueprint(behavior_bp)
 app.register_blueprint(dingtalk_bp)
 app.register_blueprint(customer_follow_up_bp)
 app.register_blueprint(tools_bp)
+app.register_blueprint(broadcast_bp)
+
+# Flask-SocketIO初始化
+from flask_socketio import SocketIO, emit
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# 导入并初始化socket事件
+import socket_events
+socket_events.init_socketio(socketio)
 
 
 # ============ 数据库迁移 ============
@@ -133,6 +143,24 @@ def run_migrations():
             print('[迁移] 已添加tool_file.group_id列')
     except Exception:
         pass  # tool_file表可能不存在
+    
+    # 创建order_reminder表
+    try:
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS order_reminder (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                expected_shipping_time DATETIME NOT NULL,
+                is_sent BOOLEAN DEFAULT 0,
+                sent_time DATETIME,
+                create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        db.session.commit()
+        print('[迁移] 已创建order_reminder表')
+    except Exception as e:
+        print(f'[迁移] order_reminder表创建/检查: {e}')
 
 
 def init_db():
@@ -147,6 +175,8 @@ def init_db():
 # ============ 启动定时任务 ============
 scheduler = BackgroundScheduler()
 scheduler.add_job(update_sf_logistics, 'interval', hours=6, args=[app])
+# 每天凌晨1点检查订单发货提醒
+scheduler.add_job(check_order_reminders, 'cron', hour=1, minute=0, args=[app])
 scheduler.start()
 
 # ============ 初始化数据库 ============
@@ -154,4 +184,4 @@ with app.app_context():
     init_db()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=True, allow_unsafe_werkzeug=True)
