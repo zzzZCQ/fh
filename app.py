@@ -22,6 +22,20 @@ def from_json_filter(value):
         return json.loads(value)
     return value or {}
 
+@app.template_filter('format_duration')
+def format_duration_filter(seconds):
+    """格式化时长显示"""
+    if not seconds:
+        return '-'
+    minutes, secs = divmod(seconds, 60)
+    hours, mins = divmod(minutes, 60)
+    if hours > 0:
+        return f'{hours}时{mins}分{secs}秒'
+    elif minutes > 0:
+        return f'{mins}分{secs}秒'
+    else:
+        return f'{secs}秒'
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'auth.login'
@@ -29,7 +43,7 @@ login_manager.login_view = 'auth.login'
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 
 # ============ 注册蓝图 ============
@@ -48,6 +62,7 @@ from routes_dingtalk import bp as dingtalk_bp
 from routes_customer_follow_up import bp as customer_follow_up_bp
 from routes_tools import bp as tools_bp
 from routes_broadcast import bp as broadcast_bp
+from routes_wework import bp as wework_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(orders_bp)
@@ -64,10 +79,19 @@ app.register_blueprint(dingtalk_bp)
 app.register_blueprint(customer_follow_up_bp)
 app.register_blueprint(tools_bp)
 app.register_blueprint(broadcast_bp)
+app.register_blueprint(wework_bp)
 
 # Flask-SocketIO初始化
 from flask_socketio import SocketIO, emit
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode='threading',
+    ping_timeout=60,
+    ping_interval=25,
+    max_http_buffer_size=1e6,
+    transports=['polling']  # 强制使用轮询，避免WebSocket兼容性问题
+)
 
 # 导入并初始化socket事件
 import socket_events
@@ -184,4 +208,4 @@ with app.app_context():
     init_db()
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)

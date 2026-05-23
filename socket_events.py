@@ -51,25 +51,19 @@ def init_socketio(socketio):
             token = request.args.get('token')
             
             if not user_id or not token:
-                emit('error', {'message': 'Auth info missing'})
-                disconnect()
-                return
+                return False
             
-            user = User.query.get(int(user_id))
+            user = db.session.get(User, int(user_id))
             if not user:
-                emit('error', {'message': 'User not found'})
-                disconnect()
-                return
+                return False
             
             expected_token = f"user_{user_id}_token"
             if token != expected_token:
-                emit('error', {'message': 'Auth failed'})
-                disconnect()
-                return
+                return False
             
             user_id_int = int(user_id)
             
-            # 如果该用户已有连接，记录警告但允许新连接（自动处理）
+            # 如果该用户已有连接，先移除旧连接
             if user_id_int in connected_users:
                 old_sid = connected_users[user_id_int]['sid']
                 if old_sid != request.sid:
@@ -81,21 +75,13 @@ def init_socketio(socketio):
                 'username': user.name
             }
             
-            emit('connected', {
-                'status': 'success',
-                'user_id': user.id,
-                'username': user.name
-            })
-            
             print(f"User {user.name} connected (ID: {user.id})")
             
         except Exception as e:
             print(f"Connection error: {str(e)}")
-            try:
-                emit('error', {'message': 'Connection failed'})
-                disconnect()
-            except:
-                pass
+            import traceback
+            traceback.print_exc()
+            return False
     
     @socketio.on('disconnect')
     def handle_disconnect():
@@ -104,7 +90,7 @@ def init_socketio(socketio):
             for user_id, data in list(connected_users.items()):
                 if data['sid'] == request.sid:
                     del connected_users[user_id]
-                    user = User.query.get(user_id)
+                    user = db.session.get(User, user_id)
                     print(f"User {user.name if user else user_id} disconnected")
                     break
         except Exception as e:

@@ -3,11 +3,72 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from datetime import datetime
+import re
 
 from models import db, User, Order, Group, Category, OrderReminder
 from helpers import role_required, get_unread_count, get_active_categories, get_active_gifts, notify_users, notify_user_upward_admin
 
 bp = Blueprint('orders', __name__)
+
+
+def extract_quantity_from_product_info(product_info):
+    """从产品信息中提取数量"""
+    if not product_info:
+        return 1
+    # 尝试匹配常见的数量格式：数量:x、数量：x、x件、x个等
+    patterns = [
+        r'数量[：:]\s*(\d+)',  # 数量:1 或 数量：1
+        r'(\d+)\s*[件个台盒]',  # 1件、2个等
+        r'数量\s*[=＝]\s*(\d+)',  # 数量=1
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, product_info)
+        if match:
+            try:
+                return int(match.group(1))
+            except (ValueError, IndexError):
+                continue
+    # 如果没找到，默认返回1
+    return 1
+
+
+def validate_order_amount(category_name, product_info, paid_amount_str, collect_amount_str):
+    """验证订单金额是否与单价×数量匹配"""
+    # 获取类别信息
+    category = Category.query.filter_by(name=category_name, is_active=True).first()
+    if not category or not category.unit_price or category.unit_price <= 0:
+        # 如果没有设置单价，不验证
+        return True, None
+    
+    # 提取数量
+    quantity = extract_quantity_from_product_info(product_info)
+    
+    # 计算总金额
+    expected_total = category.unit_price * quantity
+    
+    # 解析已付金额（只取数字部分）
+    paid = 0
+    if paid_amount_str:
+        num_match = re.match(r'^(\d+(?:\.\d+)?)', str(paid_amount_str))
+        if num_match:
+            paid = float(num_match.group(1))
+    
+    # 解析代收金额
+    collect = 0
+    if collect_amount_str:
+        try:
+            collect = float(collect_amount_str)
+        except (ValueError, TypeError):
+            collect = 0
+    
+    actual_total = paid + collect
+    
+    # 允许一定的误差（±1元）
+    if abs(actual_total - expected_total) > 1:
+        return False, (f'金额不匹配！{category_name}单价为{category.unit_price}元，数量为{quantity}，'
+                      f'预期总金额为{expected_total}元，实际填写为{actual_total}元（已付{paid}元+代收{collect}元）')
+    
+    return True, None
 
 
 # ============ 统一订单管理路由 ============
@@ -55,7 +116,12 @@ def dashboard():
     if salesman_filter and not is_salesman:
         query = query.filter(Order.salesman_id == salesman_filter)
     if status_filter:
-        query = query.filter(Order.status == status_filter)
+        # 统一的筛选参数：草稿/待发货/已发货 为业务状态，其他为物流状态
+        if status_filter in ['draft', 'submitted', 'shipped']:
+            query = query.filter(Order.status == status_filter)
+        else:
+            # 物流状态
+            query = query.filter(Order.logistics_status == status_filter)
     if group_filter and is_admin:
         query = query.filter(Order.group_id == group_filter)
     if month_filter:
@@ -67,67 +133,74 @@ def dashboard():
             query = query.filter(Order.create_time >= start_date, Order.create_time <= end_date)
         except (ValueError, IndexError):
             pass
-    orders = query.order_by(Order.create_time.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    from sqlalchemy import case
+    from models import Category
     
-    # 如果当前页码超出范围，自动跳转到第一页
-    if page > 1 and orders.total == 0:
-        orders = query.order_by(Order.create_time.desc()).paginate(page=1, per_page=per_page, error_out=False)
-    
-    # 当前页汇总统计（使用数据库聚合，避开paid_amount的文本解析问题）
-    page_count = orders.total
-    # 由于paid_amount是文本格式（如"100企微410"），只能统计当前页并在Python中解析
-    import re
-    page_paid = 0
-    page_collect = 0
-    for o in orders.items:
-        if o.paid_amount:
-            num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
-            if num_match:
-                page_paid += float(num_match.group(1))
-        if o.collect_amount:
-            page_collect += float(o.collect_amount)
+    # 使用简单直接的SQL CASE排序（SQLAlchemy 2.0正确语法）
+    orders = query.outerjoin(Category, Category.name == Order.category).order_by(
+        # 第一优先级：待发货订单
+        case((Order.status == 'submitted', 0), else_=1),
+        # 第二优先级：物流状态（按用户要求的优先级：运送中 > 待派送 > 派送中 > 已签收 > 退回已签收）
+        case(
+            (Order.logistics_status == '运送中', 2),
+            (Order.logistics_status == '已发货', 2),  # 兼容"已发货"也当作运送中
+            (Order.logistics_status == '待派送', 1),
+            (Order.logistics_status == '派送中', 3),
+            (Order.logistics_status == '已签收', 4),
+            (Order.logistics_status == '退回已签收', 5),
+            else_=5
+        ),
+        # 第三优先级：是否主品
+        case((Category.is_main_product == True, 0), else_=1),
+        # 第四优先级：创建时间降序
+        Order.create_time.desc()
+    ).paginate(page=page, per_page=per_page, error_out=False)
     
     # 业务员筛选：可见范围是本级及下级
     salesman_query = User.query.filter(User.roles.like('%salesman%'))
     if is_admin and current_user.username == 'admin':
-        # admin 管理员可以看到所有业务员
         pass
     elif current_user.group_id:
-        # 其他用户只能看到自己组别及下级组别的业务员
         visible_group_ids = current_user.get_managed_group_ids()
         salesman_query = salesman_query.filter(User.group_id.in_(visible_group_ids))
     salesmen = salesman_query.all()
-
-    # 汇总统计（基于当前筛选条件的全部数据，不加载到内存）
-    # 由于paid_amount是文本格式，使用子查询获取ID列表，然后在Python中批量解析
-    # 为了性能，只取前1000条进行汇总统计
-    summary_ids = [o.id for o in query.with_entities(Order.id).limit(1000).all()]
     
-    total_paid = 0
-    total_collect = 0
+    # 简化汇总统计：只统计当前页，避免大数据量时的性能问题
+    page_count = orders.total
+    import re
+    page_paid = 0
+    page_collect = 0
     signed_amount = 0
     
-    if summary_ids:
-        # 批量查询这些订单的数据
-        summary_orders = Order.query.filter(Order.id.in_(summary_ids)).all()
-        for o in summary_orders:
+    # 获取所有活跃的主品类别
+    main_product_categories = set(c.name for c in Category.query.filter_by(is_main_product=True, is_active=True).all())
+    
+    for o in orders.items:
+        # 只统计主品的金额
+        if o.category not in main_product_categories:
+            continue
+        # 已付定金
+        if o.paid_amount:
+            num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
+            if num_match:
+                page_paid += float(num_match.group(1))
+        # 代收金额
+        if o.collect_amount:
+            page_collect += float(o.collect_amount)
+        # 已签收金额
+        if o.logistics_status == '已签收':
             if o.paid_amount:
                 num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
                 if num_match:
-                    total_paid += float(num_match.group(1))
+                    signed_amount += float(num_match.group(1))
             if o.collect_amount:
-                total_collect += float(o.collect_amount)
-            # 已签收金额
-            if o.logistics_status == '已签收':
-                if o.paid_amount:
-                    num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
-                    if num_match:
-                        signed_amount += float(num_match.group(1))
-                if o.collect_amount:
-                    signed_amount += float(o.collect_amount)
+                signed_amount += float(o.collect_amount)
     
-    total_performance = total_paid + total_collect
-
+    # 总览统计：使用当前页的汇总数据
+    total_paid = page_paid
+    total_collect = page_collect
+    total_performance = page_paid + page_collect
+    
     # 组别筛选列表：管理员本级及以下
     filter_groups = []
     if is_admin:
@@ -136,7 +209,7 @@ def dashboard():
         elif current_user.group_id:
             managed_group_ids = current_user.get_managed_group_ids()
             filter_groups = Group.query.filter(Group.id.in_(managed_group_ids), Group.is_active==True).order_by(Group.level.asc(), Group.create_time.asc()).all()
-
+    
     # 权限变量
     return render_template('dashboard.html', orders=orders, salesmen=salesmen,
                            page_title='订单管理',
@@ -206,8 +279,55 @@ def create_order():
         error_msg = '请填写所有必填字段！'
         if is_ajax:
             return jsonify({'success': False, 'error': error_msg})
-        flash(error_msg, 'danger')
-        return redirect(url_for('orders.create_order_page'))
+        # 保留用户填写的数据并返回表单
+        return render_template('create_order.html',
+                             unread_count=get_unread_count(current_user.id),
+                             categories=get_active_categories(),
+                             gifts=get_active_gifts(),
+                             form_data={
+                                 'group_name': group_name,
+                                 'customer_name': customer_name or '',
+                                 'customer_wechat': customer_wechat or '',
+                                 'paid_amount': paid_amount or '',
+                                 'pay_date': pay_date or '',
+                                 'collect_amount': collect_amount or '',
+                                 'product_info': product_info,
+                                 'category': category,
+                                 'phone': phone,
+                                 'address': address,
+                                 'remark': remark or '',
+                                 'has_gift': has_gift,
+                                 'gift_info': gift_list
+                             },
+                             error=error_msg)
+    
+    # 验证金额（只在提交订单时验证，保存草稿不验证）
+    if action == 'submit':
+        is_valid, error_msg = validate_order_amount(category, product_info, paid_amount, collect_amount)
+        if not is_valid:
+            if is_ajax:
+                return jsonify({'success': False, 'error': error_msg})
+            # 保留用户填写的数据并返回表单
+            return render_template('create_order.html',
+                                 unread_count=get_unread_count(current_user.id),
+                                 categories=get_active_categories(),
+                                 gifts=get_active_gifts(),
+                                 form_data={
+                                     'group_name': group_name,
+                                     'customer_name': customer_name or '',
+                                     'customer_wechat': customer_wechat or '',
+                                     'paid_amount': paid_amount or '',
+                                     'pay_date': pay_date or '',
+                                     'collect_amount': collect_amount or '',
+                                     'product_info': product_info,
+                                     'category': category,
+                                     'phone': phone,
+                                     'address': address,
+                                     'remark': remark or '',
+                                     'has_gift': has_gift,
+                                     'gift_info': gift_list
+                                 },
+                                 error=error_msg)
 
     paid = paid_amount.strip() if paid_amount else None
     pay_d = datetime.strptime(pay_date, '%Y-%m-%d').date() if pay_date else None
@@ -298,8 +418,56 @@ def edit_order(order_id):
         gift_info = '、'.join([g.strip() for g in gift_list if g.strip()])
 
         if not all([group_name, product_info, category, phone, address]):
-            flash('请填写所有必填字段！', 'danger')
-            return redirect(url_for('orders.edit_order', order_id=order_id))
+            error_msg = '请填写所有必填字段！'
+            # 保留数据返回表单
+            return render_template('edit_order.html',
+                                 order=order,
+                                 unread_count=get_unread_count(current_user.id),
+                                 categories=get_active_categories(),
+                                 gifts=get_active_gifts(),
+                                 form_data={
+                                     'group_name': group_name,
+                                     'customer_name': customer_name or '',
+                                     'customer_wechat': '',
+                                     'paid_amount': paid_amount or '',
+                                     'pay_date': pay_date or '',
+                                     'collect_amount': collect_amount or '',
+                                     'product_info': product_info,
+                                     'category': category,
+                                     'phone': phone,
+                                     'address': address,
+                                     'remark': remark or '',
+                                     'has_gift': has_gift,
+                                     'gift_info': gift_list
+                                 },
+                                 error=error_msg)
+        
+        # 验证金额（只在提交订单时验证，保存草稿不验证）
+        if action == 'submit':
+            is_valid, error_msg = validate_order_amount(category, product_info, paid_amount, collect_amount)
+            if not is_valid:
+                # 保留数据返回表单
+                return render_template('edit_order.html',
+                                     order=order,
+                                     unread_count=get_unread_count(current_user.id),
+                                     categories=get_active_categories(),
+                                     gifts=get_active_gifts(),
+                                     form_data={
+                                         'group_name': group_name,
+                                         'customer_name': customer_name or '',
+                                         'customer_wechat': '',
+                                         'paid_amount': paid_amount or '',
+                                         'pay_date': pay_date or '',
+                                         'collect_amount': collect_amount or '',
+                                         'product_info': product_info,
+                                         'category': category,
+                                         'phone': phone,
+                                         'address': address,
+                                         'remark': remark or '',
+                                         'has_gift': has_gift,
+                                         'gift_info': gift_list
+                                     },
+                                     error=error_msg)
 
         order.group_name = group_name
         order.customer_name = customer_name

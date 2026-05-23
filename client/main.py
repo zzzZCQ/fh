@@ -16,6 +16,7 @@ from tray_icon import TrayIcon
 from notification_window import NotificationWindow
 from websocket_client import WebSocketClient
 from history_window import HistoryWindow
+from wework_monitor import WeworkCallMonitor
 
 
 class NotificationSignals(QObject):
@@ -181,6 +182,7 @@ class MainWindow:
             self.show_settings()
         
         self.init_websocket()
+        self.init_wework_monitor()
         
         self.play_sound('start')
         
@@ -212,6 +214,11 @@ class MainWindow:
             on_auth_failed=self.on_auth_failed
         )
         self.ws_client.start()
+    
+    def init_wework_monitor(self):
+        """初始化企微通话监控"""
+        self.wework_monitor = WeworkCallMonitor()
+        self.wework_monitor.start()
     
     # ========== Socket线程回调 - 发送信号 ==========
     def on_notification(self, data):
@@ -378,6 +385,8 @@ class MainWindow:
             self.history_window.close()
         if hasattr(self, 'ws_client'):
             self.ws_client.stop()
+        if hasattr(self, 'wework_monitor'):
+            self.wework_monitor.stop()
         
         self.app.quit()
     

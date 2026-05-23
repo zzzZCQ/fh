@@ -64,9 +64,10 @@
 
         <!-- 更新物流的form，单独的，不嵌套 -->
 
-        <form method="POST" action="{{ url_for('shipping.update_logistics') }}" class="d-inline">
+        <form method="POST" action="{{ url_for('shipping.update_logistics') }}" class="d-inline" id="updateLogisticsForm">
 
             <input type="hidden" name="page" value="{{ request.args.get('page', 1) }}">
+            <input type="hidden" name="per_page" value="{{ request.args.get('per_page', 10) }}">
 
             <input type="hidden" name="customer_keyword" value="{{ request.args.get('customer_keyword', '') }}">
 
@@ -78,7 +79,26 @@
 
             <input type="hidden" name="salesman_id" value="{{ request.args.get('salesman_id', '') }}">
 
-            <button type="submit" class="btn btn-success">更新物流</button>
+            <button type="submit" class="btn btn-success" id="updateLogisticsBtn">
+                <span id="updateLogisticsBtnText">更新物流</span>
+                <span id="updateLogisticsBtnLoading" style="display:none;">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    更新中...
+                </span>
+            </button>
+        </form>
+        <script>
+        document.getElementById('updateLogisticsForm').addEventListener('submit', function(e) {
+            const btn = document.getElementById('updateLogisticsBtn');
+            const btnText = document.getElementById('updateLogisticsBtnText');
+            const btnLoading = document.getElementById('updateLogisticsBtnLoading');
+            
+            btn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoading.style.display = 'inline';
+            btn.classList.add('disabled');
+        });
+        </script>
 
         </form>
 
@@ -405,6 +425,19 @@
 
 
 <script>
+
+// 筛选表单提交时重置页码为1
+document.addEventListener('DOMContentLoaded', function() {
+    const filterForm = document.getElementById('filterForm');
+    if (filterForm) {
+        filterForm.addEventListener('submit', function() {
+            const pageInput = filterForm.querySelector('input[name="page"]');
+            if (pageInput) {
+                pageInput.value = '1';
+            }
+        });
+    }
+});
 
 function showOrderDetail(orderId) {
 

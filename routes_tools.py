@@ -461,3 +461,211 @@ def git_log():
         return jsonify({'logs': logs})
     except Exception as e:
         return jsonify({'logs': [], 'error': str(e)}), 200
+
+
+@bp.route('/tools/download_wework_monitor')
+@login_required
+def download_wework_monitor():
+    """下载企微通话监控工具"""
+    wework_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wework_call_monitor')
+    
+    if not os.path.exists(wework_dir):
+        os.makedirs(wework_dir)
+    
+    memory_file = BytesIO()
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # 创建监控脚本
+        monitor_script = '''# -*- coding: utf-8 -*-
+"""企业微信通话监控脚本"""
+import time
+import json
+import requests
+import win32gui
+import win32process
+import psutil
+from datetime import datetime
+
+# === 配置 ===
+SERVER_URL = "http://127.0.0.1:5000/wework/api/record"  # 服务器地址
+CHECK_INTERVAL = 1  # 检查间隔（秒）
+
+# === 全局变量 ===
+active_calls = {}  # {窗口句柄: {'user_name': 'xxx', 'start_time': '2024-01-01T00:00:00'}}
+
+
+def get_window_text(hwnd):
+    """获取窗口标题"""
+    return win32gui.GetWindowText(hwnd)
+
+
+def is_wework_call_window(hwnd):
+    """判断是否是企微通话窗口"""
+    title = get_window_text(hwnd)
+    if not title:
+        return False
+    # 企微通话窗口特征：包含"语音通话"、"视频通话"或时长显示
+    keywords = ["语音通话", "视频通话", "通话中", "秒", "分"]
+    for kw in keywords:
+        if kw in title:
+            return True
+    return False
+
+
+def extract_user_name(title):
+    """从窗口标题中提取用户名"""
+    # 常见格式："与张三的语音通话"、"李四 - 语音通话"
+    title = title.replace("语音通话", "").replace("视频通话", "").replace("通话中", "")
+    title = title.replace("与", "").replace("的", "").replace("-", "").strip()
+    # 移除时长信息（如 "00:05"）
+    import re
+    title = re.sub(r'\\d+:\\d+', '', title).strip()
+    title = re.sub(r'\\d+分\\d+秒', '', title).strip()
+    title = re.sub(r'\\d+秒', '', title).strip()
+    return title if title else "未知用户"
+
+
+def upload_call_record(user_name, start_time, end_time=None):
+    """上传通话记录到服务器"""
+    try:
+        data = {
+            "user_name": user_name,
+            "call_start_time": start_time
+        }
+        if end_time:
+            data["call_end_time"] = end_time
+        
+        response = requests.post(SERVER_URL, json=data, timeout=5)
+        return response.json()
+    except Exception as e:
+        print(f"上传失败: {e}")
+        return None
+
+
+def enum_windows_callback(hwnd, _):
+    """枚举窗口回调函数"""
+    if not win32gui.IsWindowVisible(hwnd):
+        return True
+    
+    if is_wework_call_window(hwnd):
+        title = get_window_text(hwnd)
+        user_name = extract_user_name(title)
+        
+        if hwnd not in active_calls:
+            # 新通话开始
+            start_time = datetime.now().isoformat()
+            active_calls[hwnd] = {
+                "user_name": user_name,
+                "start_time": start_time
+            }
+            print(f"通话开始: {user_name}")
+            upload_call_record(user_name, start_time)
+    
+    return True
+
+
+def main():
+    print("企业微信通话监控已启动...")
+    print(f"服务器地址: {SERVER_URL}")
+    print("按 Ctrl+C 停止监控\\n")
+    
+    try:
+        while True:
+            # 枚举所有窗口
+            win32gui.EnumWindows(enum_windows_callback, None)
+            
+            # 检查已结束的通话
+            current_hwnds = set()
+            def check_callback(hwnd, _):
+                if is_wework_call_window(hwnd):
+                    current_hwnds.add(hwnd)
+                return True
+            
+            win32gui.EnumWindows(check_callback, None)
+            
+            # 处理已结束的通话
+            hwnds_to_remove = []
+            for hwnd in list(active_calls.keys()):
+                if hwnd not in current_hwnds:
+                    # 通话结束
+                    call_info = active_calls[hwnd]
+                    end_time = datetime.now().isoformat()
+                    print(f"通话结束: {call_info['user_name']}")
+                    upload_call_record(call_info['user_name'], call_info['start_time'], end_time)
+                    hwnds_to_remove.append(hwnd)
+            
+            for hwnd in hwnds_to_remove:
+                del active_calls[hwnd]
+            
+            time.sleep(CHECK_INTERVAL)
+            
+    except KeyboardInterrupt:
+        print("\\n监控已停止")
+
+
+if __name__ == "__main__":
+    main()
+'''
+        
+        # 创建 requirements.txt
+        requirements_content = '''requests==2.31.0
+pywin32==306
+psutil==5.9.5
+'''
+        
+        # 创建启动脚本
+        start_bat = '''@echo off
+chcp 65001 >nul
+echo 正在启动企业微信通话监控...
+echo.
+python wework_call_monitor.py
+if errorlevel 1 (
+    echo.
+    echo 程序异常退出，请检查是否已安装Python和依赖库
+    pause
+)
+'''
+        
+        # 创建配置示例
+        config_example = '''# 企业微信通话监控配置
+# 将此文件复制为 config.py 并修改配置
+
+SERVER_URL = "http://192.168.1.100:5000/wework/api/record"  # 修改为你的服务器地址
+CHECK_INTERVAL = 1
+'''
+        
+        # 创建使用说明
+        readme_content = '''企业微信通话监控工具
+====================
+
+一、安装依赖
+1. 确保已安装 Python 3.7+
+2. 运行: pip install -r requirements.txt
+
+二、配置
+1. 编辑 wework_call_monitor.py，修改 SERVER_URL 为你的服务器地址
+
+三、运行
+1. 双击运行 启动监控.bat
+2. 或者运行: python wework_call_monitor.py
+
+四、说明
+- 监控会自动检测企业微信的语音/视频通话窗口
+- 通话开始时自动记录，结束时上传时长
+- 数据会自动同步到服务器的"企业微信通话记录"页面
+'''
+        
+        # 写入文件到zip
+        zf.writestr('wework_call_monitor.py', monitor_script)
+        zf.writestr('requirements.txt', requirements_content)
+        zf.writestr('启动监控.bat', start_bat)
+        zf.writestr('config_example.py', config_example)
+        zf.writestr('使用说明.txt', readme_content)
+    
+    memory_file.seek(0)
+    
+    return send_file(
+        memory_file,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='企微通话监控工具.zip'
+    )

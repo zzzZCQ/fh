@@ -69,6 +69,7 @@ def load_logistics_cache(tracking_number, is_signed=False, sign_time=None):
             cache_data = json.load(f)
         
         # 未签收的缓存检查是否过期（2小时）
+        # 已签收和退回已签收都是最终状态，永久保留，不删除
         if not is_signed:
             cache_time = datetime.strptime(cache_data['cache_time'], '%Y-%m-%d %H:%M:%S')
             elapsed = (datetime.now() - cache_time).total_seconds()
@@ -86,7 +87,7 @@ def load_logistics_cache(tracking_number, is_signed=False, sign_time=None):
 def get_logistics_with_cache(order, force_refresh=False):
     """获取物流信息
     
-    逻辑：所有状态都缓存，非已签收有效期2小时，已签收按月缓存
+    逻辑：所有状态都缓存，非最终状态有效期2小时，已签收和退回已签收按月缓存（永久保留）
     强制刷新时直接调用API
     
     Args:
@@ -100,18 +101,21 @@ def get_logistics_with_cache(order, force_refresh=False):
         return {'routes': [], 'from_cache': False, 'is_signed': False}
     
     tracking_number = order.tracking_number
-    is_signed = order.logistics_status == '已签收'
+    
+    # 已签收和退回已签收都是最终状态，永久保留缓存
+    final_statuses = ['已签收', '退回已签收']
+    is_final_status = order.logistics_status in final_statuses
     sign_time = order.sign_time
     
     # 非强制刷新时，先尝试读缓存
     if not force_refresh:
-        cache_data = load_logistics_cache(tracking_number, is_signed, sign_time)
+        cache_data = load_logistics_cache(tracking_number, is_final_status, sign_time)
         if cache_data:
             _update_order_status_from_routes(order, cache_data['routes'])
             return {
                 'routes': cache_data['routes'],
                 'from_cache': True,
-                'is_signed': is_signed
+                'is_signed': is_final_status
             }
     
     # 调用顺丰API查询（强制刷新或缓存不存在/过期）
@@ -122,14 +126,14 @@ def get_logistics_with_cache(order, force_refresh=False):
     _update_order_status_from_routes(order, routes)
     
     # 保存缓存（所有状态都保存，包括空结果）
-    # 如果更新后变成已签收，按已签收的方式保存
-    new_is_signed = order.logistics_status == '已签收'
-    save_logistics_cache(tracking_number, routes, new_is_signed, order.sign_time if new_is_signed else None)
+    # 如果更新后变成最终状态，按最终状态的方式保存（永久保留）
+    new_is_final = order.logistics_status in final_statuses
+    save_logistics_cache(tracking_number, routes, new_is_final, order.sign_time if new_is_final else None)
     
     return {
         'routes': routes,
         'from_cache': False,
-        'is_signed': new_is_signed
+        'is_signed': new_is_final
     }
 
 
@@ -181,23 +185,47 @@ def _update_order_status_from_routes(order, routes):
             new_status = '已揽收'
     
     # 更新订单状态
-    if new_status and new_status != order.logistics_status:
-        old_status = order.logistics_status
-        order.logistics_status = new_status
+    remark = latest.get('remark', '') or ''
+    return_keywords = ['退回', '拒收', '无人签收', '退回寄件人', '返程']
+    is_return = any(keyword in remark for keyword in return_keywords)
+    
+    if new_status:
+        # 如果remark包含退回关键词，并且是已签收相关状态，强制设置为退回已签收
+        if is_return and new_status in ['已签收', '退回已签收']:
+            target_status = '退回已签收'
+            if order.logistics_status != target_status:
+                old_status = order.logistics_status
+                order.logistics_status = target_status
+                from models import db
+                db.session.commit()
+                print(f"[物流状态更新] 订单 {order.id}: {old_status} -> 退回已签收 (remark: {remark})")
+                # 记录签收时间
+                accept_time = latest.get('acceptTime', '') or latest.get('accepttime', '') or ''
+                if accept_time:
+                    try:
+                        order.sign_time = datetime.strptime(accept_time, '%Y-%m-%d %H:%M:%S')
+                        db.session.commit()
+                    except ValueError:
+                        pass
+            return  # 已更新为退回已签收，无需继续
         
-        # 已签收时记录签收时间
-        if new_status == '已签收':
-            accept_time = latest.get('acceptTime', '') or latest.get('accepttime', '') or ''
-            if accept_time:
-                from datetime import datetime
-                try:
-                    order.sign_time = datetime.strptime(accept_time, '%Y-%m-%d %H:%M:%S')
-                except ValueError:
-                    pass
-        
-        from models import db
-        db.session.commit()
-        print(f"[物流状态更新] 订单 {order.id}: {old_status} -> {new_status}")
+        # 正常状态更新
+        if new_status != order.logistics_status:
+            old_status = order.logistics_status
+            order.logistics_status = new_status
+            
+            if new_status in ['已签收', '退回已签收']:
+                accept_time = latest.get('acceptTime', '') or latest.get('accepttime', '') or ''
+                if accept_time:
+                    from models import db
+                    try:
+                        order.sign_time = datetime.strptime(accept_time, '%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        pass
+            
+            from models import db
+            db.session.commit()
+            print(f"[物流状态更新] 订单 {order.id}: {old_status} -> {order.logistics_status} (remark: {remark})")
 
 # ============ 下载令牌管理 ============
 _download_tokens = {}
@@ -409,7 +437,31 @@ def update_single_order_logistics(order):
 
         old_status = order.logistics_status
         print(f"[UPDATE_LOGISTICS] 订单 {order.id}: old_status={old_status}, new_status={new_status}")
+        
+        # 检查退回关键词
+        remark = latest.get('remark', '') or ''
+        return_keywords = ['退回', '拒收', '无人签收', '退回寄件人', '返程']
+        is_return = any(keyword in remark for keyword in return_keywords)
+        
         if new_status:
+            # 如果当前状态是已签收，但remark包含退回关键词，需要更新为退回已签收
+            if old_status == '已签收' and is_return and new_status == '已签收':
+                print(f"[UPDATE_LOGISTICS] 订单 {order.id}: 已签收 -> 退回已签收 (remark: {remark})")
+                order.logistics_status = '退回已签收'
+                accept_time = latest.get('acceptTime', '') or latest.get('accepttime', '') or ''
+                if accept_time:
+                    try:
+                        order.sign_time = datetime.strptime(accept_time, '%Y-%m-%d %H:%M:%S')
+                        print(f"[UPDATE_LOGISTICS] 订单 {order.id} 签收时间: {order.sign_time}")
+                    except ValueError:
+                        print(f"[UPDATE_LOGISTICS] 签收时间解析失败: {accept_time}")
+                db.session.commit()
+                print(f"[UPDATE_LOGISTICS] 订单 {order.id}: 提交数据库 commit")
+                # 保存缓存
+                save_logistics_cache(order.tracking_number, routes, False, None)
+                return {'success': True, 'status': order.logistics_status}
+            
+            # 正常状态更新
             if new_status != old_status:
                 print(f"[UPDATE_LOGISTICS] 订单 {order.id}: 需要更新状态")
                 order.logistics_status = new_status
@@ -417,7 +469,6 @@ def update_single_order_logistics(order):
                 if new_status == '已签收':
                     accept_time = latest.get('acceptTime', '') or latest.get('accepttime', '') or ''
                     if accept_time:
-                        from datetime import datetime
                         try:
                             order.sign_time = datetime.strptime(accept_time, '%Y-%m-%d %H:%M:%S')
                             print(f"[UPDATE_LOGISTICS] 订单 {order.id} 签收时间: {order.sign_time}")

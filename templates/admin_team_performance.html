@@ -31,7 +31,7 @@
 
     <!-- 概览卡片 -->
     <div class="row mb-4">
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card bg-primary text-white">
                 <div class="card-body">
                     <h6 class="card-title">团队总业绩</h6>
@@ -40,7 +40,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card bg-success text-white">
                 <div class="card-body">
                     <h6 class="card-title">已签收业绩</h6>
@@ -49,7 +49,16 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
+            <div class="card" id="momCard">
+                <div class="card-body">
+                    <h6 class="card-title">环比增长</h6>
+                    <h3 id="momRate" class="mb-0">-</h3>
+                    <small>较上月（已签收）</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
             <div class="card bg-info text-white">
                 <div class="card-body">
                     <h6 class="card-title">业务员人数</h6>
@@ -216,13 +225,20 @@ function loadOverview() {
     fetch(url)
         .then(r => r.json())
         .then(data => {
+            console.log('API返回数据:', data);
+            
             // 团队总业绩（所有已发货）
             document.getElementById('totalAmount').textContent = formatMoney(data.total_amount);
             document.getElementById('totalCount').textContent = data.total_count + ' 单';
-
+            
             // 已签收业绩
             document.getElementById('signedAmount').textContent = formatMoney(data.signed_amount);
             document.getElementById('signedCount').textContent = data.signed_count + ' 单';
+            
+            // 环比（基于已签收业绩）
+            const momRate = Math.round(data.signed_amount_rate);
+            document.getElementById('momRate').textContent = (momRate >= 0 ? '+' : '') + momRate + '%';
+            document.getElementById('momCard').className = 'card ' + (momRate >= 0 ? 'bg-success text-white' : 'bg-danger text-white');
 
             document.getElementById('salesmanCount').textContent = data.salesman_count;
 
@@ -309,6 +325,8 @@ function showSalesmanDetail(salesmanName) {
                     let badgeStyle = '';
                     if (order.status === '已签收') {
                         badgeStyle = 'style="background-color:#198754; color:#fff; width:100%; display:inline-block;"';
+                    } else if (order.status === '退回已签收') {
+                        badgeStyle = 'style="background-color:#ffc107; color:#000; width:100%; display:inline-block;"';
                     } else if (order.status === '拒签') {
                         badgeStyle = 'style="background-color:#dc3545; color:#fff; width:100%; display:inline-block;"';
                     } else if (order.status === '派送中') {
@@ -388,9 +406,25 @@ function loadCategory() {
         .then(r => r.json())
         .then(data => {
             const chart = echarts.init(document.getElementById('categoryChart'));
-            const pieData = Object.entries(data).map(([name, val]) => ({ name, value: val.amount }));
+            const pieData = Object.entries(data).map(([name, val]) => ({ 
+                name, 
+                value: val.amount,
+                count: val.count,
+                max_amount: val.max_amount,
+                avg_amount: val.avg_amount
+            }));
             chart.setOption({
-                tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                tooltip: { 
+                    trigger: 'item', 
+                    formatter: function(params) {
+                        return `${params.name}<br/>` +
+                               `总金额: ¥${params.value.toLocaleString('zh-CN')}<br/>` +
+                               `出单数量: ${params.data.count} 单<br/>` +
+                               `最大金额: ¥${params.data.max_amount.toLocaleString('zh-CN')}<br/>` +
+                               `平均金额: ¥${params.data.avg_amount.toLocaleString('zh-CN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}<br/>` +
+                               `占比: ${params.percent}%`;
+                    }
+                },
                 series: [{
                     type: 'pie',
                     radius: ['40%', '70%'],

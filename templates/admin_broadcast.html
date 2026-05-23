@@ -43,8 +43,25 @@
                                 
                                 <div class="mb-3">
                                     <label class="form-label">通知内容</label>
-                                    <textarea class="form-control" id="content" rows="8" 
+                                    <textarea class="form-control" id="content" rows="6" 
                                               placeholder="请输入通知内容" required></textarea>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">附加图片（可选，可拖拽或粘贴）</label>
+                                    <div id="imageDropZone" class="border rounded p-4 text-center bg-light" style="cursor: pointer; min-height: 120px;">
+                                        <div id="imageDropHint">
+                                            <i class="bi bi-cloud-arrow-up" style="font-size: 2rem;"></i>
+                                            <p class="mt-2 mb-0">拖拽图片到此处，或点击选择，或直接粘贴</p>
+                                        </div>
+                                        <div id="imagePreviewContainer" style="display: none;">
+                                            <img id="imagePreview" src="" alt="预览" class="img-fluid" style="max-height: 300px;">
+                                            <button type="button" class="btn btn-sm btn-danger mt-2" onclick="removeImage()">
+                                                <i class="bi bi-trash"></i> 删除图片
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <input type="file" id="imageInput" accept="image/*" style="display: none;">
                                 </div>
                             </div>
                             
@@ -305,6 +322,116 @@ let currentNotificationId = null;
 let broadcastPage = 1;
 let selectedUserIds = [];
 let currentUserPage = 1;
+let uploadedImageUrl = null;  // 存储上传的图片URL
+
+// 初始化图片上传功能
+function initImageUpload() {
+    const dropZone = document.getElementById('imageDropZone');
+    const imageInput = document.getElementById('imageInput');
+    
+    // 点击打开文件选择
+    dropZone.addEventListener('click', () => {
+        imageInput.click();
+    });
+    
+    // 拖拽事件
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('border-primary');
+        dropZone.classList.add('bg-primary-light');
+    });
+    
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('border-primary');
+        dropZone.classList.remove('bg-primary-light');
+    });
+    
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('border-primary');
+        dropZone.classList.remove('bg-primary-light');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].type.startsWith('image/')) {
+            handleImageFile(files[0]);
+        }
+    });
+    
+    // 文件选择
+    imageInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleImageFile(e.target.files[0]);
+        }
+    });
+    
+    // 粘贴图片
+    document.addEventListener('paste', (e) => {
+        const items = e.clipboardData.items;
+        for (let item of items) {
+            if (item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                handleImageFile(file);
+                break;
+            }
+        }
+    });
+}
+
+// 处理图片文件
+function handleImageFile(file) {
+    // 检查文件大小（限制10MB）
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('图片大小不能超过10MB', 'warning');
+        return;
+    }
+    
+    // 先预览
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('imagePreview').src = e.target.result;
+        document.getElementById('imageDropHint').style.display = 'none';
+        document.getElementById('imagePreviewContainer').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+    
+    // 上传到服务器
+    uploadImage(file);
+}
+
+// 上传图片
+function uploadImage(file) {
+    const formData = new FormData();
+    formData.append('image', file);
+    
+    fetch('/api/broadcast/upload-image', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            uploadedImageUrl = data.image_url;
+            showToast('图片上传成功', 'success');
+        } else {
+            showToast('图片上传失败：' + data.error, 'danger');
+            removeImage();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('图片上传失败', 'danger');
+        removeImage();
+    });
+}
+
+// 删除图片
+function removeImage() {
+    uploadedImageUrl = null;
+    document.getElementById('imageDropHint').style.display = 'block';
+    document.getElementById('imagePreviewContainer').style.display = 'none';
+    document.getElementById('imageInput').value = '';
+}
 
 // 右上角提示
 function showToast(message, type = 'success') {
@@ -329,6 +456,7 @@ function showToast(message, type = 'success') {
 $(document).ready(function() {
     loadNotifications(1);
     loadTargetOptions();
+    initImageUpload();  // 初始化图片上传功能
     
     $('#notificationForm').submit(function(e) {
         e.preventDefault();
@@ -462,7 +590,8 @@ function sendNotification() {
             priority: priority,
             target_type: targetType,
             target_ids: targetIds,
-            scheduled_time: scheduledTime || null
+            scheduled_time: scheduledTime || null,
+            user_image_url: uploadedImageUrl || null
         }),
         success: function(response) {
             if (response.success) {
@@ -762,6 +891,7 @@ function clearForm() {
     $('#target_ids').val('');
     $('#scheduled_time').val('');
     $('#targetIdsContainer').hide();
+    removeImage();  // 清空上传的图片
 }
 
 function openUserSelector() {

@@ -41,13 +41,20 @@ def add_category():
     name = request.form.get('name', '').strip()
     sort_order = request.form.get('sort_order', 0, type=int)
     is_main_product = request.form.get('is_main_product') == 'on'
+    unit_price = request.form.get('unit_price', 0.0, type=float)
     if not name:
         flash('类别名称不能为空！', 'danger')
         return redirect(url_for('admin_config.admin_categories'))
     if Category.query.filter_by(name=name).first():
         flash('类别名称已存在！', 'danger')
         return redirect(url_for('admin_config.admin_categories'))
-    db.session.add(Category(name=name, sort_order=sort_order, is_main_product=is_main_product, example=request.form.get('example', '').strip()))
+    db.session.add(Category(
+        name=name, 
+        sort_order=sort_order, 
+        is_main_product=is_main_product, 
+        example=request.form.get('example', '').strip(),
+        unit_price=unit_price
+    ))
     db.session.commit()
     flash(f'类别 "{name}" 添加成功！', 'success')
     return redirect(url_for('admin_config.admin_categories'))
@@ -61,6 +68,7 @@ def edit_category(category_id):
     sort_order = request.form.get('sort_order', 0, type=int)
     is_active = request.form.get('is_active') == 'on'
     is_main_product = request.form.get('is_main_product') == 'on'
+    unit_price = request.form.get('unit_price', 0.0, type=float)
     if not name:
         flash('类别名称不能为空！', 'danger')
         return redirect(url_for('admin_config.admin_categories'))
@@ -73,6 +81,7 @@ def edit_category(category_id):
     category.is_main_product = is_main_product
     category.example = request.form.get('example', '').strip()
     category.is_active = is_active
+    category.unit_price = unit_price
     db.session.commit()
     flash(f'类别 "{name}" 更新成功！', 'success')
     return redirect(url_for('admin_config.admin_categories'))

@@ -3,12 +3,63 @@
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 from datetime import datetime
+import os
+from werkzeug.utils import secure_filename
 
-from models import db, BroadcastNotification, NotificationReceipt, User
+from models import db, BroadcastNotification, NotificationReceipt, User, Group
 from notification_generator import create_notification_image
 import socket_events
 
 bp = Blueprint('broadcast', __name__, url_prefix='/api/broadcast')
+
+# 允许上传的图片格式
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+
+def allowed_file(filename):
+    """检查文件格式是否允许"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@bp.route('/upload-image', methods=['POST'])
+@login_required
+def upload_image():
+    """上传通知图片"""
+    if not check_broadcast_permission():
+        return jsonify({'success': False, 'error': '没有权限'}), 403
+    
+    if 'image' not in request.files:
+        return jsonify({'success': False, 'error': '没有上传文件'}), 400
+    
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({'success': False, 'error': '没有选择文件'}), 400
+    
+    if not allowed_file(file.filename):
+        return jsonify({'success': False, 'error': '不支持的文件格式'}), 400
+    
+    try:
+        # 创建上传目录
+        upload_dir = os.path.join('static', 'notifications', 'uploads')
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # 生成唯一文件名
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        filename = secure_filename(file.filename)
+        unique_filename = f"{timestamp}_{filename}"
+        filepath = os.path.join(upload_dir, unique_filename)
+        
+        # 保存文件
+        file.save(filepath)
+        
+        # 返回相对路径
+        relative_path = f"/{upload_dir.replace(os.path.sep, '/')}/{unique_filename}"
+        
+        return jsonify({
+            'success': True,
+            'image_url': relative_path
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @bp.route('/auth', methods=['POST'])
@@ -46,15 +97,43 @@ def check_broadcast_permission():
     return current_user.has_role('admin') and current_user.can_broadcast
 
 
+def get_visible_groups(user):
+    """获取用户可管理的部门ID列表（自己部门+所有子部门）"""
+    # 超级管理员可以看到所有部门
+    if user.username == 'admin':
+        return [g.id for g in Group.query.filter_by(is_active=True).all()]
+    
+    # 普通管理员：只能看到自己部门及子部门
+    if user.group:
+        group_ids = [user.group.id]
+        # 获取所有子部门ID
+        if user.group.children:
+            def add_children(group):
+                for child in group.children:
+                    if child.is_active:
+                        group_ids.append(child.id)
+                        add_children(child)
+            add_children(user.group)
+        return group_ids
+    
+    return []
+
+
 @bp.route('/users', methods=['GET'])
 def get_users():
-    """获取用户列表（支持分页、组别筛选和搜索）"""
+    """获取用户列表（支持分页、组别筛选和搜索）- 只显示自己部门及子部门的用户"""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
     group_id = request.args.get('group_id', 'all')
     search = request.args.get('search', '')
     
     query = User.query.filter_by(is_active=True)
+    
+    # 获取当前用户可管理的部门ID列表（自己部门+所有子部门）
+    visible_group_ids = get_visible_groups(current_user)
+    
+    # 只显示自己部门及子部门的用户
+    query = query.filter(User.group_id.in_(visible_group_ids))
     
     if group_id != 'all' and group_id:
         query = query.filter(User.group_id == int(group_id))
@@ -87,7 +166,6 @@ def get_users():
 @bp.route('/departments', methods=['GET'])
 def get_departments():
     """获取部门列表（按层级排序）"""
-    from models import Group
     departments = Group.query.filter_by(is_active=True).order_by(Group.level.asc(), Group.id.asc()).all()
     return jsonify({
         'success': True,
@@ -100,23 +178,36 @@ def get_departments():
     })
 
 
-def get_target_users(target_type, target_ids):
-    """获取目标用户列表"""
+def get_target_users(target_type, target_ids, current_user=None):
+    """获取目标用户列表（考虑权限限制）"""
+    # 获取当前用户可管理的部门ID列表
+    visible_group_ids = get_visible_groups(current_user) if current_user else []
+    
     if target_type == 'all':
-        return [u.id for u in User.query.filter_by(is_active=True).all()]
+        # 全员发送：只发送给自己部门及子部门的用户
+        query = User.query.filter_by(is_active=True)
+        query = query.filter(User.group_id.in_(visible_group_ids))
+        return [u.id for u in query.all()]
     
     elif target_type == 'department':
         if not target_ids:
             return []
         dept_ids = [int(x) for x in target_ids.split(',')]
-        return [u.id for u in User.query.filter(User.group_id.in_(dept_ids), User.is_active==True).all()]
+        # 部门发送：只发送给该部门中自己权限范围内的用户
+        # 先过滤出用户有权限的部门
+        valid_dept_ids = [d for d in dept_ids if d in visible_group_ids]
+        if not valid_dept_ids:
+            return []
+        query = User.query.filter(User.group_id.in_(valid_dept_ids), User.is_active==True)
+        return [u.id for u in query.all()]
     
     elif target_type == 'role':
         if not target_ids:
             return []
         roles = target_ids.split(',')
         users = []
-        for user in User.query.filter_by(is_active=True).all():
+        query = User.query.filter_by(is_active=True).filter(User.group_id.in_(visible_group_ids))
+        for user in query.all():
             if any(role in user.get_roles() for role in roles):
                 users.append(user.id)
         return users
@@ -124,7 +215,11 @@ def get_target_users(target_type, target_ids):
     elif target_type == 'user':
         if not target_ids:
             return []
-        return [int(x) for x in target_ids.split(',')]
+        user_ids = [int(x) for x in target_ids.split(',')]
+        # 用户发送：只发送给权限范围内的用户
+        query = User.query.filter(User.id.in_(user_ids), User.is_active==True)
+        query = query.filter(User.group_id.in_(visible_group_ids))
+        return [u.id for u in query.all()]
     
     return []
 
@@ -144,9 +239,7 @@ def create_notification():
     target_type = data.get('target_type', 'all')
     target_ids = data.get('target_ids', '')
     scheduled_time = data.get('scheduled_time')
-    
-    if not content:
-        return jsonify({'success': False, 'error': '通知内容不能为空'}), 400
+    user_image_url = data.get('user_image_url')  # 用户上传的图片
     
     notification = BroadcastNotification(
         title=title,
@@ -158,6 +251,9 @@ def create_notification():
         status='draft'
     )
     
+    if user_image_url:
+        notification.user_image_path = user_image_url
+    
     if scheduled_time:
         notification.scheduled_time = datetime.fromisoformat(scheduled_time)
         notification.status = 'scheduled'
@@ -166,7 +262,7 @@ def create_notification():
     db.session.commit()
     
     sender_name = current_user.name
-    image_path, _ = create_notification_image(title, content, priority, sender_name, notification.id)
+    image_path, _ = create_notification_image(title, content, priority, sender_name, notification.id, user_image_url)
     
     notification.image_path = image_path
     db.session.commit()
@@ -179,6 +275,7 @@ def create_notification():
             'content': notification.content,
             'priority': notification.priority,
             'image_path': notification.image_path,
+            'user_image_path': notification.user_image_path,
             'status': notification.status,
             'create_time': notification.create_time.isoformat()
         }
@@ -201,7 +298,7 @@ def send_notification(notification_id):
     if notification.status == 'sent':
         return jsonify({'success': False, 'error': '通知已经发送'}), 400
     
-    target_user_ids = get_target_users(notification.target_type, notification.target_ids)
+    target_user_ids = get_target_users(notification.target_type, notification.target_ids, current_user)
     
     if not target_user_ids:
         return jsonify({'success': False, 'error': '没有找到目标用户'}), 400
@@ -222,6 +319,7 @@ def send_notification(notification_id):
         'title': notification.title,
         'content': notification.content,
         'image_url': notification.image_path,
+        'user_image_url': notification.user_image_path,
         'priority': notification.priority,
         'timestamp': notification.sent_time.isoformat()
     }
@@ -279,7 +377,8 @@ def list_notifications():
             'status': n.status,
             'create_time': n.create_time.isoformat(),
             'sent_time': n.sent_time.isoformat() if n.sent_time else None,
-            'sender_name': n.sender.name if n.sender else ''
+            'sender_name': n.sender.name if n.sender else '',
+            'user_image_path': n.user_image_path
         } for n in notifications.items],
         'total': notifications.total,
         'page': page,
@@ -307,6 +406,7 @@ def get_notification(notification_id):
         'target_type': notification.target_type,
         'target_ids': notification.target_ids,
         'image_path': notification.image_path,
+        'user_image_path': notification.user_image_path,
         'status': notification.status,
         'create_time': notification.create_time.isoformat(),
         'sent_time': notification.sent_time.isoformat() if notification.sent_time else None,
@@ -353,7 +453,7 @@ def resend_notification(notification_id):
         return jsonify({'success': False, 'error': '没有权限重发此通知'}), 403
     
     # 获取目标用户
-    target_user_ids = get_target_users(notification.target_type, notification.target_ids)
+    target_user_ids = get_target_users(notification.target_type, notification.target_ids, current_user)
     
     if not target_user_ids:
         return jsonify({'success': False, 'error': '没有找到目标用户'}), 400
@@ -380,6 +480,7 @@ def resend_notification(notification_id):
         'title': notification.title,
         'content': notification.content,
         'image_url': notification.image_path,
+        'user_image_url': notification.user_image_path,
         'priority': notification.priority,
         'timestamp': notification.sent_time.isoformat()
     }

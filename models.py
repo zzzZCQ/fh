@@ -132,6 +132,15 @@ class User(UserMixin, db.Model):
 
 class Order(db.Model):
     """订单模型"""
+    __table_args__ = (
+        db.Index('idx_order_salesman', 'salesman_id'),
+        db.Index('idx_order_group', 'group_id'),
+        db.Index('idx_order_status', 'status'),
+        db.Index('idx_order_create_time', 'create_time'),
+        db.Index('idx_order_logistics_status', 'logistics_status'),
+        db.Index('idx_order_salesman_create', 'salesman_id', 'create_time'),
+    )
+    
     id = db.Column(db.Integer, primary_key=True)
     group_name = db.Column(db.String(80), nullable=False)
     salesman_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -153,7 +162,7 @@ class Order(db.Model):
     has_gift = db.Column(db.Boolean, default=False)  # 是否有赠品
     gift_info = db.Column(db.String(200))  # 赠品内容
     # 物流信息
-    logistics_status = db.Column(db.String(20), default='已发货')  # 已发货、派送中、待派送、已签收、拒签
+    logistics_status = db.Column(db.String(20), default='已发货')  # 已发货、派送中、待派送、已签收、拒签、退回已签收
     sign_time = db.Column(db.DateTime)  # 签收时间（顺丰API返回）
     # 关联组别（冗余存储，方便查询）
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'))
@@ -191,6 +200,7 @@ class Category(db.Model):
     name = db.Column(db.String(50), unique=True, nullable=False)
     example = db.Column(db.Text, default='')  # 示例，新增订单时展示在产品信息上方
     is_main_product = db.Column(db.Boolean, default=True)  # 是否为主品（主品需要填写完整信息，非主品如赠品只需简单信息）
+    unit_price = db.Column(db.Float, default=0.0)  # 单价
     sort_order = db.Column(db.Integer, default=0)
     is_active = db.Column(db.Boolean, default=True)
     create_time = db.Column(db.DateTime, default=_now_bj)
@@ -290,6 +300,7 @@ class BroadcastNotification(db.Model):
     title = db.Column(db.String(200))  # 通知标题
     content = db.Column(db.Text, nullable=False)  # 通知内容
     image_path = db.Column(db.String(500))  # 生成的图片相对路径
+    user_image_path = db.Column(db.String(500))  # 用户上传的图片相对路径
     priority = db.Column(db.String(20), default='normal')  # normal/important/urgent
     target_type = db.Column(db.String(20))  # all/department/role/user
     target_ids = db.Column(db.Text)  # 目标ID列表，逗号分隔
@@ -328,3 +339,18 @@ class NotificationReceipt(db.Model):
     notification = db.relationship('BroadcastNotification', 
                                    backref=db.backref('receipts', lazy=True))
     user = db.relationship('User', backref=db.backref('notification_receipts', lazy=True))
+
+
+class WeworkCallRecord(db.Model):
+    """企业微信通话记录"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_name = db.Column(db.String(100), nullable=False)  # 用户名
+    call_start_time = db.Column(db.DateTime, nullable=False)  # 通话开始时间
+    call_end_time = db.Column(db.DateTime)  # 通话结束时间
+    call_duration_seconds = db.Column(db.Integer)  # 通话时长（秒）
+    status = db.Column(db.String(20), default='ongoing')  # 状态: ongoing/completed
+    uploader_id = db.Column(db.Integer, db.ForeignKey('user.id'))  # 上传者ID（可选）
+    upload_time = db.Column(db.DateTime, default=_now_bj)
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    
+    uploader = db.relationship('User', backref=db.backref('wework_call_records', lazy=True))

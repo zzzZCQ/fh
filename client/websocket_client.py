@@ -140,7 +140,7 @@ class WebSocketClient:
                 print(f"正在连接服务端...")
                 self.sio.connect(
                     connect_url,
-                    transports=['websocket']
+                    transports=['polling']  # 使用轮询，避免WebSocket兼容性问题
                 )
                 print(f"连接成功，进入等待状态...")
                 

@@ -5,7 +5,7 @@ import functools
 from flask import redirect, url_for, flash
 from flask_login import login_required, current_user
 
-from models import db, Notification, Category, Gift
+from models import db, Notification, Category, Gift, User
 
 
 # ============ 权限装饰器 ============
@@ -67,6 +67,7 @@ def get_nearest_admin_upward(user):
         return None
     
     while current_group:
+        from models import User
         admin = User.query.filter(
             User.roles.like('%admin%'),
             User.group_id == current_group.id,

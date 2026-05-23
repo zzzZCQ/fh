@@ -23,19 +23,19 @@
 
             <!-- 状态筛选-->
 
-            <select name="status" class="form-select" style="width: 100px;">
-
+            <select name="status" class="form-select" style="width: 120px;">
                 <option value="">全部状态</option>
-
                 <option value="draft" {% if request.args.get('status') == 'draft' %}selected{% endif %}>草稿</option>
-
-                <option value="submitted" {% if request.args.get('status') == 'submitted' %}selected{% endif %}>待发�?/option>
-
-                <option value="shipped" {% if request.args.get('status') == 'shipped' %}selected{% endif %}>已发�?/option>
-
+                <option value="submitted" {% if request.args.get('status') == 'submitted' %}selected{% endif %}>待发货</option>
+                <option value="shipped" {% if request.args.get('status') == 'shipped' %}selected{% endif %}>已发货</option>
+                <option value="运送中" {% if request.args.get('status') == '运送中' %}selected{% endif %}>运送中</option>
+                <option value="待派送" {% if request.args.get('status') == '待派送' %}selected{% endif %}>待派送</option>
+                <option value="派送中" {% if request.args.get('status') == '派送中' %}selected{% endif %}>派送中</option>
+                <option value="已签收" {% if request.args.get('status') == '已签收' %}selected{% endif %}>已签收</option>
+                <option value="退回已签收" {% if request.args.get('status') == '退回已签收' %}selected{% endif %}>退回已签收</option>
             </select>
 
-            <!-- 产品类别筛�?-->
+            <!-- 产品类别筛选-->
 
             <select name="category" class="form-select" style="width: 120px;">
 
@@ -69,9 +69,10 @@
 
         <!-- 更新物流的form，单独的，不嵌套 -->
 
-        <form method="POST" action="{{ url_for('shipping.update_logistics') }}" class="d-inline">
+        <form method="POST" action="{{ url_for('shipping.update_logistics') }}" class="d-inline" id="updateLogisticsForm">
 
             <input type="hidden" name="page" value="{{ request.args.get('page', 1) }}">
+            <input type="hidden" name="per_page" value="{{ request.args.get('per_page', 10) }}">
 
             <input type="hidden" name="customer_keyword" value="{{ request.args.get('customer_keyword', '') }}">
 
@@ -83,9 +84,26 @@
 
             <input type="hidden" name="salesman_id" value="{{ request.args.get('salesman_id', '') }}">
 
-            <button type="submit" class="btn btn-success">更新物流</button>
-
+            <button type="submit" class="btn btn-success" id="updateLogisticsBtn">
+                <span id="updateLogisticsBtnText">更新物流</span>
+                <span id="updateLogisticsBtnLoading" style="display:none;">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    更新中...
+                </span>
+            </button>
         </form>
+        <script>
+        document.getElementById('updateLogisticsForm').addEventListener('submit', function(e) {
+            const btn = document.getElementById('updateLogisticsBtn');
+            const btnText = document.getElementById('updateLogisticsBtnText');
+            const btnLoading = document.getElementById('updateLogisticsBtnLoading');
+            
+            btn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoading.style.display = 'inline';
+            btn.classList.add('disabled');
+        });
+        </script>
 
         <!-- 导出按钮 -->
 
@@ -178,6 +196,10 @@
                                 {% if order.logistics_status == '已签收' %}
 
                                 <span class="badge" style="background-color:#198754; color:#fff; width:100%; display:inline-block;">已签收</span>
+
+                                {% elif order.logistics_status == '退回已签收' %}
+
+                                <span class="badge" style="background-color:#ffc107; color:#000; width:100%; display:inline-block;">退回已签收</span>
 
                                 {% elif order.logistics_status == '拒签' %}
 
@@ -479,6 +501,19 @@
 
 let currentOrderId = null;
 
+// 筛选表单提交时重置页码为1
+document.addEventListener('DOMContentLoaded', function() {
+    const filterForm = document.getElementById('filterForm');
+    if (filterForm) {
+        filterForm.addEventListener('submit', function() {
+            const pageInput = filterForm.querySelector('input[name="page"]');
+            if (pageInput) {
+                pageInput.value = '1';
+            }
+        });
+    }
+});
+
 
 
 function showOrderDetail(orderId) {
@@ -642,11 +677,14 @@ function loadLogistics(orderId) {
             const routes = result.routes || [];
 
             if (routes.length === 0) {
-
-                section.innerHTML = '<div class="text-muted text-center mt-3 small">暂无物流信息</div>';
-
+                section.innerHTML = `
+                    <div class="text-center mt-3">
+                        <div class="text-muted small mb-2">暂无物流信息</div>
+                        <button class="btn btn-outline-secondary btn-sm ms-2" onclick="refreshLogistics(${orderId})" title="刷新物流">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>`;
                 return;
-
             }
 
             
@@ -665,7 +703,7 @@ function loadLogistics(orderId) {
 
             
 
-            const statusMap = {'已签收': 'success', '拒签': 'danger', '派送中': 'warning', '待派送': 'warning', '运送中': 'primary', '已发货': 'info'};
+            const statusMap = {'已签收': 'success', '退回已签收': 'warning', '拒签': 'danger', '派送中': 'warning', '待派送': 'warning', '运送中': 'primary', '已发货': 'info'};
 
             const statusBadge = statusMap[result.logistics_status] || 'secondary';
 

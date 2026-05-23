@@ -182,7 +182,7 @@ def sync_follow_up():
     follow_up_person = ''
     follow_up_user_id = request.form.get('follow_up_user_id', type=int)
     if follow_up_user_id:
-        fu_user = User.query.get(follow_up_user_id)
+        fu_user = db.session.get(User, follow_up_user_id)
         if fu_user:
             follow_up_person = fu_user.name
 
@@ -417,7 +417,7 @@ def add_customer():
     # 获取业务员信息
     salesman_name = current_user.name
     if salesman_id:
-        salesman = User.query.get(salesman_id)
+        salesman = db.session.get(User, salesman_id)
         if salesman:
             salesman_name = salesman.name
 

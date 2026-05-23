@@ -6,6 +6,12 @@
 <div class="container mt-4">
     <h2>编辑发货单（草稿）</h2>
     
+    {% if error %}
+    <div class="alert alert-danger" role="alert">
+        {{ error }}
+    </div>
+    {% endif %}
+    
     <div class="row mt-4">
         <div class="col-12">
             <div class="card">
@@ -18,18 +24,18 @@
                         <div class="row mb-3">
                             <div class="col-md-4">
                                 <label for="group_name" class="form-label">组名 <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="group_name" name="group_name" value="{{ order.group_name }}" required>
+                                <input type="text" class="form-control" id="group_name" name="group_name" value="{{ form_data.group_name if form_data else order.group_name }}" required>
                             </div>
                             <div class="col-md-4">
                                 <label for="customer_name" class="form-label">客户名</label>
-                                <input type="text" class="form-control" id="customer_name" name="customer_name" value="{{ order.customer_name or '' }}">
+                                <input type="text" class="form-control" id="customer_name" name="customer_name" value="{{ form_data.customer_name if form_data else (order.customer_name or '') }}">
                             </div>
                             <div class="col-md-4">
                                 <label for="category" class="form-label">类别 <span class="text-danger">*</span></label>
                                 <select class="form-select" id="category" name="category" required onchange="loadGiftsByCategory()">
                                     <option value="">请选择</option>
                                     {% for category in categories %}
-                                    <option value="{{ category.name }}" data-id="{{ category.id }}" {% if order.category == category.name %}selected{% endif %}>{{ category.name }}</option>
+                                    <option value="{{ category.name }}" data-id="{{ category.id }}" {% if (form_data and form_data.category == category.name) or order.category == category.name %}selected{% endif %}>{{ category.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -39,11 +45,11 @@
                         <div class="row mb-3">
                             <div class="col-md-4">
                                 <label for="paid_amount" class="form-label">已付定金</label>
-                                <input type="text" class="form-control" id="paid_amount" name="paid_amount" value="{{ order.paid_amount or '' }}" placeholder="如：100企微410">
+                                <input type="text" class="form-control" id="paid_amount" name="paid_amount" value="{{ form_data.paid_amount if form_data else (order.paid_amount or '') }}" placeholder="如：100企微410">
                             </div>
                             <div class="col-md-4">
                                 <label for="collect_amount" class="form-label">代收金额</label>
-                                <input type="number" step="0.01" class="form-control" id="collect_amount" name="collect_amount" value="{{ order.collect_amount or '' }}" placeholder="0.00">
+                                <input type="number" step="0.01" class="form-control" id="collect_amount" name="collect_amount" value="{{ form_data.collect_amount if form_data else (order.collect_amount or '') }}" placeholder="0.00">
                             </div>
                         </div>
                         
@@ -51,7 +57,7 @@
                         <div class="row mb-3">
                             <div class="col-md-4">
                                 <label for="phone" class="form-label">收货电话 <span class="text-danger">*</span></label>
-                                <input type="tel" class="form-control" id="phone" name="phone" pattern="^1[3-9]\d{9}$" value="{{ order.phone }}" required placeholder="请输入11位手机号">
+                                <input type="tel" class="form-control" id="phone" name="phone" pattern="^1[3-9]\d{9}$" value="{{ form_data.phone if form_data else order.phone }}" required placeholder="请输入11位手机号">
                             </div>
                         </div>
                         
@@ -59,7 +65,11 @@
                         <div class="row mb-3">
                             <div class="col-12">
                                 <label for="product_info" class="form-label">产品信息 <span class="text-danger">*</span></label>
-                                <textarea class="form-control" id="product_info" name="product_info" rows="3" required placeholder="请填写产品详细信息">{{ order.product_info }}</textarea>
+                                <!-- 类别单价提示区 -->
+                                <div id="category_price_info" class="mb-2" style="display:none;">
+                                    <div class="form-text" style="background:#fff3cd;border-radius:4px;padding:8px 12px;margin-bottom:4px;line-height:1.6;color:#856404;" id="category_price_text"></div>
+                                </div>
+                                <textarea class="form-control" id="product_info" name="product_info" rows="3" required placeholder="请填写产品详细信息">{{ form_data.product_info if form_data else order.product_info }}</textarea>
                             </div>
                         </div>
                         
@@ -67,17 +77,17 @@
                         <div class="row mb-3">
                             <div class="col-md-4">
                                 <div class="form-check mt-2">
-                                    <input type="checkbox" class="form-check-input" id="has_gift" name="has_gift" {% if order.has_gift %}checked{% endif %} onchange="toggleGiftSection()">
+                                    <input type="checkbox" class="form-check-input" id="has_gift" name="has_gift" {% if (form_data and form_data.has_gift) or order.has_gift %}checked{% endif %} onchange="toggleGiftSection()">
                                     <label class="form-check-label" for="has_gift">是否有赠品</label>
                                 </div>
                             </div>
-                            <div class="col-md-8" id="gift_section" style="display: {% if order.has_gift %}block{% else %}none{% endif %};">
+                            <div class="col-md-8" id="gift_section" style="display: {% if (form_data and form_data.has_gift) or order.has_gift %}block{% else %}none{% endif %};">
                                 <label for="gift_info" class="form-label">赠品内容（可多选）</label>
                                 <select class="form-select" id="gift_info" name="gift_info" multiple size="3">
                                     <!-- 赠品根据类别动态加载，已选中的会在加载后自动选中 -->
                                 </select>
                                 <div class="form-text">按住 Ctrl 可多选</div>
-                                <input type="hidden" id="selected_gifts" value="{{ order.gift_info or '' }}">
+                                <input type="hidden" id="selected_gifts" value="{{ form_data.gift_info | join('、') if form_data else (order.gift_info or '') }}">
                             </div>
                         </div>
                         
@@ -85,7 +95,7 @@
                         <div class="row mb-3">
                             <div class="col-12">
                                 <label for="address" class="form-label">收货地址 <span class="text-danger">*</span></label>
-                                <textarea class="form-control" id="address" name="address" rows="2" required placeholder="请填写详细收货地址">{{ order.address }}</textarea>
+                                <textarea class="form-control" id="address" name="address" rows="2" required placeholder="请填写详细收货地址">{{ form_data.address if form_data else order.address }}</textarea>
                             </div>
                         </div>
                         
@@ -93,7 +103,7 @@
                         <div class="row mb-4">
                             <div class="col-12">
                                 <label for="remark" class="form-label">备注</label>
-                                <textarea class="form-control" id="remark" name="remark" rows="2" placeholder="其他备注信息（选填）">{{ order.remark or '' }}</textarea>
+                                <textarea class="form-control" id="remark" name="remark" rows="2" placeholder="其他备注信息（选填）">{{ form_data.remark if form_data else (order.remark or '') }}</textarea>
                             </div>
                         </div>
                         
@@ -116,10 +126,31 @@
 
 {% block scripts %}
 <script>
+// 类别单价数据
+const categoryUnitPrices = {
+    {% for cat in categories %}
+    '{{ cat.name }}': {{ cat.unit_price or 0 }},
+    {% endfor %}
+};
+
 function toggleGiftSection() {
     var checkbox = document.getElementById('has_gift');
     var section = document.getElementById('gift_section');
     section.style.display = checkbox.checked ? 'block' : 'none';
+}
+
+function updateCategoryPriceInfo() {
+    var sel = document.getElementById('category');
+    var priceInfoDiv = document.getElementById('category_price_info');
+    var priceInfoText = document.getElementById('category_price_text');
+    var unitPrice = categoryUnitPrices[sel.value];
+    
+    if (unitPrice && unitPrice > 0) {
+        priceInfoText.textContent = `单价：${unitPrice}元，请确保产品信息中包含数量（如"数量:1"或"1件"），提交时会验证金额是否匹配`;
+        priceInfoDiv.style.display = 'block';
+    } else {
+        priceInfoDiv.style.display = 'none';
+    }
 }
 
 function loadGiftsByCategory() {
@@ -127,6 +158,9 @@ function loadGiftsByCategory() {
     var giftSelect = document.getElementById('gift_info');
     var selectedOption = categorySelect.options[categorySelect.selectedIndex];
     var categoryId = selectedOption ? selectedOption.dataset.id : null;
+    
+    // 更新单价信息
+    updateCategoryPriceInfo();
     
     // 清空赠品列表
     giftSelect.innerHTML = '';
@@ -153,6 +187,9 @@ function loadGiftsByCategory() {
 // 页面加载时，如果有类别则加载赠品
 document.addEventListener('DOMContentLoaded', function() {
     var categorySelect = document.getElementById('category');
+    categorySelect.addEventListener('change', function() {
+        loadGiftsByCategory();
+    });
     if (categorySelect.value) {
         loadGiftsByCategory();
     }

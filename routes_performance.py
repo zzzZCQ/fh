@@ -140,10 +140,11 @@ def category_distribution():
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 按类别统计（统计submitted和shipped状态的订单）
+    # 按类别统计（统计submitted和shipped状态的订单，排除退回已签收）
     orders = Order.query.filter(
         Order.salesman_id == current_user.id,
         Order.status.in_(['submitted', 'shipped']),
+        Order.logistics_status != '退回已签收',
         Order.create_time >= start,
         Order.create_time <= end
     ).all()
@@ -250,6 +251,7 @@ def calculate_total_performance(salesman_id, start_date, end_date):
     orders = Order.query.filter(
         Order.salesman_id == salesman_id,
         Order.status.in_(['submitted', 'shipped']),
+        Order.logistics_status != '退回已签收',
         Order.create_time >= start_date,
         Order.create_time <= end_date
     ).all()
@@ -272,6 +274,7 @@ def count_total_orders(salesman_id, start_date, end_date):
     orders = Order.query.filter(
         Order.salesman_id == salesman_id,
         Order.status.in_(['draft', 'submitted', 'shipped']),
+        Order.logistics_status != '退回已签收',
         Order.create_time >= start_date,
         Order.create_time <= end_date
     ).all()
@@ -482,23 +485,35 @@ def team_performance_overview():
     # 获取管理的用户ID列表
     user_ids = get_managed_user_ids(group_id)
     
-    # 计算月份范围
+    # 计算月份范围（当月）
     start_date = datetime(year, month, 1)
     end_date = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
+    
+    # 计算上月范围
+    if month == 1:
+        prev_year = year - 1
+        prev_month = 12
+    else:
+        prev_year = year
+        prev_month = month - 1
+    prev_start = datetime(prev_year, prev_month, 1)
+    prev_end = datetime(prev_year, prev_month, monthrange(prev_year, prev_month)[1], 23, 59, 59)
     
     # 团队业绩统计
     # 获取主产品类别列表
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
-
-    # 当月所有订单（待发货、已提交和已发货都统计，只统计主产品）
+    
+    # ========== 当月数据 ==========
+    # 当月所有订单（待发货、已提交和已发货都统计，只统计主产品，排除退回已签收）
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status.in_(['draft', 'submitted', 'shipped']),
+        Order.logistics_status != '退回已签收',
         Order.create_time >= start_date,
         Order.create_time <= end_date
     ).all()
-
+    
     # 当月已签收且有签收时间的订单
     signed_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
@@ -507,7 +522,27 @@ def team_performance_overview():
         Order.sign_time >= start_date,
         Order.sign_time <= end_date
     ).all()
-
+    
+    # ========== 上月数据 ==========
+    # 上月所有订单
+    prev_all_orders = Order.query.filter(
+        Order.salesman_id.in_(user_ids),
+        Order.status.in_(['draft', 'submitted', 'shipped']),
+        Order.logistics_status != '退回已签收',
+        Order.create_time >= prev_start,
+        Order.create_time <= prev_end
+    ).all()
+    
+    # 上月已签收订单
+    prev_signed_orders = Order.query.filter(
+        Order.salesman_id.in_(user_ids),
+        Order.status == 'shipped',
+        Order.logistics_status == '已签收',
+        Order.sign_time >= prev_start,
+        Order.sign_time <= prev_end
+    ).all()
+    
+    # ========== 统计当月总业绩 ==========
     # 总业绩：当月所有订单（只统计主产品且金额>0）
     total_amount = 0
     total_count = 0
@@ -517,7 +552,7 @@ def team_performance_overview():
             if amt > 0:
                 total_amount += amt
                 total_count += 1
-
+    
     # 已签收业绩（只统计主产品且金额>0）
     signed_amount = 0
     signed_count = 0
@@ -527,6 +562,25 @@ def team_performance_overview():
             if amt > 0:
                 signed_amount += amt
                 signed_count += 1
+    
+    # ========== 统计上月总业绩 ==========
+    prev_total_amount = 0
+    prev_total_count = 0
+    for o in prev_all_orders:
+        if (o.category or '未分类') in main_cat_names:
+            amt = get_order_amount(o)
+            if amt > 0:
+                prev_total_amount += amt
+                prev_total_count += 1
+    
+    prev_signed_amount = 0
+    prev_signed_count = 0
+    for o in prev_signed_orders:
+        if (o.category or '未分类') in main_cat_names:
+            amt = get_order_amount(o)
+            if amt > 0:
+                prev_signed_amount += amt
+                prev_signed_count += 1
 
     # 按业务员统计（只统计主产品且金额>0）
     salesman_stats = {}
@@ -561,7 +615,9 @@ def team_performance_overview():
             'total_amount': 0,      # 总业绩
             'total_count': 0,       # 总订单数
             'signed_amount': 0,     # 已签收业绩
-            'signed_count': 0       # 已签收订单数
+            'signed_count': 0,      # 已签收订单数
+            'prev_total_amount': 0, # 上月总业绩
+            'prev_signed_amount': 0 # 上月已签收业绩
         }
     
     # 第二步：统计总业绩
@@ -591,11 +647,71 @@ def team_performance_overview():
             salesman_stats[sid]['signed_amount'] += amt
             salesman_stats[sid]['signed_count'] += 1
     
+    # 第四步：统计上月总业绩
+    for order in prev_all_orders:
+        cat = order.category or '未分类'
+        if cat not in main_cat_names:
+            continue  # 跳过非主产品
+        amt = get_order_amount(order)
+        if amt <= 0:
+            continue  # 跳过金额为0的
+        sid = order.salesman_id
+        if sid in salesman_stats:  # 只统计可见用户
+            salesman_stats[sid]['prev_total_amount'] += amt
+    
+    # 第五步：统计上月已签收业绩
+    for order in prev_signed_orders:
+        sid = order.salesman_id
+        if sid in salesman_stats:  # 只统计可见用户
+            # 检查订单是否符合统计条件（主产品且金额>0）
+            cat = order.category or '未分类'
+            if cat not in main_cat_names:
+                continue
+            amt = get_order_amount(order)
+            if amt <= 0:
+                continue
+            salesman_stats[sid]['prev_signed_amount'] += amt
+    
+    # 第六步：计算每个业务员的环比
+    for sid in salesman_stats:
+        s = salesman_stats[sid]
+        # 总业绩环比
+        if s['prev_total_amount'] > 0:
+            s['total_amount_rate'] = (s['total_amount'] - s['prev_total_amount']) / s['prev_total_amount'] * 100
+        elif s['total_amount'] > 0:
+            s['total_amount_rate'] = 100
+        else:
+            s['total_amount_rate'] = 0
+        # 已签收环比
+        if s['prev_signed_amount'] > 0:
+            s['signed_amount_rate'] = (s['signed_amount'] - s['prev_signed_amount']) / s['prev_signed_amount'] * 100
+        elif s['signed_amount'] > 0:
+            s['signed_amount_rate'] = 100
+        else:
+            s['signed_amount_rate'] = 0
+    
     # 排序：按总业绩金额降序
     sorted_stats = sorted(salesman_stats.values(), key=lambda x: x['total_amount'], reverse=True)
     
     # 默认只返回TOP10，展开时返回全部
     display_stats = sorted_stats if show_all else sorted_stats[:10]
+    
+    # 计算环比
+    # 总业绩环比
+    if prev_total_amount > 0:
+        total_amount_rate = (total_amount - prev_total_amount) / prev_total_amount * 100
+    elif total_amount > 0:
+        total_amount_rate = 100
+    else:
+        total_amount_rate = 0
+    
+    # 已签收环比
+    if prev_signed_amount > 0:
+        signed_amount_rate = (signed_amount - prev_signed_amount) / prev_signed_amount * 100
+    elif signed_amount > 0:
+        signed_amount_rate = 100
+    else:
+        signed_amount_rate = 0
     
     return jsonify({
         'total_amount': total_amount,
@@ -604,7 +720,15 @@ def team_performance_overview():
         'signed_count': signed_count,
         'salesman_count': len(salesman_stats),
         'salesman_stats': display_stats,
-        'has_more': len(sorted_stats) > 10
+        'has_more': len(sorted_stats) > 10,
+        # 环比数据
+        'prev_total_amount': prev_total_amount,
+        'prev_total_count': prev_total_count,
+        'prev_signed_amount': prev_signed_amount,
+        'prev_signed_count': prev_signed_count,
+        'total_amount_rate': total_amount_rate,
+        'signed_amount_rate': signed_amount_rate,
+        'prev_month': f'{prev_year}年{prev_month}月'
     })
 
 
@@ -684,10 +808,11 @@ def team_category_distribution():
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 统计submitted和shipped状态的订单（和团队业绩概览保持一致）
+    # 统计submitted和shipped状态的订单（和团队业绩概览保持一致，排除退回已签收）
     orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status.in_(['submitted', 'shipped']),
+        Order.logistics_status != '退回已签收',
         Order.create_time >= start,
         Order.create_time <= end
     ).all()
@@ -702,9 +827,21 @@ def team_category_distribution():
         if amount <= 0:
             continue
         if cat not in category_data:
-            category_data[cat] = {'amount': 0, 'count': 0}
+            category_data[cat] = {'amount': 0, 'count': 0, 'max_amount': 0, 'amounts': []}
         category_data[cat]['amount'] += amount
         category_data[cat]['count'] += 1
+        category_data[cat]['amounts'].append(amount)
+        if amount > category_data[cat]['max_amount']:
+            category_data[cat]['max_amount'] = amount
+    
+    # 计算平均金额
+    for cat in category_data:
+        data = category_data[cat]
+        if data['count'] > 0:
+            data['avg_amount'] = sum(data['amounts']) / data['count']
+        else:
+            data['avg_amount'] = 0
+        del data['amounts']
 
     return jsonify(category_data)
 
@@ -765,7 +902,7 @@ def sign_rate_by_person():
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 查询所有已提交和已发货订单（只统计主产品）
+    # 查询所有已提交和已发货订单（只统计主产品，包含退回已签收）
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status.in_(['submitted', 'shipped']),
@@ -805,7 +942,7 @@ def sign_rate_by_person():
             'signed': 0
         }
     
-    # 第二步：统计订单
+    # 第二步：统计订单（包含退回已签收但不算签收）
     for order in all_orders:
         cat = order.category or '未分类'
         if cat not in main_cat_names:
@@ -816,6 +953,7 @@ def sign_rate_by_person():
         sid = order.salesman_id
         if sid in person_stats:  # 只统计可见用户
             person_stats[sid]['total'] += 1
+            # 只统计"已签收"为签收成功，退回已签收不算签收
             if order.logistics_status == '已签收':
                 person_stats[sid]['signed'] += 1
 
@@ -856,7 +994,7 @@ def sign_rate_by_category():
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 查询所有已提交和已发货订单（展示主产品）
+    # 查询所有已提交和已发货订单（展示主产品，包含退回已签收）
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status.in_(['submitted', 'shipped']),
@@ -864,7 +1002,7 @@ def sign_rate_by_category():
         Order.create_time <= end_date
     ).all()
 
-    # 按产品类别统计（只统计主产品且金额>0）
+    # 按产品类别统计（只统计主产品且金额>0，包含退回已签收但不算签收）
     cat_stats = {}
     for order in all_orders:
         cat = order.category or '未分类'
@@ -876,6 +1014,7 @@ def sign_rate_by_category():
         if cat not in cat_stats:
             cat_stats[cat] = {'total': 0, 'signed': 0}
         cat_stats[cat]['total'] += 1
+        # 只统计"已签收"为签收成功，退回已签收不算签收
         if order.logistics_status == '已签收':
             cat_stats[cat]['signed'] += 1
 
@@ -924,10 +1063,11 @@ def salesman_order_detail():
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 查询该业务员的所有订单（只统计主产品且金额>0）
+    # 查询该业务员的所有订单（只统计主产品且金额>0，排除退回已签收）
     orders = Order.query.filter(
         Order.salesman_id == salesman.id,
         Order.status.in_(['draft', 'submitted', 'shipped']),
+        Order.logistics_status != '退回已签收',
         Order.create_time >= start_date,
         Order.create_time <= end_date
     ).order_by(Order.create_time.desc()).all()
@@ -946,6 +1086,8 @@ def salesman_order_detail():
             # 已发货订单，优先显示物流状态
             if order.logistics_status == '已签收':
                 combined_status = '已签收'
+            elif order.logistics_status == '退回已签收':
+                combined_status = '退回已签收'
             elif order.logistics_status == '拒签':
                 combined_status = '拒签'
             elif order.logistics_status == '派送中':
@@ -1059,7 +1201,7 @@ def export_team_performance():
     user_cache = {}
     for order in orders_to_export:
         if order.salesman_id not in user_cache:
-            user_cache[order.salesman_id] = User.query.get(order.salesman_id)
+            user_cache[order.salesman_id] = db.session.get(User, order.salesman_id)
     
     # 排序：先按组别，再按业务员姓名
     def get_sort_key(order):

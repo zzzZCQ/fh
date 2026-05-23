@@ -12,7 +12,7 @@
 
         <!-- 搜索的form -->
 
-        <form method="GET" class="d-flex gap-2">
+        <form method="GET" class="d-flex gap-2" id="filterForm">
 
             <!-- 保留当前页码 -->
             <input type="hidden" name="page" value="{{ request.args.get('page', 1) }}">
@@ -55,9 +55,10 @@
 
         <!-- 更新物流的form，单独的，不嵌套 -->
 
-        <form method="POST" action="{{ url_for('shipping.update_logistics') }}">
+        <form method="POST" action="{{ url_for('shipping.update_logistics') }}" id="updateLogisticsForm">
 
             <input type="hidden" name="page" value="{{ request.args.get('page', 1) }}">
+            <input type="hidden" name="per_page" value="{{ request.args.get('per_page', 10) }}">
 
             <input type="hidden" name="customer_keyword" value="{{ request.args.get('customer_keyword', '') }}">
 
@@ -67,9 +68,26 @@
 
             <input type="hidden" name="category" value="{{ request.args.get('category', '') }}">
 
-            <button type="submit" class="btn btn-success" style="min-width: 100px;">更新物流</button>
-
+            <button type="submit" class="btn btn-success" style="min-width: 100px;" id="updateLogisticsBtn">
+                <span id="updateLogisticsBtnText">更新物流</span>
+                <span id="updateLogisticsBtnLoading" style="display:none;">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    更新中...
+                </span>
+            </button>
         </form>
+        <script>
+        document.getElementById('updateLogisticsForm').addEventListener('submit', function(e) {
+            const btn = document.getElementById('updateLogisticsBtn');
+            const btnText = document.getElementById('updateLogisticsBtnText');
+            const btnLoading = document.getElementById('updateLogisticsBtnLoading');
+            
+            btn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoading.style.display = 'inline';
+            btn.classList.add('disabled');
+        });
+        </script>
 
         <!-- 新增发货单按钮，放在最右边 -->
 
@@ -150,6 +168,10 @@
                                 {% if order.logistics_status == '已签收' %}
 
                                 <span class="badge" style="background-color:#198754; color:#fff; width:100%; display:inline-block;">已签收</span>
+
+                                {% elif order.logistics_status == '退回已签收' %}
+
+                                <span class="badge" style="background-color:#ffc107; color:#000; width:100%; display:inline-block;">退回已签收</span>
 
                                 {% elif order.logistics_status == '拒签' %}
 
@@ -349,6 +371,19 @@
 
 <script>
 
+// 筛选表单提交时重置页码为1
+document.addEventListener('DOMContentLoaded', function() {
+    const filterForm = document.getElementById('filterForm');
+    if (filterForm) {
+        filterForm.addEventListener('submit', function() {
+            const pageInput = filterForm.querySelector('input[name="page"]');
+            if (pageInput) {
+                pageInput.value = '1';
+            }
+        });
+    }
+});
+
 // 显示订单详情
 
 function showOrderDetail(orderId) {
@@ -482,11 +517,14 @@ function loadLogistics(orderId) {
             const routes = result.routes || [];
 
             if (routes.length === 0) {
-
-                section.innerHTML = '<div class="text-muted text-center mt-3 small">暂无物流信息</div>';
-
+                section.innerHTML = `
+                    <div class="text-center mt-3">
+                        <div class="text-muted small mb-2">暂无物流信息</div>
+                        <button class="btn btn-outline-secondary btn-sm ms-2" onclick="refreshLogistics(${orderId})" title="刷新物流">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>`;
                 return;
-
             }
 
             
@@ -505,7 +543,7 @@ function loadLogistics(orderId) {
 
             
 
-            const statusMap = {'已签收': 'success', '拒签': 'danger', '派送中': 'warning', '待派送': 'warning', '运送中': 'primary', '已发货': 'info'};
+            const statusMap = {'已签收': 'success', '退回已签收': 'warning', '拒签': 'danger', '派送中': 'warning', '待派送': 'warning', '运送中': 'primary', '已发货': 'info'};
 
             const statusBadge = statusMap[result.logistics_status] || 'secondary';
 

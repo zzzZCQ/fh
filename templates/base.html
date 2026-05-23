@@ -245,6 +245,11 @@
         <div class="menu-group">
             <div class="menu-label">业绩管理</div>
             <nav class="nav flex-column">
+                {% if current_user.has_role('admin') and current_user.group and current_user.group.level == 1 %}
+                <a class="nav-link {% if request.endpoint == 'wework.dashboard' %}active{% endif %}" href="{{ url_for('wework.dashboard') }}">
+                    <i class="bi bi-telephone-inbound"></i> 企微通话记录
+                </a>
+                {% endif %}
                 {% if current_user.has_role('salesman') %}
                 <a class="nav-link {% if request.endpoint == 'performance.performance_dashboard' %}active{% endif %}" 
                    href="{{ url_for('performance.performance_dashboard') }}">
@@ -633,18 +638,26 @@
             });
     }
     function initNotificationSSE() {
-        if (typeof(EventSource) === 'undefined') {
-            return;
-        }
-        eventSource = new EventSource('/api/notifications/stream');
-        eventSource.onmessage = function(e) {
-            const count = parseInt(e.data) || 0;
-            updateUnreadBadge(count);
-        };
-        eventSource.onerror = function() {
-            eventSource.close();
-            setTimeout(initNotificationSSE, 30000);
-        };
+        // 暂时禁用 SSE，改用轮询
+        // if (typeof(EventSource) === 'undefined') {
+        //     return;
+        // }
+        // eventSource = new EventSource('/api/notifications/stream');
+        // eventSource.onmessage = function(e) {
+        //     const count = parseInt(e.data) || 0;
+        //     updateUnreadBadge(count);
+        // };
+        // eventSource.onerror = function() {
+        //     eventSource.close();
+        //     setTimeout(initNotificationSSE, 30000);
+        // };
+        // 改用轮询
+        setInterval(function() {
+            fetch('/api/notifications/unread_count')
+                .then(r => r.json())
+                .then(data => updateUnreadBadge(data.count || 0))
+                .catch(() => {});
+        }, 30000);
     }
     initNotificationSSE();
     </script>

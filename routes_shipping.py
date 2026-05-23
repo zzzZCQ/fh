@@ -97,20 +97,53 @@ def update_logistics():
     if salesman_filter:
         query = query.filter(Order.salesman_id == salesman_filter)
 
-    # 分页查询，只更新当前页
-    orders = query.filter(
-        Order.express_type == '顺丰',
-        Order.status == 'shipped',
-        Order.logistics_status.notin_(['已签收', '拒签'])
-    ).order_by(Order.create_time.desc()).paginate(page=page, per_page=10, error_out=False).items
+    # 获取 per_page 参数，与 dashboard 保持一致
+    per_page = request.form.get('per_page', 10, type=int)
+    if per_page not in [10, 50, 100]:
+        per_page = 10
+
+    # 先完全按照 dashboard 的查询逻辑获取用户看到的当前页的所有订单（包括排序）
+    from sqlalchemy import case
+    from models import Category
+    
+    page_orders = query.outerjoin(Category, Category.name == Order.category).order_by(
+        case((Order.status == 'submitted', 0), else_=1),
+        case(
+            (Order.logistics_status == '运送中', 2),
+            (Order.logistics_status == '已发货', 2),
+            (Order.logistics_status == '待派送', 1),
+            (Order.logistics_status == '派送中', 3),
+            (Order.logistics_status == '已签收', 4),
+            (Order.logistics_status == '退回已签收', 5),
+            else_=5
+        ),
+        case((Category.is_main_product == True, 0), else_=1),
+        Order.create_time.desc()
+    ).paginate(page=page, per_page=per_page, error_out=False).items
+    
     print("====================================================")
-    print(f"[update_logistics] 当前页有 {len(orders)} 个订单需要更新")
-    for i, order in enumerate(orders):
-        print(f"[update_logistics] 正在更新第 {i+1}/{len(orders)} 个订单: id={order.id}, customer={order.customer_name}, tracking={order.tracking_number}, status={order.logistics_status}")
-        update_single_order_logistics(order)
-    flash('当前页的物流信息已更新！', 'success')
+    print(f"[update_logistics] 当前页共有 {len(page_orders)} 个订单")
+    
+    # 再在当前页的订单中筛选出需要更新物流的订单
+    orders_to_update = []
+    for order in page_orders:
+        if (order.express_type == '顺丰' and 
+            order.status == 'shipped' and 
+            order.logistics_status not in ['已签收', '退回已签收', '拒签']):
+            orders_to_update.append(order)
+    
+    print(f"[update_logistics] 其中有 {len(orders_to_update)} 个订单需要更新")
+    
+    updated_count = 0
+    for i, order in enumerate(orders_to_update):
+        print(f"[update_logistics] 正在更新第 {i+1}/{len(orders_to_update)} 个订单: id={order.id}, customer={order.customer_name}, tracking={order.tracking_number}, status={order.logistics_status}")
+        result = update_single_order_logistics(order)
+        if result and result.get('status'):
+            updated_count += 1
+    flash(f'物流信息已更新！共更新了 {updated_count} 条。', 'success')
     return redirect(url_for('orders.dashboard',
         page=request.form.get('page', 1),
+        per_page=per_page,
         customer_keyword=request.form.get('customer_keyword', ''),
         tracking_keyword=request.form.get('tracking_keyword', ''),
         status=request.form.get('status', ''),
