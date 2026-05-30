@@ -29,6 +29,24 @@
         </div>
     </div>
 
+    <!-- Tab导航 -->
+    <ul class="nav nav-tabs mb-3" id="performanceTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="salesman-tab" data-bs-toggle="tab" data-bs-target="#salesman-panel" type="button" role="tab">
+                <i class="bi bi-person-badge me-2"></i>业务员维度
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="product-tab" data-bs-toggle="tab" data-bs-target="#product-panel" type="button" role="tab">
+                <i class="bi bi-box-seam me-2"></i>产品维度
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- 业务员维度Tab -->
+        <div class="tab-pane fade show active" id="salesman-panel" role="tabpanel">
+
     <!-- 概览卡片 -->
     <div class="row mb-4">
         <div class="col-md-3">
@@ -141,6 +159,90 @@
             </div>
         </div>
     </div>
+        </div><!-- 结束业务员维度Tab -->
+
+        <!-- 产品维度Tab -->
+        <div class="tab-pane fade" id="product-panel" role="tabpanel">
+            <!-- 产品维度概览卡片 -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white">
+                        <div class="card-body">
+                            <h6 class="card-title">产品总业绩</h6>
+                            <h3 id="productTotalAmount" class="mb-0">-</h3>
+                            <small id="productTotalCount">0 单</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <h6 class="card-title">已签收业绩</h6>
+                            <h3 id="productSignedAmount" class="mb-0">-</h3>
+                            <small id="productSignedCount">0 单</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-info text-white">
+                        <div class="card-body">
+                            <h6 class="card-title">产品类别数</h6>
+                            <h3 id="productCategoryCount" class="mb-0">-</h3>
+                            <small>个</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-warning text-dark">
+                        <div class="card-body">
+                            <h6 class="card-title">平均单值</h6>
+                            <h3 id="productAvgAmount" class="mb-0">-</h3>
+                            <small>元/单</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 产品出单量图表 -->
+            <div class="row mb-4">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header">产品出单量排行榜</div>
+                        <div class="card-body">
+                            <div id="productChart" style="height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 产品明细表格 -->
+            <div class="card">
+                <div class="card-header">产品明细（点击查看详情）</div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>产品类别</th>
+                                    <th>出单数</th>
+                                    <th>总业绩</th>
+                                    <th>已签收数</th>
+                                    <th>已签收业绩</th>
+                                    <th>签收率</th>
+                                    <th>男</th>
+                                    <th>女</th>
+                                    <th>占比</th>
+                                </tr>
+                            </thead>
+                            <tbody id="productTableBody">
+                                <tr><td colspan="9" class="text-center text-muted">点击产品维度Tab加载数据...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div><!-- 结束产品维度Tab -->
+    </div><!-- 结束tab-content -->
 </div>
 
 <!-- 订单详情模态框 -->
@@ -171,6 +273,61 @@
                             <tr><td colspan="9" class="text-center text-muted">加载中...</td></tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 产品详情模态框 -->
+<div class="modal fade" id="productDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="productModalTitle">产品详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 产品概览 -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">基本信息</h6>
+                                <div class="mb-2">
+                                    <strong>出单数：</strong>
+                                    <span id="productDetailTotalCount">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>总业绩：</strong>
+                                    <span id="productDetailTotalAmount" class="text-primary">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>已签收数：</strong>
+                                    <span id="productDetailSignedCount">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>已签收业绩：</strong>
+                                    <span id="productDetailSignedAmount" class="text-success">-</span>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>签收率：</strong>
+                                    <span id="productDetailSignRate" class="badge bg-success">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">性别分布</h6>
+                                <div id="productGenderChart" style="height: 300px;"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -547,5 +704,239 @@ function loadSignRateCategory() {
         });
     });
 }
+
+// ==================== 产品维度相关代码 ====================
+let productDataLoaded = false; // 标记产品数据是否已加载
+let productChart = null; // 产品图表实例
+
+// Tab切换时加载产品维度数据
+document.getElementById('product-tab').addEventListener('shown.bs.tab', function() {
+    if (!productDataLoaded) {
+        loadProductData();
+        productDataLoaded = true;
+    }
+});
+
+// 加载产品数据
+function loadProductData() {
+    let url = `/admin/team_performance/api/product_overview?year=${currentYear}&month=${currentMonth}`;
+    if (currentGroup) url += `&group_id=${currentGroup}`;
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            // 保存数据供详情页使用
+            window.currentProductData = data;
+            renderProductOverview(data);
+            renderProductChart(data);
+            renderProductTable(data);
+        })
+        .catch(err => {
+            console.error('加载产品数据失败:', err);
+            document.getElementById('productTableBody').innerHTML = '<tr><td colspan="9" class="text-center text-danger">加载失败，请刷新重试</td></tr>';
+        });
+}
+
+// 渲染产品概览
+function renderProductOverview(data) {
+    document.getElementById('productTotalAmount').textContent = formatMoney(data.total_amount);
+    document.getElementById('productTotalCount').textContent = data.total_count + ' 单';
+    document.getElementById('productSignedAmount').textContent = formatMoney(data.signed_amount);
+    document.getElementById('productSignedCount').textContent = data.signed_count + ' 单';
+    document.getElementById('productCategoryCount').textContent = data.products ? data.products.length : 0;
+    const avgAmount = data.total_count > 0 ? Math.round(data.total_amount / data.total_count) : 0;
+    document.getElementById('productAvgAmount').textContent = avgAmount.toLocaleString();
+}
+
+// 渲染产品图表
+function renderProductChart(data) {
+    if (!data.products || data.products.length === 0) {
+        document.getElementById('productChart').innerHTML = '<div class="text-center text-muted py-5">暂无数据</div>';
+        return;
+    }
+    
+    // 如果已有图表实例，销毁重建
+    if (productChart) {
+        productChart.dispose();
+    }
+    
+    productChart = echarts.init(document.getElementById('productChart'));
+    
+    const products = data.products;
+    const categories = products.map(p => p.category);
+    const amounts = products.map(p => p.total_amount);
+    const counts = products.map(p => p.total_count);
+    
+    productChart.setOption({
+        tooltip: {
+            trigger: 'axis',
+            formatter: function(params) {
+                const idx = params[0].dataIndex;
+                const p = products[idx];
+                return `${p.category}<br/>总业绩: ${formatMoney(p.total_amount)}<br/>出单数: ${p.total_count} 单`;
+            }
+        },
+        legend: { data: ['总业绩', '出单数'] },
+        grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+        xAxis: { type: 'category', data: categories, axisLabel: { rotate: 30 } },
+        yAxis: [
+            { type: 'value', name: '金额', position: 'left' },
+            { type: 'value', name: '单数', position: 'right' }
+        ],
+        series: [
+            { 
+                name: '总业绩', 
+                type: 'bar', 
+                data: amounts, 
+                itemStyle: { color: '#0d6efd' },
+                yAxisIndex: 0
+            },
+            { 
+                name: '出单数', 
+                type: 'line', 
+                data: counts, 
+                itemStyle: { color: '#198754' },
+                yAxisIndex: 1
+            }
+        ]
+    });
+}
+
+// 渲染产品表格
+function renderProductTable(data) {
+    const tbody = document.getElementById('productTableBody');
+    if (!data.products || data.products.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无数据</td></tr>';
+        return;
+    }
+    
+    const totalAmount = data.total_amount;
+    
+    tbody.innerHTML = data.products.map(p => {
+        const percent = totalAmount > 0 ? (p.total_amount / totalAmount * 100).toFixed(1) : 0;
+        const signRate = p.total_count > 0 ? Math.round(p.signed_count / p.total_count * 100) : 0;
+        const malePercent = p.total_count > 0 ? ((p.male_count / p.total_count) * 100).toFixed(1) : 0;
+        const femalePercent = p.total_count > 0 ? ((p.female_count / p.total_count) * 100).toFixed(1) : 0;
+        const unknownPercent = p.total_count > 0 ? ((p.unknown_gender_count / p.total_count) * 100).toFixed(1) : 0;
+        
+        return `
+            <tr style="cursor: pointer;" onclick="showProductDetail('${p.category}')" title="点击查看详情">
+                <td><strong>${p.category}</strong></td>
+                <td>${p.total_count} 单</td>
+                <td class="text-primary"><strong>${formatMoney(p.total_amount)}</strong></td>
+                <td>${p.signed_count} 单</td>
+                <td class="text-success">${formatMoney(p.signed_amount)}</td>
+                <td>
+                    <span class="badge ${signRate >= 80 ? 'bg-success' : signRate >= 50 ? 'bg-warning' : 'bg-danger'}">${signRate}%</span>
+                </td>
+                <td>
+                    <span class="badge bg-primary">${p.male_count}</span>
+                    <small class="text-muted">(${malePercent}%)</small>
+                </td>
+                <td>
+                    <span class="badge" style="background-color: #e83e8c;">${p.female_count}</span>
+                    <small class="text-muted">(${femalePercent}%)</small>
+                </td>
+                <td>
+                    <div class="d-flex align-items-center">
+                        <div class="progress flex-grow-1" style="height: 8px;">
+                            <div class="progress-bar bg-primary" style="width: ${percent}%"></div>
+                        </div>
+                        <span class="ms-2 small">${percent}%</span>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// 显示产品详情
+function showProductDetail(categoryName) {
+    // 获取产品数据
+    let productData = null;
+    const allProducts = window.currentProductData?.products || [];
+    for (let p of allProducts) {
+        if (p.category === categoryName) {
+            productData = p;
+            break;
+        }
+    }
+    
+    if (!productData) {
+        alert('未找到产品数据');
+        return;
+    }
+    
+    // 更新模态框标题
+    document.getElementById('productModalTitle').textContent = categoryName + ' - 详情';
+    
+    // 更新概览数据
+    document.getElementById('productDetailTotalCount').textContent = productData.total_count + ' 单';
+    document.getElementById('productDetailTotalAmount').textContent = formatMoney(productData.total_amount);
+    document.getElementById('productDetailSignedCount').textContent = productData.signed_count + ' 单';
+    document.getElementById('productDetailSignedAmount').textContent = formatMoney(productData.signed_amount);
+    const signRate = productData.total_count > 0 ? Math.round(productData.signed_count / productData.total_count * 100) : 0;
+    document.getElementById('productDetailSignRate').textContent = signRate + '%';
+    document.getElementById('productDetailSignRate').className = 'badge ' + (signRate >= 80 ? 'bg-success' : signRate >= 50 ? 'bg-warning' : 'bg-danger');
+    
+    // 渲染性别饼图
+    const genderChart = echarts.init(document.getElementById('productGenderChart'));
+    const genderData = [
+        { value: productData.male_count, name: '男' },
+        { value: productData.female_count, name: '女' },
+        { value: productData.unknown_gender_count, name: '未知' }
+    ].filter(item => item.value > 0);
+    
+    genderChart.setOption({
+        tooltip: {
+            trigger: 'item',
+            formatter: '{b}: {c} ({d}%)'
+        },
+        legend: {
+            orient: 'vertical',
+            left: 'left',
+            data: ['男', '女', '未知']
+        },
+        series: [{
+            name: '性别分布',
+            type: 'pie',
+            radius: ['40%', '70%'],
+            avoidLabelOverlap: false,
+            itemStyle: {
+                borderRadius: 10,
+                borderColor: '#fff',
+                borderWidth: 2
+            },
+            label: {
+                show: true,
+                formatter: '{b}: {c} ({d}%)'
+            },
+            emphasis: {
+                label: {
+                    show: true,
+                    fontSize: 16,
+                    fontWeight: 'bold'
+                }
+            },
+            data: genderData,
+            color: ['#0d6efd', '#e83e8c', '#6c757d']
+        }]
+    });
+    
+    // 打开模态框
+    const modal = new bootstrap.Modal(document.getElementById('productDetailModal'));
+    modal.show();
+}
+
+// 筛选条件变化时，重置产品数据标记
+document.getElementById('yearSelect').addEventListener('change', function() {
+    productDataLoaded = false;
+});
+document.getElementById('monthSelect').addEventListener('change', function() {
+    productDataLoaded = false;
+});
+document.getElementById('groupSelect').addEventListener('change', function() {
+    productDataLoaded = false;
+});
 </script>
 {% endblock %}

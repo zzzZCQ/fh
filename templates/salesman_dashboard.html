@@ -154,7 +154,11 @@
                         <td>{{ order.category }}</td>
 
                         <td>
-
+                            {% if order.logistics_warning %}
+                            <span class="badge bg-danger me-1" title="{{ order.logistics_warning_remark[:50] if order.logistics_warning_remark else '' }}">
+                                <i class="bi bi-exclamation-triangle"></i>
+                            </span>
+                            {% endif %}
                             {% if order.status == 'draft' %}
 
                             <span class="badge bg-secondary">草稿</span>

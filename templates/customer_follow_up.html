@@ -14,16 +14,11 @@
             <div class="d-flex flex-wrap align-items-end gap-2">
                 <!-- 筛选表单 -->
                 <form method="GET" action="{{ url_for('customer_follow_up.follow_up_list') }}" class="d-flex flex-wrap align-items-end gap-2">
-                    <input type="text" class="form-control form-control-sm" name="keyword" value="{{ request.args.get('keyword', '') }}" placeholder="客户姓名/电话" style="width: 150px;">
-                    <select class="form-select form-select-sm" name="is_signed" style="width: 100px;">
-                        <option value="">签收状态</option>
-                        <option value="1" {% if request.args.get('is_signed') == '1' %}selected{% endif %}>已签收</option>
-                        <option value="0" {% if request.args.get('is_signed') == '0' %}selected{% endif %}>未签收</option>
-                    </select>
-                    <select class="form-select form-select-sm" name="is_followed" style="width: 100px;">
-                        <option value="">对接状态</option>
-                        <option value="1" {% if request.args.get('is_followed') == '1' %}selected{% endif %}>已对接</option>
-                        <option value="0" {% if request.args.get('is_followed') == '0' %}selected{% endif %}>未对接</option>
+                    <select class="form-select form-select-sm" name="group_name" style="width: 120px;">
+                        <option value="">全部组别</option>
+                        {% for group in groups %}
+                        <option value="{{ group.name }}" {% if request.args.get('group_name') == group.name %}selected{% endif %}>{{ group.name }}</option>
+                        {% endfor %}
                     </select>
                     {% if current_user.has_role('admin') and salesmen %}
                     <select class="form-select form-select-sm" name="salesman_id" style="width: 120px;">
@@ -33,6 +28,28 @@
                         {% endfor %}
                     </select>
                     {% endif %}
+                    <select class="form-select form-select-sm" name="category" style="width: 120px;">
+                        <option value="">产品类别</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.name }}" {% if request.args.get('category') == cat.name %}selected{% endif %}>{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <select class="form-select form-select-sm" name="is_followed" style="width: 100px;">
+                        <option value="">对接状态</option>
+                        <option value="1" {% if request.args.get('is_followed') == '1' %}selected{% endif %}>已对接</option>
+                        <option value="0" {% if request.args.get('is_followed') == '0' %}selected{% endif %}>未对接</option>
+                    </select>
+                    <select class="form-select form-select-sm" name="is_signed" style="width: 100px;">
+                        <option value="">签收状态</option>
+                        <option value="1" {% if request.args.get('is_signed') == '1' %}selected{% endif %}>已签收</option>
+                        <option value="0" {% if request.args.get('is_signed') == '0' %}selected{% endif %}>未签收</option>
+                    </select>
+                    <input type="text" class="form-control form-control-sm" name="keyword" value="{{ request.args.get('keyword', '') }}" placeholder="客户姓名/电话" style="width: 150px;">
+                    <select class="form-select form-select-sm" name="per_page" style="width: 80px;">
+                        <option value="20" {% if request.args.get('per_page', '20') == '20' %}selected{% endif %}>20条</option>
+                        <option value="50" {% if request.args.get('per_page', '20') == '50' %}selected{% endif %}>50条</option>
+                        <option value="100" {% if request.args.get('per_page', '20') == '100' %}selected{% endif %}>100条</option>
+                    </select>
                     <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-search"></i> 查询</button>
                     <a href="{{ url_for('customer_follow_up.follow_up_list') }}" class="btn btn-outline-secondary btn-sm">重置</a>
                 </form>
@@ -46,7 +63,7 @@
                     <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#syncCustomerModal">
                         <i class="bi bi-arrow-repeat"></i> 同步客户
                     </button>
-                    <a href="{{ url_for('customer_follow_up.export_follow_up', keyword=request.args.get('keyword',''), is_signed=request.args.get('is_signed',''), is_followed=request.args.get('is_followed',''), salesman_id=request.args.get('salesman_id','')) }}" class="btn btn-outline-info btn-sm">
+                    <a href="{{ url_for('customer_follow_up.export_follow_up', keyword=request.args.get('keyword',''), is_signed=request.args.get('is_signed',''), is_followed=request.args.get('is_followed',''), salesman_id=request.args.get('salesman_id',''), category=request.args.get('category',''), group_name=request.args.get('group_name','')) }}" class="btn btn-outline-info btn-sm">
                         <i class="bi bi-download"></i> 导出
                     </a>
                 </div>
@@ -71,6 +88,7 @@
                             <th>性别</th>
                             <th>电话</th>
                             <th>地址</th>
+                            <th>产品类别</th>
                             <th>已购产品</th>
                             <th>金额</th>
                             <th>客户情况</th>
@@ -86,10 +104,11 @@
                             <td>{{ r.salesman.name if r.salesman else r.salesman_name }}</td>
                             <td>{{ r.follow_up_person or '-' }}</td>
                             <td>{{ r.customer_name }}</td>
-                            <td>{{ r.customer_wechat or '-' }}</td>
+                            <td style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.customer_wechat or '-' }}">{{ r.customer_wechat or '-' }}</td>
                             <td>{{ r.gender or '-' }}</td>
                             <td>{{ r.phone }}</td>
                             <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.address }}">{{ r.address }}</td>
+                            <td>{{ r.category or '-' }}</td>
                             <td>{{ r.purchased_products }}</td>
                             <td>{{ r.amount or '-' }}</td>
                             <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.customer_status }}">{{ r.customer_status or '-' }}</td>
@@ -157,9 +176,20 @@
                                                         <option value="女" {% if r.gender == '女' %}selected{% endif %}>女</option>
                                                     </select>
                                                 </div>
-                                                <div class="col-md-3">
+                                            </div>
+                                            <div class="row mb-3">
+                                                <div class="col-md-4">
                                                     <label class="form-label">电话</label>
                                                     <input type="text" class="form-control" name="phone" value="{{ r.phone }}">
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label">产品类别</label>
+                                                    <select name="category" class="form-select">
+                                                        <option value="">请选择</option>
+                                                        {% for cat in categories %}
+                                                        <option value="{{ cat.name }}" {% if r.category == cat.name %}selected{% endif %}>{{ cat.name }}</option>
+                                                        {% endfor %}
+                                                    </select>
                                                 </div>
                                             </div>
                                             <div class="mb-3">
@@ -218,7 +248,50 @@
                     </tbody>
                 </table>
             </div>
-            <div class="text-muted mt-2">共 {{ records|length }} 条记录</div>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div class="text-muted">共 {{ pagination.total }} 条记录</div>
+                <nav aria-label="Page navigation">
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if pagination.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('customer_follow_up.follow_up_list', page=pagination.prev_num, **filter_params) }}">上一页</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">上一页</span>
+                        </li>
+                        {% endif %}
+                        
+                        {% for page_num in pagination.iter_pages() %}
+                            {% if page_num %}
+                                {% if page_num == pagination.page %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ page_num }}</span>
+                                </li>
+                                {% else %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('customer_follow_up.follow_up_list', page=page_num, **filter_params) }}">{{ page_num }}</a>
+                                </li>
+                                {% endif %}
+                            {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if pagination.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('customer_follow_up.follow_up_list', page=pagination.next_num, **filter_params) }}">下一页</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">下一页</span>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
             {% else %}
             <div class="text-center text-muted py-5">
                 <i class="bi bi-inbox" style="font-size:3rem;"></i>
@@ -248,6 +321,17 @@
                             <option value="">不指定</option>
                             {% for u in follow_up_users %}
                             <option value="{{ u.id }}">{{ u.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    {% if categories %}
+                    <div class="mb-3">
+                        <label class="form-label">选择产品类别</label>
+                        <select name="category" class="form-select">
+                            <option value="">全部类别</option>
+                            {% for cat in categories %}
+                            <option value="{{ cat.name }}">{{ cat.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -316,9 +400,20 @@
                             <input type="text" class="form-control" name="phone" required placeholder="联系电话">
                         </div>
                         <div class="col-md-3 mb-3">
+                            <label class="form-label">产品类别</label>
+                            <select name="category" class="form-select">
+                                <option value="">请选择</option>
+                                {% for cat in categories %}
+                                <option value="{{ cat.name }}">{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
                             <label class="form-label">金额</label>
                             <input type="text" class="form-control" name="amount" placeholder="金额">
                         </div>
+                    </div>
+                    <div class="row">
                         <div class="col-md-3 mb-3">
                             <label class="form-label">对接人员</label>
                             <select name="follow_up_person" class="form-select">

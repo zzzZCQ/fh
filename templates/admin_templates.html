@@ -2,12 +2,67 @@
 
 {% block title %}模板管理 - 发货通知系统{% endblock %}
 
+{% block styles %}
+{{ super() }}
+<style>
+    .border-dashed {
+        border-style: dashed !important;
+    }
+    .table td, .table th {
+        vertical-align: middle;
+    }
+    
+    /* 表格容器需要overflow */
+    .table-scroll-wrapper {
+        overflow-x: auto;
+        position: relative;
+    }
+    .table-scroll-wrapper table {
+        min-width: 1200px;
+    }
+    
+    /* 固定列基础样式 */
+    .sticky-col {
+        position: sticky;
+        background: white;
+    }
+    
+    /* 类别列 - 固定最左侧 */
+    .sticky-col-left-1 {
+        left: 0;
+        z-index: 12;
+        box-shadow: 2px 0 3px rgba(0,0,0,0.1);
+    }
+    
+    /* 导出模板列 - 固定 */
+    .sticky-col-left-2 {
+        left: 150px;
+        z-index: 12;
+        box-shadow: 2px 0 3px rgba(0,0,0,0.1);
+    }
+    
+    /* 导入模板列 - 固定 */
+    .sticky-col-left-3 {
+        left: 270px;
+        z-index: 7;
+        box-shadow: 2px 0 3px rgba(0,0,0,0.05);
+    }
+    
+    /* 操作列 - 固定最右侧 */
+    .sticky-col-right {
+        right: 0;
+        z-index: 7;
+        box-shadow: -2px 0 3px rgba(0,0,0,0.1);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Excel模板管理</h2>
         <div>
-            <button type="button" class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#addExportTemplateModal">
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addExportTemplateModal">
                 <i class="bi bi-download"></i> 新增导出模板
             </button>
             <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addImportTemplateModal">
@@ -16,152 +71,171 @@
         </div>
     </div>
 
-    <!-- 导出模板列表 -->
-    <div class="card mb-4">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0"><i class="bi bi-download me-2"></i>导出模板列表</h5>
-            <span class="badge bg-light text-primary">{{ templates.total }} 条</span>
+    <!-- 按类别展示模板 -->
+    <div class="card">
+        <div class="card-header bg-dark d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-grid-3x3-gap me-2"></i>模板配置一览</h5>
+            <span class="badge bg-light text-dark">{{ configured_count }} 个已配置 / {{ unconfigured_count }} 个未配置</span>
         </div>
-        <div class="card-body">
-            {% if templates.items %}
-            <table class="table table-striped table-hover">
-                <thead>
-                    <tr>
-                        <th>类别</th>
-                        <th>字段映射</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for template in templates.items %}
-                    <tr>
-                        <td><span class="badge bg-primary">{{ template.category.name }}</span></td>
-                        <td>
-                            <small>
-                            {% for excel_col, order_field in (template.field_mapping | from_json).items() %}
-                            <span class="badge bg-light text-dark border me-1">{{ excel_col }}→{{ order_field }}</span>
-                            {% endfor %}
-                            </small>
-                        </td>
-                        <td>
-                            <button type="button" class="btn btn-outline-primary btn-sm btn-edit-export" data-id="{{ template.id }}" data-cat-id="{{ template.category_id }}" data-cat-name="{{ template.category.name }}" data-mapping="{{ template.field_mapping | e }}"><i class="bi bi-pencil"></i> 编辑</button>
-                            <a href="{{ url_for('templates.download_template', template_id=template.id) }}" class="btn btn-outline-info btn-sm"><i class="bi bi-download"></i> 下载</a>
-                            <form method="POST" action="{{ url_for('templates.delete_template', template_id=template.id) }}" class="d-inline" onsubmit="return confirm('确定删除？')">
-                                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> 删除</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-
-            <!-- 分页 -->
-            <nav aria-label="Page navigation">
-                <ul class="pagination justify-content-center">
-                    {% if templates.has_prev %}
-                    <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.prev_num, import_page=import_templates.page) }}">上一页</a></li>
-                    {% else %}
-                    <li class="page-item disabled"><span class="page-link">上一页</span></li>
-                    {% endif %}
-                    {% for page_num in templates.iter_pages(left_edge=2, left_current=2, right_current=3, right_edge=2) %}
-                        {% if page_num %}
-                            {% if page_num == templates.page %}
-                            <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
-                            {% else %}
-                            <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=page_num, import_page=import_templates.page) }}">{{ page_num }}</a></li>
-                            {% endif %}
-                        {% else %}
-                        <li class="page-item disabled"><span class="page-link">...</span></li>
-                        {% endif %}
-                    {% endfor %}
-                    {% if templates.has_next %}
-                    <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.next_num, import_page=import_templates.page) }}">下一页</a></li>
-                    {% else %}
-                    <li class="page-item disabled"><span class="page-link">下一页</span></li>
-                    {% endif %}
-                </ul>
-            </nav>
+        <div class="card-body p-0">
+            {% if category_templates %}
+            <div class="table-scroll-wrapper">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-nowrap sticky-col sticky-col-left-1" style="width: 150px; background: #f8f9fa;">类别</th>
+                            <th class="text-center sticky-col sticky-col-left-2" style="width: 120px; background: #f8f9fa;">导出模板</th>
+                            <th>导出字段映射</th>
+                            <th class="text-center sticky-col sticky-col-left-3" style="width: 120px; background: #f8f9fa;">导入模板</th>
+                            <th>导入字段映射</th>
+                            <th class="text-center sticky-col sticky-col-right" style="width: 200px; background: #f8f9fa;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ct in category_templates %}
+                        <tr class="{% if not ct.export_template and not ct.import_template %}table-warning{% endif %}">
+                            <td class="sticky-col sticky-col-left-1">
+                                <span class="badge {% if ct.export_template or ct.import_template %}bg-dark{% else %}bg-secondary{% endif %} fs-6">{{ ct.category.name }}</span>
+                            </td>
+                            
+                            <!-- 导出模板状态 -->
+                            <td class="text-center sticky-col sticky-col-left-2">
+                                {% if ct.export_template %}
+                                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>已配置</span>
+                                {% else %}
+                                <span class="badge bg-secondary"><i class="bi bi-x-circle me-1"></i>未配置</span>
+                                {% endif %}
+                            </td>
+                            
+                            <!-- 导出字段映射 -->
+                            <td>
+                                {% if ct.export_template %}
+                                <small>
+                                {% for excel_col, order_field in (ct.export_template.field_mapping | from_json).items() %}
+                                <span class="badge bg-light text-dark border me-1 mb-1">{{ excel_col }}→{{ order_field }}</span>
+                                {% endfor %}
+                                </small>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            
+                            <!-- 导入模板状态 -->
+                            <td class="text-center sticky-col sticky-col-left-3">
+                                {% if ct.import_template %}
+                                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>已配置</span>
+                                {% else %}
+                                <span class="badge bg-secondary"><i class="bi bi-x-circle me-1"></i>未配置</span>
+                                {% endif %}
+                            </td>
+                            
+                            <!-- 导入字段映射 -->
+                            <td>
+                                {% if ct.import_template %}
+                                <div class="mb-1">
+                                    <small class="text-muted">默认快递：</small>
+                                    <span class="badge bg-info text-white">{{ ct.import_template.default_express_type or '-' }}</span>
+                                </div>
+                                <small>
+                                {% for excel_col, order_field in (ct.import_template.field_mapping | from_json).items() %}
+                                <span class="badge bg-light text-dark border me-1 mb-1">{{ excel_col }}→{{ order_field }}</span>
+                                {% endfor %}
+                                </small>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            
+                            <!-- 操作按钮 -->
+                            <td class="text-center sticky-col sticky-col-right">
+                                <div class="btn-group btn-group-sm">
+                                    {% if ct.export_template %}
+                                    <button type="button" class="btn btn-outline-primary btn-edit-export" data-id="{{ ct.export_template.id }}" data-cat-id="{{ ct.export_template.category_id }}" data-cat-name="{{ ct.export_template.category.name }}" data-mapping="{{ ct.export_template.field_mapping | e }}" title="编辑导出模板">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-copy-export" data-id="{{ ct.export_template.id }}" data-cat-id="{{ ct.export_template.category_id }}" data-cat-name="{{ ct.export_template.category.name }}" data-mapping="{{ ct.export_template.field_mapping | e }}" title="复制导出模板">
+                                        <i class="bi bi-copy"></i>
+                                    </button>
+                                    <a href="{{ url_for('templates.download_template', template_id=ct.export_template.id) }}" class="btn btn-outline-info" title="下载导出模板">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('templates.delete_template', template_id=ct.export_template.id) }}" class="d-inline" onsubmit="return confirm('确定删除该导出模板？')">
+                                        <button type="submit" class="btn btn-outline-danger" title="删除导出模板">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="quickAddExport({{ ct.category.id }}, '{{ ct.category.name }}')" title="新增导出模板">
+                                        <i class="bi bi-plus-circle"></i> 新增
+                                    </button>
+                                    {% endif %}
+                                </div>
+                                <div class="btn-group btn-group-sm mt-1">
+                                    {% if ct.import_template %}
+                                    <button type="button" class="btn btn-outline-success btn-sm btn-edit-import" data-id="{{ ct.import_template.id }}" data-cat-id="{{ ct.import_template.category_id }}" data-cat-name="{{ ct.import_template.category.name }}" data-mapping="{{ ct.import_template.field_mapping | e }}" data-express="{{ ct.import_template.default_express_type or '' }}" title="编辑导入模板">
+                                        <i class="bi bi-pencil"></i> 导入
+                                    </button>
+                                    <form method="POST" action="{{ url_for('import_routes.delete_import_template', template_id=ct.import_template.id) }}" class="d-inline" onsubmit="return confirm('确定删除该导入模板？')">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm" title="删除导入模板">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <button type="button" class="btn btn-outline-success btn-sm" onclick="quickAddImport({{ ct.category.id }}, '{{ ct.category.name }}')" title="新增导入模板">
+                                        <i class="bi bi-plus-circle"></i> 导入
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
             {% else %}
-            <div class="text-center text-muted py-4">
-                <p>暂无导出模板</p>
-                <p class="small">请点击上方"新增导出模板"按钮添加</p>
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                <p class="mb-1">暂无配置任何模板</p>
+                <p class="small">请点击上方按钮新增导出或导入模板</p>
             </div>
             {% endif %}
         </div>
     </div>
+</div>
 
-    <!-- 导入模板列表 -->
-    <div class="card">
-        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0"><i class="bi bi-upload me-2"></i>导入模板列表</h5>
-            <span class="badge bg-light text-success">{{ import_templates.total }} 条</span>
-        </div>
-        <div class="card-body">
-            {% if import_templates.items %}
-            <table class="table table-striped table-hover">
-                <thead>
-                    <tr>
-                        <th>类别</th>
-                        <th>字段映射</th>
-                        <th>默认快递</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for template in import_templates.items %}
-                    <tr>
-                        <td><span class="badge bg-success">{{ template.category.name }}</span></td>
-                        <td>
-                            <small>
-                            {% for excel_col, order_field in (template.field_mapping | from_json).items() %}
-                            <span class="badge bg-light text-dark border me-1">{{ excel_col }}→{{ order_field }}</span>
-                            {% endfor %}
-                            </small>
-                        </td>
-                        <td>{{ template.default_express_type or '-' }}</td>
-                        <td>
-                            <button type="button" class="btn btn-outline-primary btn-sm btn-edit-import" data-id="{{ template.id }}" data-cat-id="{{ template.category_id }}" data-cat-name="{{ template.category.name }}" data-mapping="{{ template.field_mapping | e }}" data-express="{{ template.default_express_type or '' }}"><i class="bi bi-pencil"></i> 编辑</button>
-                            <form method="POST" action="{{ url_for('import_routes.delete_import_template', template_id=template.id) }}" class="d-inline" onsubmit="return confirm('确定删除？')">
-                                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> 删除</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-
-            <!-- 分页 -->
-            <nav aria-label="Page navigation">
-                <ul class="pagination justify-content-center">
-                    {% if import_templates.has_prev %}
-                    <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.page, import_page=import_templates.prev_num) }}">上一页</a></li>
-                    {% else %}
-                    <li class="page-item disabled"><span class="page-link">上一页</span></li>
-                    {% endif %}
-                    {% for page_num in import_templates.iter_pages(left_edge=2, left_current=2, right_current=3, right_edge=2) %}
-                        {% if page_num %}
-                            {% if page_num == import_templates.page %}
-                            <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
-                            {% else %}
-                            <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.page, import_page=page_num) }}">{{ page_num }}</a></li>
-                            {% endif %}
-                        {% else %}
-                        <li class="page-item disabled"><span class="page-link">...</span></li>
-                        {% endif %}
-                    {% endfor %}
-                    {% if import_templates.has_next %}
-                    <li class="page-item"><a class="page-link" href="{{ url_for('templates.admin_templates', export_page=templates.page, import_page=import_templates.next_num) }}">下一页</a></li>
-                    {% else %}
-                    <li class="page-item disabled"><span class="page-link">下一页</span></li>
-                    {% endif %}
-                </ul>
-            </nav>
-            {% else %}
-            <div class="text-center text-muted py-4">
-                <p>暂无导入模板</p>
-                <p class="small">请点击上方"新增导入模板"按钮添加</p>
+<!-- 复制模板模态框 -->
+<div class="modal fade" id="copyTemplateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-copy me-2"></i>复制模板到其他类别</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            {% endif %}
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-1"></i>
+                    从 "<span id="copySourceName" class="fw-bold"></span>" 复制模板
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">源模板字段映射</label>
+                    <div id="copySourceMapping" class="p-2 border rounded bg-light"></div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">选择目标类别 <span class="text-danger">*</span></label>
+                    <div class="border rounded p-3" style="max-height: 250px; overflow-y: auto;">
+                        <div id="copyTargetCategories"></div>
+                    </div>
+                    <div class="form-text">选择要复制到的目标类别（已配置模板的类别不会显示）</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="copyTemplateBtn" onclick="submitCopyTemplate()" disabled>
+                    <i class="bi bi-check-circle me-1"></i>确认复制
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -172,10 +246,11 @@
         <div class="modal-content">
             <form method="POST" action="{{ url_for('templates.upload_template') }}" enctype="multipart/form-data">
                 <div class="modal-header">
-                    <h5 class="modal-title">新增导出模板</h5>
+                    <h5 class="modal-title" id="addExportModalTitle">新增导出模板</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <input type="hidden" name="copy_from_template_id" id="copy_from_export_template_id" value="">
                     <div class="mb-3">
                         <label class="form-label">选择类别 <span class="text-danger">*</span></label>
                         <select class="form-select" id="export_category_id" name="category_id" required onchange="onExportCategoryChange()">
@@ -185,7 +260,7 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-3" id="export_file_div">
                         <label class="form-label">上传模板文件 <span class="text-danger">*</span></label>
                         <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required>
                         <div class="form-text">请上传.xlsx或.xls格式的Excel文件作为模板</div>
@@ -216,10 +291,11 @@
         <div class="modal-content">
             <form method="POST" action="{{ url_for('import_routes.upload_import_template') }}" enctype="multipart/form-data">
                 <div class="modal-header">
-                    <h5 class="modal-title">新增导入模板</h5>
+                    <h5 class="modal-title" id="addImportModalTitle">新增导入模板</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <input type="hidden" name="copy_from_template_id" id="copy_from_import_template_id" value="">
                     <div class="mb-3">
                         <label class="form-label">选择类别 <span class="text-danger">*</span></label>
                         <select class="form-select" id="import_category_id" name="category_id" required onchange="onImportCategoryChange()">
@@ -229,7 +305,7 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-3" id="import_file_div">
                         <label class="form-label">上传模板文件 <span class="text-danger">*</span></label>
                         <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required>
                         <div class="form-text">请上传.xlsx或.xls格式的Excel文件作为模板</div>
@@ -483,6 +559,196 @@ function onImportCategoryChange() {
         });
 }
 
+// ========== 复制导出模板 ==========
+let currentCopySourceId = null;
+let currentCopySourceMapping = null;
+let currentCopySourceName = null;
+
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-copy-export');
+    if (!btn) return;
+    
+    const templateId = btn.dataset.id;
+    const fieldMapping = JSON.parse(btn.dataset.mapping);
+    const catName = btn.dataset.catName;
+    
+    currentCopySourceId = templateId;
+    currentCopySourceMapping = fieldMapping;
+    currentCopySourceName = catName;
+    
+    // 显示字段映射预览
+    const mappingHtml = Object.entries(fieldMapping).map(([k, v]) => 
+        `<span class="badge bg-light text-dark border me-1 mb-1">${k} → ${v}</span>`
+    ).join('');
+    document.getElementById('copySourceMapping').innerHTML = mappingHtml || '<span class="text-muted">无字段映射</span>';
+    
+    // 显示源模板名称
+    document.getElementById('copySourceName').textContent = catName;
+    
+    // 加载可复制的目标类别
+    loadCopyTargetCategories();
+    
+    // 显示模态框
+    const modal = new bootstrap.Modal(document.getElementById('copyTemplateModal'));
+    modal.show();
+});
+
+// 加载可复制的目标类别
+function loadCopyTargetCategories() {
+    fetch('/api/template/target_categories')
+        .then(r => r.json())
+        .then(categories => {
+            const container = document.getElementById('copyTargetCategories');
+            console.log('获取到的目标类别:', categories);
+            
+            if (categories.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        所有类别都已配置导出模板，无法复制。
+                        <br><small>可以删除某个模板后再复制，或直接在未配置类别处新增模板。</small>
+                    </div>
+                `;
+                document.getElementById('copyTemplateBtn').disabled = true;
+                return;
+            }
+            container.innerHTML = categories.map(c => `
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="target_category_ids" value="${c.id}" id="target_cat_${c.id}">
+                    <label class="form-check-label" for="target_cat_${c.id}">${c.name}</label>
+                </div>
+            `).join('');
+            document.getElementById('copyTemplateBtn').disabled = false;
+        })
+        .catch(err => {
+            console.error('加载目标类别失败:', err);
+            document.getElementById('copyTargetCategories').innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    加载目标类别失败，请刷新页面重试
+                </div>
+            `;
+        });
+}
+
+// 快速新增导出模板
+function quickAddExport(categoryId, categoryName) {
+    document.getElementById('export_category_id').value = categoryId;
+    document.getElementById('addExportModalTitle').textContent = `新增导出模板 - ${categoryName}`;
+    document.getElementById('export_file_div').style.display = 'block';
+    document.getElementById('copy_from_export_template_id').value = '';
+    document.getElementById('exportMappingRows').innerHTML = '';
+    exportMappingIndex = 0;
+    const modal = new bootstrap.Modal(document.getElementById('addExportTemplateModal'));
+    modal.show();
+}
+
+// 快速新增导入模板
+function quickAddImport(categoryId, categoryName) {
+    document.getElementById('import_category_id').value = categoryId;
+    document.getElementById('addImportModalTitle').textContent = `新增导入模板 - ${categoryName}`;
+    document.getElementById('import_file_div').style.display = 'block';
+    document.getElementById('copy_from_import_template_id').value = '';
+    document.getElementById('importMappingRows').innerHTML = '';
+    document.getElementById('default_express_type').value = '';
+    importMappingIndex = 0;
+    const modal = new bootstrap.Modal(document.getElementById('addImportTemplateModal'));
+    modal.show();
+}
+
+// 提交复制
+function submitCopyTemplate() {
+    const checkboxes = document.querySelectorAll('input[name="target_category_ids"]:checked');
+    if (checkboxes.length === 0) {
+        alert('请选择至少一个目标类别');
+        return;
+    }
+    
+    const targetIds = Array.from(checkboxes).map(cb => cb.value);
+    const formData = new FormData();
+    formData.append('source_template_id', currentCopySourceId);
+    targetIds.forEach(id => formData.append('target_category_ids', id));
+    
+    fetch('{{ url_for("templates.batch_copy_export_template") }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('复制失败：' + data.message);
+        }
+    })
+    .catch(err => {
+        alert('复制失败：' + err);
+    });
+}
+
+// 重置复制模态框
+document.getElementById('copyTemplateModal').addEventListener('hidden.bs.modal', function() {
+    currentCopySourceId = null;
+    currentCopySourceMapping = null;
+    currentCopySourceName = null;
+});
+
+// 重置新增导出模板表单
+document.getElementById('addExportTemplateModal').addEventListener('hidden.bs.modal', function() {
+    document.getElementById('copy_from_export_template_id').value = '';
+    document.getElementById('export_file_div').style.display = 'block';
+    document.getElementById('addExportModalTitle').textContent = '新增导出模板';
+    document.getElementById('export_category_id').value = '';
+    document.getElementById('exportMappingRows').innerHTML = '';
+    exportMappingIndex = 0;
+});
+
+// ========== 复制导入模板 ==========
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-copy-import');
+    if (!btn) return;
+    const templateId = btn.dataset.id;
+    const fieldMapping = JSON.parse(btn.dataset.mapping);
+    const defaultExpress = btn.dataset.express || '';
+    const catName = btn.dataset.catName;
+
+    // 清空并填充新增导入模板表单
+    document.getElementById('importMappingRows').innerHTML = '';
+    importMappingIndex = 0;
+
+    if (fieldMapping && Object.keys(fieldMapping).length > 0) {
+        for (const [excelCol, orderField] of Object.entries(fieldMapping)) {
+            addImportMappingRow(excelCol, orderField);
+        }
+    }
+    document.getElementById('default_express_type').value = defaultExpress;
+
+    // 设置复制来源
+    document.getElementById('copy_from_import_template_id').value = templateId;
+    
+    // 隐藏文件上传
+    const fileDiv = document.getElementById('import_file_div');
+    fileDiv.style.display = 'none';
+    
+    // 更新标题
+    document.getElementById('addImportModalTitle').textContent = `从"${catName}"复制模板`;
+
+    // 显示新增模板模态框
+    const modal = new bootstrap.Modal(document.getElementById('addImportTemplateModal'));
+    modal.show();
+});
+
+// 重置新增导入模板表单
+document.getElementById('addImportTemplateModal').addEventListener('hidden.bs.modal', function() {
+    document.getElementById('copy_from_import_template_id').value = '';
+    document.getElementById('import_file_div').style.display = 'block';
+    document.getElementById('addImportModalTitle').textContent = '新增导入模板';
+    document.getElementById('import_category_id').value = '';
+    document.getElementById('importMappingRows').innerHTML = '';
+    document.getElementById('default_express_type').value = '';
+    importMappingIndex = 0;
+});
+
 // ========== 编辑导出模板 ==========
 let editExportMappingIndex = 0;
 
@@ -613,5 +879,6 @@ function addEditImportMappingRow(excelCol = '', orderField = '') {
     container.appendChild(row);
     editImportMappingIndex++;
 }
+
 </script>
 {% endblock %}

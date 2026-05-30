@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>新建发货单</h2>
+    <h2><i class="bi bi-file-plus me-2"></i>新建发货单</h2>
     
     {% if error %}
     <div class="alert alert-danger" role="alert">
@@ -12,469 +12,510 @@
     </div>
     {% endif %}
     
+    {% if success_count %}
+    <div class="alert alert-success" role="alert">
+        成功创建 {{ success_count }} 个订单！
+        {% if failed_count > 0 %}
+        <br>有 {{ failed_count }} 个订单创建失败，请检查格式。
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- 标签页切换 -->
     <div class="row mt-4">
         <div class="col-12">
             <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5>填写发货单信息</h5>
-                    <button type="button" class="btn btn-outline-info btn-sm" data-bs-toggle="collapse" data-bs-target="#smartPasteArea">
-                        <i class="bi bi-paste me-1"></i>智能粘贴
-                    </button>
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" id="orderTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single-tab-pane" type="button" role="tab">
+                                <i class="bi bi-file-text me-1"></i>单个订单
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="batch-tab" data-bs-toggle="tab" data-bs-target="#batch-tab-pane" type="button" role="tab">
+                                <i class="bi bi-files me-1"></i>批量创建
+                            </button>
+                        </li>
+                    </ul>
                 </div>
-                <div class="card-body">
-                    <!-- 智能粘贴区域 -->
-                    <div class="collapse mb-3" id="smartPasteArea">
-                        <div class="card border-info">
-                            <div class="card-body">
-                                <label class="form-label"><i class="bi bi-magic me-1"></i>粘贴客户信息，自动识别姓名、电话、地址</label>
-                                <textarea class="form-control" id="smartPasteInput" rows="4" placeholder="粘贴客户信息，例如：&#10;姓名李荣秀 电话18978574385 收货地址：广西桂平市西山镇第二邮区255号&#10;或：怀远 13873935081 湖南省邵阳市隆回县司门前镇学堂湾村十六组"></textarea>
-                                <button type="button" class="btn btn-info btn-sm mt-2" onclick="smartParse()">
-                                    <i class="bi bi-arrow-right-circle me-1"></i>识别并填充
-                                </button>
-                                <div id="smartPasteResult" class="mt-2 small text-success" style="display:none;"></div>
+                <div class="card-body p-0">
+                    <div class="tab-content" id="orderTabsContent">
+                        
+                        <!-- ========== 单个订单标签页 ========== -->
+                        <div class="tab-pane fade show active" id="single-tab-pane" role="tabpanel">
+                            <div class="p-4">
+                                <!-- 智能粘贴区域 - 放在最上方 -->
+                                <div class="card border-info mb-4">
+                                    <div class="card-body">
+                                        <label class="form-label"><i class="bi bi-magic me-1"></i>智能粘贴客户信息（自动识别姓名、电话、地址）</label>
+                                        <textarea class="form-control" id="smartPasteInput" rows="3" placeholder="粘贴客户信息，例如：&#10;姓名李荣秀 电话18978574385 收货地址：广西桂平市西山镇第二邮区255号&#10;或：怀远 13873935081 湖南省邵阳市隆回县司门前镇学堂湾村十六组"></textarea>
+                                        <button type="button" class="btn btn-info btn-sm mt-2" onclick="smartParse()">
+                                            <i class="bi bi-arrow-right-circle me-1"></i>识别并填充到表单
+                                        </button>
+                                        <div id="smartPasteResult" class="mt-2 small text-success" style="display:none;"></div>
+                                    </div>
+                                </div>
+                                
+                                <form method="POST" action="{{ url_for('orders.create_order') }}" id="createOrderForm">
+                                    <!-- 组别、业务员（隐藏，通过后端自动带入） -->
+                                    <input type="hidden" name="group_name" value="{{ form_data.group_name if form_data else (current_user.group.name if current_user.group else '') }}">
+                                    <input type="hidden" name="salesman" value="{{ current_user.name }}">
+                                    
+                                    <!-- 第二行：客户名、收货电话、已付金额、代付金额 -->
+                                    <div class="row mb-3">
+                                        <div class="col-md-3">
+                                            <label for="single_customer_name" class="form-label">客户名 <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="single_customer_name" name="customer_name" value="{{ form_data.customer_name if form_data else '' }}" required>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label for="single_phone" class="form-label">收货电话 <span class="text-danger">*</span></label>
+                                            <input type="tel" class="form-control" id="single_phone" name="phone" pattern="^1[3-9]\d{9}$" required placeholder="请输入11位手机号" value="{{ form_data.phone if form_data else '' }}">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label for="single_paid_amount" class="form-label">已付金额</label>
+                                            <input type="text" class="form-control" id="single_paid_amount" name="paid_amount" placeholder="如：100企微410" value="{{ form_data.paid_amount if form_data else '' }}">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label for="single_collect_amount" class="form-label">代付金额</label>
+                                            <input type="number" step="0.01" class="form-control" id="single_collect_amount" name="collect_amount" placeholder="0.00" value="{{ form_data.collect_amount if form_data else '' }}">
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 第三行：类别、客户微信名、性别 -->
+                                    <div class="row mb-3">
+                                        <div class="col-md-4">
+                                            <label for="single_category" class="form-label">类别 <span class="text-danger">*</span></label>
+                                            <select class="form-select" id="single_category" name="category" required onchange="window.loadGiftsByCategory()">
+                                                <option value="">请选择</option>
+                                                {% for category in categories %}
+                                                <option value="{{ category.name }}" data-id="{{ category.id }}" {% if form_data and form_data.category == category.name %}selected{% endif %}>{{ category.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="single_customer_wechat" class="form-label">客户微信名</label>
+                                            <input type="text" class="form-control" id="single_customer_wechat" name="customer_wechat" placeholder="选填" value="{{ form_data.customer_wechat if form_data else '' }}">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="single_gender" class="form-label">性别</label>
+                                            <select class="form-select" id="single_gender" name="gender">
+                                                <option value="">请选择（选填）</option>
+                                                <option value="男" {% if form_data and form_data.gender == '男' %}selected{% endif %}>男</option>
+                                                <option value="女" {% if form_data and form_data.gender == '女' %}selected{% endif %}>女</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 第四行：产品信息 -->
+                                    <div class="row mb-3">
+                                        <div class="col-12">
+                                            <label for="single_product_info" class="form-label">产品信息 <span class="text-danger">*</span></label>
+                                            <div id="single_category_example" class="mb-2" style="display:none;">
+                                                <div class="form-text" style="background:#f8f9fa;border-radius:4px;padding:8px 12px;margin-bottom:4px;white-space:pre-wrap;line-height:1.6;" id="single_category_example_text"></div>
+                                                <div class="form-text" style="color:#999;font-size:0.8em;">↑ 参考示例格式填写产品信息</div>
+                                            </div>
+                                            <div id="single_category_price_info" class="mb-2" style="display:none;">
+                                                <div class="form-text" style="background:#fff3cd;border-radius:4px;padding:8px 12px;margin-bottom:4px;line-height:1.6;color:#856404;" id="single_category_price_text"></div>
+                                            </div>
+                                            <textarea class="form-control" id="single_product_info" name="product_info" rows="3" required placeholder="请填写产品详细信息">{{ form_data.product_info if form_data else '' }}</textarea>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 赠品信息 -->
+                                    <div class="row mb-3" style="display:none;">
+                                        <div class="col-md-4">
+                                            <div class="form-check mt-2">
+                                                <input type="checkbox" class="form-check-input" id="single_has_gift" name="has_gift" {% if form_data and form_data.has_gift %}checked{% endif %} onchange="window.toggleGiftSection()">
+                                                <label class="form-check-label" for="single_has_gift">是否有赠品</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-8" id="single_gift_section" style="display: {% if form_data and form_data.has_gift %}block{% else %}none{% endif %};">
+                                            <label for="single_gift_info" class="form-label">赠品内容（可多选）</label>
+                                            <select class="form-select" id="single_gift_info" name="gift_info" multiple size="3">
+                                            </select>
+                                            <div class="form-text">请先选择类别，按住 Ctrl 可多选</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 第五行：收货地址 -->
+                                    <div class="row mb-3">
+                                        <div class="col-12">
+                                            <label for="single_address" class="form-label">收货地址 <span class="text-danger">*</span></label>
+                                            <textarea class="form-control" id="single_address" name="address" rows="2" required placeholder="请填写详细收货地址">{{ form_data.address if form_data else '' }}</textarea>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 第六行：备注 -->
+                                    <div class="row mb-4">
+                                        <div class="col-12">
+                                            <label for="single_remark" class="form-label">备注</label>
+                                            <textarea class="form-control" id="single_remark" name="remark" rows="2" placeholder="填写用户身体情况，如睡眠质量，三高情况">{{ form_data.remark if form_data else '' }}</textarea>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 按钮 -->
+                                    <div class="row">
+                                        <div class="col-12">
+                                            <div class="d-flex gap-3 justify-content-center">
+                                                <button type="button" class="btn btn-secondary px-5" id="saveDraftBtn">保存草稿</button>
+                                                <button type="submit" name="action" value="submit" class="btn btn-primary px-5">提交订单</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                        
+                        <!-- ========== 批量订单标签页 ========== -->
+                        <div class="tab-pane fade" id="batch-tab-pane" role="tabpanel">
+                            <div class="p-4">
+                                <!-- 智能粘贴区域 -->
+                                <div class="mb-4">
+                                    <label class="form-label">
+                                        <i class="bi bi-magic me-1"></i>粘贴客户信息（每行一个客户）
+                                    </label>
+                                    <textarea class="form-control" id="batchInput" rows="10" placeholder="粘贴格式示例：
+姓名李荣秀 电话18978574385 收货地址：广西桂平市西山镇第二邮区255号
+怀远 13873935081 湖南省邵阳市隆回县司门前镇学堂湾村十六组
+王小明 13912345678 北京市朝阳区xxx街道xxx号"></textarea>
+                                    <div class="form-text mt-2 text-muted">
+                                        <strong>支持格式：</strong>
+                                        <ul class="mb-0">
+                                            <li>姓名 + 电话 + 地址（用空格或分隔符分开）</li>
+                                            <li>带标签格式：姓名：XXX 电话：XXX 地址：XXX</li>
+                                            <li>每行一个客户，系统自动识别姓名、电话、地址</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                
+                                <!-- 通用产品信息 -->
+                                <div class="row mb-4">
+                                    <div class="col-md-4">
+                                        <label for="batch_category" class="form-label">产品类别 <span class="text-danger">*</span></label>
+                                        <select class="form-select" id="batch_category" required>
+                                            <option value="">请选择</option>
+                                            {% for category in categories %}
+                                            <option value="{{ category.name }}" data-id="{{ category.id }}">{{ category.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="batch_paid_amount" class="form-label">已付金额</label>
+                                        <input type="text" class="form-control" id="batch_paid_amount" placeholder="如：100企微410">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="batch_collect_amount" class="form-label">代付金额</label>
+                                        <input type="number" step="0.01" class="form-control" id="batch_collect_amount" placeholder="0.00">
+                                    </div>
+                                </div>
+                                
+                                <div class="row mb-4">
+                                    <div class="col-md-12">
+                                        <label for="batch_product_info" class="form-label">产品信息 <span class="text-danger">*</span></label>
+                                        <div id="batch_category_example" class="mb-2" style="display:none;">
+                                            <div class="form-text" style="background:#f8f9fa;border-radius:4px;padding:8px 12px;margin-bottom:4px;white-space:pre-wrap;line-height:1.6;" id="batch_category_example_text"></div>
+                                        </div>
+                                        <textarea class="form-control" id="batch_product_info" rows="2" required placeholder="请填写产品详细信息"></textarea>
+                                    </div>
+                                </div>
+                                
+                                <!-- 解析结果预览 -->
+                                <div class="mb-4" id="parseResult" style="display:none;">
+                                    <div class="card border-info">
+                                        <div class="card-header">
+                                            <h6><i class="bi bi-list-check me-1"></i>解析结果预览</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div id="parsedCustomers"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 按钮 -->
+                                <div class="d-flex gap-3">
+                                    <button type="button" class="btn btn-info" onclick="parseBatchInput()">
+                                        <i class="bi bi-search me-1"></i>解析客户信息
+                                    </button>
+                                    <button type="button" class="btn btn-primary" onclick="submitBatchOrder()" id="submitBtn" disabled>
+                                        <i class="bi bi-check-circle me-1"></i>批量创建订单
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" onclick="clearAll()">
+                                        <i class="bi bi-trash me-1"></i>清空
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    
-                    <form method="POST" action="{{ url_for('orders.create_order') }}" id="createOrderForm">
-                        <!-- 第一行：组名（自动带入）、客户名、类别 -->
-                        <div class="row mb-3">
-                            <div class="col-md-4">
-                                <label for="group_name" class="form-label">组名 <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="group_name" name="group_name" value="{{ form_data.group_name if form_data else (current_user.group.name if current_user.group else '') }}" required {% if current_user.group %}readonly{% endif %}>
-                                {% if current_user.group %}<div class="form-text text-muted small">自动带入您的所属组别</div>{% endif %}
-                            </div>
-                            <div class="col-md-4">
-                                <label for="customer_name" class="form-label">客户名</label>
-                                <input type="text" class="form-control" id="customer_name" name="customer_name" value="{{ form_data.customer_name if form_data else '' }}">
-                            </div>
-                            <div class="col-md-4">
-                                <label for="customer_wechat" class="form-label">客户微信名</label>
-                                <input type="text" class="form-control" id="customer_wechat" name="customer_wechat" placeholder="选填" value="{{ form_data.customer_wechat if form_data else '' }}">
-                            </div>
-                            <div class="col-md-4">
-                                <label for="category" class="form-label">类别 <span class="text-danger">*</span></label>
-                                <select class="form-select" id="category" name="category" required onchange="window.loadGiftsByCategory()">
-                                    <option value="">请选择</option>
-                                    {% for category in categories %}
-                                    <option value="{{ category.name }}" data-id="{{ category.id }}" {% if form_data and form_data.category == category.name %}selected{% endif %}>{{ category.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-                        
-                        <!-- 第二行：已付定金、代收金额 -->
-                        <div class="row mb-3">
-                            <div class="col-md-4">
-                                <label for="paid_amount" class="form-label">已付定金</label>
-                                <input type="text" class="form-control" id="paid_amount" name="paid_amount" placeholder="如：100企微410" value="{{ form_data.paid_amount if form_data else '' }}">
-                            </div>
-                            <div class="col-md-4">
-                                <label for="collect_amount" class="form-label">代收金额</label>
-                                <input type="number" step="0.01" class="form-control" id="collect_amount" name="collect_amount" placeholder="0.00" value="{{ form_data.collect_amount if form_data else '' }}">
-                            </div>
-                        </div>
-                        
-                        <!-- 第三行：收货电话 -->
-                        <div class="row mb-3">
-                            <div class="col-md-4">
-                                <label for="phone" class="form-label">收货电话 <span class="text-danger">*</span></label>
-                                <input type="tel" class="form-control" id="phone" name="phone" pattern="^1[3-9]\d{9}$" required placeholder="请输入11位手机号" value="{{ form_data.phone if form_data else '' }}">
-                            </div>
-                        </div>
-                        
-                        <!-- 产品信息：单独一行，全宽 -->
-        <div class="row mb-3">
-            <div class="col-12">
-                <label for="product_info" class="form-label">产品信息 <span class="text-danger">*</span></label>
-                <!-- 类别示例展示区 -->
-                <div id="category_example" class="mb-2" style="display:none;">
-                    <div class="form-text" style="background:#f8f9fa;border-radius:4px;padding:8px 12px;margin-bottom:4px;white-space:pre-wrap;line-height:1.6;" id="category_example_text"></div>
-                    <div class="form-text" style="color:#999;font-size:0.8em;">↑ 参考示例格式填写产品信息</div>
-                </div>
-                <!-- 类别单价提示区 -->
-                <div id="category_price_info" class="mb-2" style="display:none;">
-                    <div class="form-text" style="background:#fff3cd;border-radius:4px;padding:8px 12px;margin-bottom:4px;line-height:1.6;color:#856404;" id="category_price_text"></div>
-                </div>
-                <textarea class="form-control" id="product_info" name="product_info" rows="3" required placeholder="请填写产品详细信息">{{ form_data.product_info if form_data else '' }}</textarea>
-            </div>
-        </div>
-                        
-                        <!-- 赠品信息：单独一行 -->
-                        <div class="row mb-3">
-                            <div class="col-md-4">
-                                <div class="form-check mt-2">
-                                    <input type="checkbox" class="form-check-input" id="has_gift" name="has_gift" {% if form_data and form_data.has_gift %}checked{% endif %} onchange="window.toggleGiftSection()">
-                                    <label class="form-check-label" for="has_gift">是否有赠品</label>
-                                </div>
-                            </div>
-                            <div class="col-md-8" id="gift_section" style="display: {% if form_data and form_data.has_gift %}block{% else %}none{% endif %};">
-                                <label for="gift_info" class="form-label">赠品内容（可多选）</label>
-                                <select class="form-select" id="gift_info" name="gift_info" multiple size="3">
-                                    <!-- 赠品根据类别动态加载 -->
-                                </select>
-                                <div class="form-text">请先选择类别，按住 Ctrl 可多选</div>
-                            </div>
-                        </div>
-                        
-                        <!-- 收货地址：单独一行，全宽 -->
-                        <div class="row mb-3">
-                            <div class="col-12">
-                                <label for="address" class="form-label">收货地址 <span class="text-danger">*</span></label>
-                                <textarea class="form-control" id="address" name="address" rows="2" required placeholder="请填写详细收货地址">{{ form_data.address if form_data else '' }}</textarea>
-                            </div>
-                        </div>
-                        
-                        <!-- 备注：单独一行，全宽 -->
-                        <div class="row mb-4">
-                            <div class="col-12">
-                                <label for="remark" class="form-label">备注</label>
-                                <textarea class="form-control" id="remark" name="remark" rows="2" placeholder="其他备注信息（选填）">{{ form_data.remark if form_data else '' }}</textarea>
-                            </div>
-                        </div>
-                        
-                        <!-- 按钮 -->
-                        <div class="row">
-                            <div class="col-12">
-                                <div class="d-flex gap-3 justify-content-center">
-                                    <button type="button" class="btn btn-secondary px-5" id="saveDraftBtn">保存草稿</button>
-                                    <button type="submit" name="action" value="submit" class="btn btn-primary px-5">提交订单</button>
-                                </div>
-                            </div>
-                        </div>
-                    </form>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- 预计发货时间模态框 -->
-    <div class="modal fade" id="shippingTimeModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">设置预计发货时间</h5>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="expected_shipping_time" class="form-label">预计发货日期</label>
-                        <input type="date" class="form-control" id="expected_shipping_time" name="expected_shipping_time">
-                        <div class="form-text text-muted">选择日期后，系统将在当天凌晨1点发送提醒通知</div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" id="btnSaveWithoutReminder">保存（不提醒）</button>
-                    <button type="button" class="btn btn-primary" id="btnSaveWithReminder">保存并设置提醒</button>
-                </div>
-            </div>
-        </div>
-    </div>
+    
+    <!-- 隐藏的表单用于批量提交 -->
+    <form id="batchForm" method="POST" action="{{ url_for('orders.batch_create_order') }}" style="display:none;">
+        <input type="hidden" name="customers_json" id="customersJson">
+        <input type="hidden" name="category" id="hiddenCategory">
+        <input type="hidden" name="paid_amount" id="hiddenPaidAmount">
+        <input type="hidden" name="collect_amount" id="hiddenCollectAmount">
+        <input type="hidden" name="product_info" id="hiddenProductInfo">
+    </form>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // 类别示例数据
+    // 单个订单的类别示例数据
     const categoryExamples = {
         {% for cat in categories %}
         '{{ cat.name }}': {{ cat.example | tojson | safe }},
         {% endfor %}
     };
-    // 类别单价数据
-    const categoryUnitPrices = {
-        {% for cat in categories %}
-        '{{ cat.name }}': {{ cat.unit_price or 0 }},
-        {% endfor %}
-    };
 
-    function updateCategoryExample() {
-        var sel = document.getElementById('category');
-        var exampleDiv = document.getElementById('category_example');
-        var exampleText = document.getElementById('category_example_text');
-        var priceInfoDiv = document.getElementById('category_price_info');
-        var priceInfoText = document.getElementById('category_price_text');
+    // 单个订单类别示例
+    function updateSingleCategoryExample() {
+        var sel = document.getElementById('single_category');
+        var exampleDiv = document.getElementById('single_category_example');
+        var exampleText = document.getElementById('single_category_example_text');
         var example = categoryExamples[sel.value];
-        var unitPrice = categoryUnitPrices[sel.value];
         
-        // 更新示例
         if (example && example.trim()) {
             exampleText.textContent = example;
             exampleDiv.style.display = 'block';
         } else {
             exampleDiv.style.display = 'none';
         }
+    }
+
+    // 批量订单类别示例
+    function updateBatchCategoryExample() {
+        var sel = document.getElementById('batch_category');
+        var exampleDiv = document.getElementById('batch_category_example');
+        var exampleText = document.getElementById('batch_category_example_text');
+        var example = categoryExamples[sel.value];
         
-        // 更新单价信息
-        if (unitPrice && unitPrice > 0) {
-            priceInfoText.textContent = `单价：${unitPrice}元，请确保产品信息中包含数量（如"数量:1"或"1件"），提交时会验证金额是否匹配`;
-            priceInfoDiv.style.display = 'block';
+        if (example && example.trim()) {
+            exampleText.textContent = example;
+            exampleDiv.style.display = 'block';
         } else {
-            priceInfoDiv.style.display = 'none';
+            exampleDiv.style.display = 'none';
         }
     }
 
-    // 页面加载时和类别切换时更新示例
-    document.getElementById('category').addEventListener('change', updateCategoryExample);
-    updateCategoryExample();
-
-    window.toggleGiftSection = function() {
-        var checkbox = document.getElementById('has_gift');
-        var section = document.getElementById('gift_section');
-        section.style.display = checkbox.checked ? 'block' : 'none';
-    };
-
-    window.loadGiftsByCategory = function() {
-        var categorySelect = document.getElementById('category');
-        var giftSelect = document.getElementById('gift_info');
-        var selectedOption = categorySelect.options[categorySelect.selectedIndex];
-        var categoryId = selectedOption ? selectedOption.dataset.id : null;
-        
-        // 清空赠品列表
-        giftSelect.innerHTML = '';
-        
-        if (!categoryId) return;
-        
-        // 加载该类别的赠品
-        fetch('/api/category/' + categoryId + '/gifts')
-            .then(r => r.json())
-            .then(gifts => {
-                gifts.forEach(g => {
-                    var opt = document.createElement('option');
-                    opt.value = g.name;
-                    opt.textContent = g.name;
-                    giftSelect.appendChild(opt);
-                });
-            });
-    };
-
-    window.smartParse = function() {
-        const raw = document.getElementById('smartPasteInput').value.trim();
-        if (!raw) return;
-        
-        let name = '';
-        let phone = '';
-        let address = '';
-        
-        const SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁宣贲邓郁单杭洪包诸左石崔吉钮龚程嵇邢滑裴陆荣翁荀羊於惠甄曲家封芮羿储靳汲邴糜松井段富巫乌焦巴弓牧隗山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴郁胥能苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍却璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾母沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公'.split('');
-        const surnameSet = new Set(SURNAMES);
-        
-        function isName(s) {
-            if (!s || s.length < 2 || s.length > 4) return false;
-            const EXCLUDE = new Set(['收货','地址','电话','姓名','备注','产品','赠品','快递','代收','已付','山东省','山西省','河南省','河北省','湖南省','湖北省','江苏省','江西省','浙江省','福建省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','北京','天津','上海','重庆','自治区']);
-            if (EXCLUDE.has(s)) return false;
-            const TITLE_RE = /^([\u4e00-\u9fff]{1})(先生|女士|小姐|经理|总|老板|哥|姐)$/;
-            const tm = s.match(TITLE_RE);
-            if (tm) return surnameSet.has(tm[1]);
-            return surnameSet.has(s[0]);
-        }
-        
-        function isPhone(s) { return /^1[3-9]\d{9}$/.test(s); }
-        
-        // ===== 第一步：提取电话 =====
-        const phoneMatch = raw.match(/(?<!\d)1[3-9]\d{9}(?!\d)/);
-        if (phoneMatch) phone = phoneMatch[0];
-        
-        // ===== 第二步：提取标签格式 =====
-        const nameLabelMatch = raw.match(/(?:姓名|名)\s*[：:]*\s*([^\s电话收货地址:：,，\d]{2,4})/);
-        if (nameLabelMatch) name = nameLabelMatch[1].trim();
-        
-        const phoneLabelMatch = raw.match(/(?:电话|手机|联系方式)\s*[：:]*\s*(1[3-9]\d{9})/);
-        if (phoneLabelMatch && !phone) phone = phoneLabelMatch[1].trim();
-        
-        const addrLabelMatch = raw.match(/(?:收货)?地址\s*[：:]*\s*(.+)/);
-        if (addrLabelMatch) address = addrLabelMatch[1].trim();
-        
-        // ===== 第三步：核心策略 - 用电话分割文本 =====
-        if (phone && (!name || !address)) {
-            const parts = raw.split(phone);
-            const segBefore = (parts[0] || '').replace(/\d{4}年/g, '');
-            const segAfter = (parts[1] || '');
-            
-            // 电话后面找姓名（如 15589622767姜旭霞）
-            if (!name && segAfter) {
-                const m = segAfter.match(/^\s*([^\s,，.、:：\d]{2,4})\s*$/);
-                if (m && isName(m[1])) name = m[1];
-            }
-            
-            // 电话前面末尾找姓名
-            if (!name && segBefore) {
-                const trimmed = segBefore.replace(/[，。.,、:：~～\s]+$/, '');
-                const m = trimmed.match(/([^\s,，.、:：\d]{2,4})$/);
-                if (m && isName(m[1])) name = m[1];
-            }
-            
-            // 地址 = 电话前面的部分（去掉姓名、标签词）
-            if (!address && segBefore) {
-                address = segBefore.replace(name, '')
-                    .replace(/姓名|名|电话|手机|收货|地址|\d{4}年/g, '')
-                    .replace(/^[,，.、:：~～\s]+|[,，.、:：~～\s]+$/g, '')
-                    .trim();
-            }
-        }
-        
-        // ===== 第四步：按换行分割（仅处理标签格式已覆盖不到的情况） =====
-        if (!name || !phone || !address) {
-            const lines = raw.split(/[\n\r]+/).map(s => s.trim()).filter(s => s);
-            for (const line of lines) {
-                const clean = line.replace(/^[\s,，.、:：]+|[\s,，.、:：]+$/g, '');
-                if (!clean) continue;
-                const chineseOnly = clean.replace(/[^\u4e00-\u9fff]/g, '');
-                
-                if (!phone && isPhone(clean)) {
-                    phone = clean;
-                } else if (!name && isName(chineseOnly) && chineseOnly.length >= 2 && chineseOnly.length <= 4) {
-                    name = chineseOnly;
-                }
-            }
-        }
-        
-        // ===== 第五步：最终清理 =====
-        if (address) {
-            address = address.replace(/^[,，.、:：~～\s]+|[,，.、:：~～\s]+$/g, '').trim();
-        }
-        
-        // ===== 填充表单 =====
-        let filled = [];
-        if (name) { document.getElementById('customer_name').value = name; filled.push('姓名: ' + name); }
-        if (phone) { document.getElementById('phone').value = phone; filled.push('电话: ' + phone); }
-        if (address) { document.getElementById('address').value = address; filled.push('地址: ' + address); }
-        
-        const resultDiv = document.getElementById('smartPasteResult');
-        if (filled.length > 0) {
-            resultDiv.innerHTML = '<i class="bi bi-check-circle me-1"></i>已识别：' + filled.join(' | ');
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'mt-2 small text-success';
-        } else {
-            resultDiv.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i>未能自动识别，请手动填写';
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'mt-2 small text-warning';
-        }
-    };
-
-    // ===== 保存草稿相关 =====
-    console.log('初始化模态框...');
-    const modal = new bootstrap.Modal(document.getElementById('shippingTimeModal'));
-    let currentDraftOrderId = null;
-
-    const CREATE_ORDER_URL = '{{ url_for("orders.create_order") }}';
-
-    // 点击"保存草稿"按钮：先保存草稿，拿到订单ID后再弹出设置时间的模态框
-    document.getElementById('saveDraftBtn').addEventListener('click', function() {
-        const form = document.getElementById('createOrderForm');
-        if (!form) {
-            alert('找不到表单');
-            return;
-        }
-        
-        const formData = new FormData(form);
-        formData.append('action', 'save_draft');
-        formData.append('_ajax', '1');  // 标记为AJAX请求
-        
-        // 禁用按钮，防止重复提交
-        document.getElementById('saveDraftBtn').disabled = true;
-        document.getElementById('saveDraftBtn').textContent = '保存中...';
-        
-        console.log('保存草稿，提交到:', CREATE_ORDER_URL);
-        fetch(CREATE_ORDER_URL, {
-            method: 'POST',
-            body: formData
-        }).then(response => {
-            // 检查响应状态
-            if (response.status >= 400) {
-                throw new Error('服务器错误: ' + response.status);
-            }
-            
-            // 检查是否是重定向
-            if (response.redirected) {
-                // 如果有重定向，说明保存成功并跳转了页面
-                window.location.href = response.url;
-                return null;
-            }
-            
-            // 尝试解析为JSON
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                return response.json();
-            } else {
-                // 如果不是JSON，可能是HTML响应，说明有验证错误
-                throw new Error('保存失败：表单验证未通过');
-            }
-        }).then(result => {
-            document.getElementById('saveDraftBtn').disabled = false;
-            document.getElementById('saveDraftBtn').textContent = '保存草稿';
-            
-            if (!result) return; // 如果是重定向，不需要处理result
-            
-            if (result && result.order_id) {
-                // 保存成功，拿到订单ID
-                currentDraftOrderId = result.order_id;
-                console.log('草稿保存成功，订单ID:', currentDraftOrderId);
-                
-                // 清空时间输入
-                document.getElementById('expected_shipping_time').value = '';
-                
-                // 弹出设置时间的模态框
-                modal.show();
-            } else if (result && result.error) {
-                alert('保存失败：' + result.error);
-            }
-        }).catch(err => {
-            console.error('Error:', err);
-            document.getElementById('saveDraftBtn').disabled = false;
-            document.getElementById('saveDraftBtn').textContent = '保存草稿';
-            alert(err.message || '保存失败，请重试');
-        });
-    });
-
-    // 点击"保存（不提醒）"：关闭模态框
-    document.getElementById('btnSaveWithoutReminder').addEventListener('click', function() {
-        modal.hide();
-        // 刷新页面回到列表
-        window.location.reload();
-    });
-
-    // 点击"保存并设置提醒"：调用API更新预计发货时间和提醒
-    document.getElementById('btnSaveWithReminder').addEventListener('click', function() {
-        const timeInput = document.getElementById('expected_shipping_time');
-        if (!timeInput.value) {
-            alert('请选择预计发货时间');
-            return;
-        }
-        
-        if (!currentDraftOrderId) {
-            alert('订单ID不存在，请刷新页面重试');
-            return;
-        }
-        
-        const btn = document.getElementById('btnSaveWithReminder');
-        btn.disabled = true;
-        btn.textContent = '保存中...';
-        
-        fetch('/api/order/' + currentDraftOrderId + '/reminder', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                expected_shipping_time: timeInput.value
-            })
-        }).then(r => r.json())
-          .then(result => {
-            if (result.success) {
-                alert('保存成功！预计发货时间已设置，将在该时间前提醒您。');
-                modal.hide();
-                window.location.reload();
-            } else {
-                alert('保存失败：' + (result.error || '未知错误'));
-            }
-            btn.disabled = false;
-            btn.textContent = '保存并设置提醒';
-        }).catch(err => {
-            console.error('Error:', err);
-            alert('保存失败，请重试');
-            btn.disabled = false;
-            btn.textContent = '保存并设置提醒';
-        });
-    });
+    document.getElementById('single_category').addEventListener('change', updateSingleCategoryExample);
+    document.getElementById('batch_category').addEventListener('change', updateBatchCategoryExample);
 });
+
+// 单个订单智能粘贴
+function smartParse() {
+    const input = document.getElementById('smartPasteInput').value.trim();
+    if (!input) {
+        alert('请粘贴客户信息');
+        return;
+    }
+    
+    const result = parseSingleCustomer(input);
+    
+    if (result.name) document.getElementById('single_customer_name').value = result.name;
+    if (result.phone) document.getElementById('single_phone').value = result.phone;
+    if (result.address) document.getElementById('single_address').value = result.address;
+    
+    document.getElementById('smartPasteResult').textContent = '识别成功！已自动填充表单';
+    document.getElementById('smartPasteResult').style.display = 'block';
+    
+    setTimeout(() => {
+        document.getElementById('smartPasteResult').style.display = 'none';
+    }, 3000);
+}
+
+// 存储解析后的客户列表
+let parsedCustomers = [];
+
+function parseBatchInput() {
+    const raw = document.getElementById('batchInput').value.trim();
+    if (!raw) {
+        alert('请粘贴客户信息');
+        return;
+    }
+    
+    parsedCustomers = [];
+    
+    const lines = raw.split(/[\n\r]+/).map(s => s.trim()).filter(s => s);
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const result = parseSingleCustomer(line);
+        if (result.name || result.phone || result.address) {
+            parsedCustomers.push({
+                index: i + 1,
+                ...result
+            });
+        }
+    }
+    
+    if (parsedCustomers.length === 0) {
+        document.getElementById('parseResult').style.display = 'none';
+        document.getElementById('submitBtn').disabled = true;
+        alert('未能解析到任何客户信息，请检查格式');
+        return;
+    }
+    
+    showParseResult();
+    document.getElementById('submitBtn').disabled = false;
+}
+
+function parseSingleCustomer(text) {
+    let name = '';
+    let phone = '';
+    let address = '';
+    
+    const SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁宣贲邓郁单杭洪包诸左石崔吉钮龚程嵇邢滑裴陆荣翁荀羊於惠甄曲家封芮羿储靳汲邴糜松井段富巫乌焦巴弓牧隗山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴郁胥能苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍却璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾母沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公'.split('');
+    const surnameSet = new Set(SURNAMES);
+    
+    function isName(s) {
+        if (!s || s.length < 2 || s.length > 4) return false;
+        const EXCLUDE = new Set(['收货','地址','电话','姓名','备注','产品','赠品','快递','代收','已付','山东省','山西省','河南省','河北省','湖南省','湖北省','江苏省','江西省','浙江省','福建省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','北京','天津','上海','重庆','自治区']);
+        if (EXCLUDE.has(s)) return false;
+        const TITLE_RE = /^([\u4e00-\u9fff]{1})(先生|女士|小姐|经理|总|老板|哥|姐)$/;
+        const tm = s.match(TITLE_RE);
+        if (tm) return surnameSet.has(tm[1]);
+        return surnameSet.has(s[0]);
+    }
+    
+    function isPhone(s) { return /^1[3-9]\d{9}$/.test(s); }
+    
+    // 提取电话
+    const phoneMatch = text.match(/(?<!\d)1[3-9]\d{9}(?!\d)/);
+    if (phoneMatch) phone = phoneMatch[0];
+    
+    // 提取标签格式
+    const nameLabelMatch = text.match(/(?:姓名|名)\s*[：:]*\s*([^\s电话收货地址:：,，\d]{2,4})/);
+    if (nameLabelMatch) name = nameLabelMatch[1].trim();
+    
+    const phoneLabelMatch = text.match(/(?:电话|手机|联系方式)\s*[：:]*\s*(1[3-9]\d{9})/);
+    if (phoneLabelMatch && !phone) phone = phoneLabelMatch[1].trim();
+    
+    const addrLabelMatch = text.match(/(?:收货)?地址\s*[：:]*\s*(.+)/);
+    if (addrLabelMatch) address = addrLabelMatch[1].trim();
+    
+    // 用电话分割文本
+    if (phone && (!name || !address)) {
+        const parts = text.split(phone);
+        const segBefore = (parts[0] || '').replace(/\d{4}年/g, '');
+        const segAfter = (parts[1] || '');
+        
+        // 电话后面找姓名
+        if (!name && segAfter) {
+            const m = segAfter.match(/^\s*([^\s,，.、:：\d]{2,4})\s*$/);
+            if (m && isName(m[1])) name = m[1];
+        }
+        
+        // 电话前面末尾找姓名
+        if (!name && segBefore) {
+            const trimmed = segBefore.replace(/[，。.,、:：~～\s]+$/, '');
+            const m = trimmed.match(/([^\s,，.、:：\d]{2,4})$/);
+            if (m && isName(m[1])) name = m[1];
+        }
+        
+        // 地址 = 电话前面的部分
+        if (!address && segBefore) {
+            address = segBefore.replace(name, '')
+                .replace(/姓名|名|电话|手机|收货|地址|\d{4}年/g, '')
+                .replace(/^[,，.、:：~～\s]+|[,，.、:：~～\s]+$/g, '')
+                .trim();
+        }
+    }
+    
+    // 如果还没找到，直接找姓名
+    if (!name) {
+        const chineseOnly = text.replace(/[^\u4e00-\u9fff]/g, '');
+        const nameParts = chineseOnly.match(/([\u4e00-\u9fff]{2,4})/g) || [];
+        for (const part of nameParts) {
+            if (isName(part)) {
+                name = part;
+                break;
+            }
+        }
+    }
+    
+    // 如果还没找到地址，假设电话后面的是地址
+    if (!address && phone) {
+        const parts = text.split(phone);
+        if (parts[1]) {
+            address = parts[1].replace(/姓名|名|电话|手机|收货|地址/g, '')
+                .replace(/^[,，.、:：~～\s]+|[,，.、:：~～\s]+$/g, '')
+                .trim();
+        }
+    }
+    
+    return { name, phone, address };
+}
+
+function showParseResult() {
+    const container = document.getElementById('parsedCustomers');
+    let html = '<table class="table table-sm table-striped">';
+    html += '<thead><tr><th>序号</th><th>姓名</th><th>电话</th><th>地址</th><th>状态</th></tr></thead>';
+    html += '<tbody>';
+    
+    parsedCustomers.forEach(customer => {
+        const hasPhone = customer.phone ? '✓' : '✗';
+        const hasAddress = customer.address ? '✓' : '✗';
+        const isValid = customer.phone && customer.address;
+        
+        html += `<tr ${!isValid ? 'class="table-warning"' : ''}>`;
+        html += `<td>${customer.index}</td>`;
+        html += `<td>${customer.name || '<span class="text-muted">未识别</span>'}</td>`;
+        html += `<td>${customer.phone || '<span class="text-muted">未识别</span>'}</td>`;
+        html += `<td>${customer.address || '<span class="text-muted">未识别</span>'}</td>`;
+        html += `<td>${isValid ? '<span class="text-success">有效</span>' : '<span class="text-warning">需补全</span>'}</td>`;
+        html += '</tr>';
+    });
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    document.getElementById('parseResult').style.display = 'block';
+}
+
+function submitBatchOrder() {
+    if (parsedCustomers.length === 0) {
+        alert('请先解析客户信息');
+        return;
+    }
+    
+    const category = document.getElementById('batch_category').value;
+    const paidAmount = document.getElementById('batch_paid_amount').value;
+    const collectAmount = document.getElementById('batch_collect_amount').value;
+    const productInfo = document.getElementById('batch_product_info').value;
+    
+    if (!category) {
+        alert('请选择产品类别');
+        return;
+    }
+    
+    if (!productInfo.trim()) {
+        alert('请填写产品信息');
+        return;
+    }
+    
+    document.getElementById('customersJson').value = JSON.stringify(parsedCustomers);
+    document.getElementById('hiddenCategory').value = category;
+    document.getElementById('hiddenPaidAmount').value = paidAmount;
+    document.getElementById('hiddenCollectAmount').value = collectAmount;
+    document.getElementById('hiddenProductInfo').value = productInfo;
+    
+    document.getElementById('batchForm').submit();
+}
+
+function clearAll() {
+    document.getElementById('batchInput').value = '';
+    document.getElementById('batch_category').value = '';
+    document.getElementById('batch_paid_amount').value = '';
+    document.getElementById('batch_collect_amount').value = '';
+    document.getElementById('batch_product_info').value = '';
+    document.getElementById('parseResult').style.display = 'none';
+    document.getElementById('submitBtn').disabled = true;
+    parsedCustomers = [];
+}
 </script>
 {% endblock %}

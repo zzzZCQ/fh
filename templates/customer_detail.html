@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}客户详情 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-person me-2"></i>客户详情</h2>
+        <div class="d-flex gap-2">
+            <button id="editBtn" class="btn btn-primary btn-sm" onclick="toggleEdit()">
+                <i class="bi bi-pencil me-1"></i>编辑
+            </button>
+            <button id="saveBtn" class="btn btn-success btn-sm d-none" onclick="saveCustomerInfo()">
+                <i class="bi bi-check me-1"></i>保存
+            </button>
+            <button id="cancelBtn" class="btn btn-secondary btn-sm d-none" onclick="cancelEdit()">
+                <i class="bi bi-x me-1"></i>取消
+            </button>
+            <a href="{{ url_for('behavior.customer_tracking') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>返回
+            </a>
+        </div>
+    </div>
+    
+    <!-- 客户信息 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <span><i class="bi bi-info-circle me-2"></i>基本信息</span>
+        </div>
+        <div class="card-body">
+            <form id="customerForm">
+                <div class="row">
+                    <div class="col-md-3">
+                        <label class="text-muted small">客户昵称</label>
+                        <div class="fw-bold">{{ nickname }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="text-muted small">所属业务员</label>
+                        <div class="fw-bold">{{ user.name if user else '-' }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="text-muted small">所属组别</label>
+                        <div class="fw-bold">{{ user.group.name if user and user.group else '-' }}</div>
+                    </div>
+                </div>
+                <hr class="my-4">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">客户名</label>
+                        <input type="text" class="form-control" id="customer_name" name="customer_name" 
+                               value="{{ customer_info.customer_name if customer_info else '' }}" disabled>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">性别</label>
+                        <select class="form-select" id="gender" name="gender" disabled>
+                            <option value="">请选择</option>
+                            <option value="男" {{ 'selected' if customer_info and customer_info.gender == '男' else '' }}>男</option>
+                            <option value="女" {{ 'selected' if customer_info and customer_info.gender == '女' else '' }}>女</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">年龄</label>
+                        <input type="number" class="form-control" id="age" name="age" 
+                               value="{{ customer_info.age if customer_info and customer_info.age else '' }}" disabled>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">电话</label>
+                        <input type="text" class="form-control" id="phone" name="phone" 
+                               value="{{ customer_info.phone if customer_info else '' }}" disabled>
+                    </div>
+                </div>
+                <div class="row g-3 mt-2">
+                    <div class="col-md-12">
+                        <label class="form-label">地址</label>
+                        <input type="text" class="form-control" id="address" name="address" 
+                               value="{{ customer_info.address if customer_info else '' }}" disabled>
+                    </div>
+                </div>
+                <div class="row g-3 mt-2">
+                    <div class="col-md-6">
+                        <label class="form-label">身体情况</label>
+                        <textarea class="form-control" id="health_condition" name="health_condition" rows="3" disabled>{{ customer_info.health_condition if customer_info else '' }}</textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">用药情况</label>
+                        <textarea class="form-control" id="medication_status" name="medication_status" rows="3" disabled>{{ customer_info.medication_status if customer_info else '' }}</textarea>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- 统计信息 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <span><i class="bi bi-bar-chart me-2"></i>统计信息</span>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="text-muted small">记录天数</div>
+                    <div class="fw-bold fs-4">{{ total_days }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">完播天数</div>
+                    <div class="fw-bold fs-4 text-primary">{{ completed_count }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">触达天数</div>
+                    <div class="fw-bold fs-4 text-success">{{ touched_count }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">总通话时长</div>
+                    <div class="fw-bold fs-4">
+                        {{ total_call_duration // 60 }}分{{ total_call_duration % 60 }}秒
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 详细记录 -->
+    <div class="card">
+        <div class="card-header">
+            <span><i class="bi bi-list me-2"></i>行为轨迹记录</span>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>日期</th>
+                            <th>观看状态</th>
+                            <th>播放顺序</th>
+                            <th>通话时长</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for record in records %}
+                        <tr>
+                            <td>{{ '%02d' % record.month }}月{{ '%02d' % record.day }}日</td>
+                            <td>
+                                {% if record.play_status == 1 %}
+                                <span class="badge bg-primary">完播</span>
+                                {% elif record.play_status == 2 %}
+                                <span class="badge bg-warning text-dark">未完播</span>
+                                {% else %}
+                                <span class="badge bg-danger">未观看</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ record.play_order or '-' }}</td>
+                            <td>
+                                {% if record.call_duration_seconds > 0 %}
+                                {{ record.call_duration_seconds // 60 }}分{{ record.call_duration_seconds % 60 }}秒
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if records|length == 0 %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-4">暂无记录</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 存储原始数据
+    let originalData = {
+        customer_name: '{{ customer_info.customer_name if customer_info else '' }}',
+        gender: '{{ customer_info.gender if customer_info else '' }}',
+        age: '{{ customer_info.age if customer_info else '' }}',
+        address: '{{ customer_info.address if customer_info else '' }}',
+        phone: '{{ customer_info.phone if customer_info else '' }}',
+        health_condition: '{{ customer_info.health_condition if customer_info else '' }}',
+        medication_status: '{{ customer_info.medication_status if customer_info else '' }}'
+    };
+    
+    function toggleEdit() {
+        // 启用所有输入框
+        const inputs = document.querySelectorAll('#customerForm input, #customerForm select, #customerForm textarea');
+        inputs.forEach(input => input.disabled = false);
+        
+        // 切换按钮显示
+        document.getElementById('editBtn').classList.add('d-none');
+        document.getElementById('saveBtn').classList.remove('d-none');
+        document.getElementById('cancelBtn').classList.remove('d-none');
+    }
+    
+    function cancelEdit() {
+        // 恢复原始数据
+        document.getElementById('customer_name').value = originalData.customer_name;
+        document.getElementById('gender').value = originalData.gender;
+        document.getElementById('age').value = originalData.age;
+        document.getElementById('address').value = originalData.address;
+        document.getElementById('phone').value = originalData.phone;
+        document.getElementById('health_condition').value = originalData.health_condition;
+        document.getElementById('medication_status').value = originalData.medication_status;
+        
+        // 禁用所有输入框
+        const inputs = document.querySelectorAll('#customerForm input, #customerForm select, #customerForm textarea');
+        inputs.forEach(input => input.disabled = true);
+        
+        // 切换按钮显示
+        document.getElementById('editBtn').classList.remove('d-none');
+        document.getElementById('saveBtn').classList.add('d-none');
+        document.getElementById('cancelBtn').classList.add('d-none');
+    }
+    
+    function saveCustomerInfo() {
+        const formData = {
+            user_id: {{ user.id if user else 0 }},
+            nickname: '{{ nickname }}',
+            customer_name: document.getElementById('customer_name').value,
+            gender: document.getElementById('gender').value,
+            age: parseInt(document.getElementById('age').value) || 0,
+            address: document.getElementById('address').value,
+            phone: document.getElementById('phone').value,
+            health_condition: document.getElementById('health_condition').value,
+            medication_status: document.getElementById('medication_status').value
+        };
+        
+        fetch('{{ url_for('behavior.save_customer_info') }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 更新原始数据
+                originalData = { ...formData };
+                
+                // 禁用所有输入框
+                const inputs = document.querySelectorAll('#customerForm input, #customerForm select, #customerForm textarea');
+                inputs.forEach(input => input.disabled = true);
+                
+                // 切换按钮显示
+                document.getElementById('editBtn').classList.remove('d-none');
+                document.getElementById('saveBtn').classList.add('d-none');
+                document.getElementById('cancelBtn').classList.add('d-none');
+                
+                alert('保存成功！');
+            } else {
+                alert('保存失败：' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('保存失败，请重试');
+        });
+    }
+</script>
+{% endblock %}

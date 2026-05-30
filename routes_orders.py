@@ -15,11 +15,14 @@ def extract_quantity_from_product_info(product_info):
     """从产品信息中提取数量"""
     if not product_info:
         return 1
-    # 尝试匹配常见的数量格式：数量:x、数量：x、x件、x个等
+    # 尝试匹配常见的数量格式：数量:x、数量：x、x件、x个、产品*3等
     patterns = [
+        r'\*(\d+)',  # *3 格式（产品*3）
         r'数量[：:]\s*(\d+)',  # 数量:1 或 数量：1
         r'(\d+)\s*[件个台盒]',  # 1件、2个等
         r'数量\s*[=＝]\s*(\d+)',  # 数量=1
+        r'共\s*(\d+)\s*[份盒]',  # 共3份、共3盒
+        r'×(\d+)',  # ×3 格式
     ]
     for pattern in patterns:
         match = re.search(pattern, product_info)
@@ -77,14 +80,14 @@ def validate_order_amount(category_name, product_info, paid_amount_str, collect_
 @login_required
 def dashboard():
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 10, type=int)
-    if per_page not in [10, 50, 100]:
-        per_page = 10
+    per_page = request.args.get('per_page', 20, type=int)
+    if per_page not in [20, 50, 100, 500]:
+        per_page = 20
     customer_keyword = request.args.get('customer_keyword', '').strip()
     tracking_keyword = request.args.get('tracking_keyword', '').strip()
     category_filter = request.args.get('category', '').strip()
     salesman_filter = request.args.get('salesman_id', '').strip()
-    status_filter = request.args.get('status', '').strip()
+    status_filters = request.args.getlist('status')
     group_filter = request.args.get('group_id', '').strip()
     month_filter = request.args.get('month', '').strip()
 
@@ -115,13 +118,27 @@ def dashboard():
         query = query.filter(Order.category == category_filter)
     if salesman_filter and not is_salesman:
         query = query.filter(Order.salesman_id == salesman_filter)
-    if status_filter:
-        # 统一的筛选参数：草稿/待发货/已发货 为业务状态，其他为物流状态
-        if status_filter in ['draft', 'submitted', 'shipped']:
-            query = query.filter(Order.status == status_filter)
-        else:
-            # 物流状态
-            query = query.filter(Order.logistics_status == status_filter)
+    if status_filters:
+        # 支持多个状态筛选
+        from sqlalchemy import or_
+        status_conditions = []
+        logistics_status_conditions = []
+        
+        for s in status_filters:
+            if s:
+                if s in ['draft', 'submitted', 'shipped']:
+                    status_conditions.append(Order.status == s)
+                else:
+                    logistics_status_conditions.append(Order.logistics_status == s)
+        
+        if status_conditions or logistics_status_conditions:
+            conditions = []
+            if status_conditions:
+                conditions.append(or_(*status_conditions))
+            if logistics_status_conditions:
+                conditions.append(or_(*logistics_status_conditions))
+            if conditions:
+                query = query.filter(or_(*conditions))
     if group_filter and is_admin:
         query = query.filter(Order.group_id == group_filter)
     if month_filter:
@@ -142,13 +159,13 @@ def dashboard():
         case((Order.status == 'submitted', 0), else_=1),
         # 第二优先级：物流状态（按用户要求的优先级：运送中 > 待派送 > 派送中 > 已签收 > 退回已签收）
         case(
-            (Order.logistics_status == '运送中', 2),
-            (Order.logistics_status == '已发货', 2),  # 兼容"已发货"也当作运送中
-            (Order.logistics_status == '待派送', 1),
-            (Order.logistics_status == '派送中', 3),
-            (Order.logistics_status == '已签收', 4),
-            (Order.logistics_status == '退回已签收', 5),
-            else_=5
+            (Order.logistics_status == '运送中', 3),
+            (Order.logistics_status == '已发货', 4),  # 兼容"已发货"也当作运送中
+            (Order.logistics_status == '待派送', 2),
+            (Order.logistics_status == '派送中', 1),
+            (Order.logistics_status == '已签收', 5),
+            (Order.logistics_status == '退回已签收', 6),
+            else_=6
         ),
         # 第三优先级：是否主品
         case((Category.is_main_product == True, 0), else_=1),
@@ -211,6 +228,9 @@ def dashboard():
             filter_groups = Group.query.filter(Group.id.in_(managed_group_ids), Group.is_active==True).order_by(Group.level.asc(), Group.create_time.asc()).all()
     
     # 权限变量
+    # 获取主产品类别列表
+    main_product_categories = set(c.name for c in Category.query.filter_by(is_main_product=True, is_active=True).all())
+    
     return render_template('dashboard.html', orders=orders, salesmen=salesmen,
                            page_title='订单管理',
                            can_see_draft=not is_shipper,
@@ -219,7 +239,7 @@ def dashboard():
                            can_create_order=is_salesman,
                            can_ship=is_admin or is_shipper,
                            can_edit_order=is_salesman or is_admin,
-                           can_edit_order_detail=is_admin,
+                           can_edit_order_detail=is_admin or is_salesman,
                            can_reissue_gift=is_admin or current_user.has_role('admin') or current_user.has_role('salesman'),
                            can_approve_delete=is_admin,
                            auto_refresh=is_salesman,
@@ -233,7 +253,8 @@ def dashboard():
                            total_performance=total_performance,
                            page_paid=page_paid,
                            page_collect=page_collect,
-                           page_count=page_count)
+                           page_count=page_count,
+                           main_product_categories=main_product_categories)
 
 
 @bp.route('/order/create', methods=['GET'])
@@ -243,6 +264,93 @@ def create_order_page():
                            unread_count=get_unread_count(current_user.id),
                            categories=get_active_categories(),
                            gifts=get_active_gifts())
+
+
+@bp.route('/order/batch_create', methods=['GET'])
+@role_required('salesman')
+def batch_create_order_page():
+    """批量创建订单页面 - 重定向到新建订单页面"""
+    return redirect(url_for('orders.create_order_page'))
+
+
+@bp.route('/order/batch_create', methods=['POST'])
+@role_required('salesman')
+def batch_create_order():
+    """批量创建订单"""
+    import json
+    
+    customers_json = request.form.get('customers_json')
+    category = request.form.get('category')
+    paid_amount = request.form.get('paid_amount')
+    collect_amount = request.form.get('collect_amount')
+    product_info = request.form.get('product_info')
+    
+    if not customers_json or not category or not product_info:
+        return render_template('create_order.html',
+                               unread_count=get_unread_count(current_user.id),
+                               categories=get_active_categories(),
+                               error='请填写所有必填字段！')
+    
+    try:
+        customers = json.loads(customers_json)
+    except json.JSONDecodeError:
+        return render_template('create_order.html',
+                               unread_count=get_unread_count(current_user.id),
+                               categories=get_active_categories(),
+                               error='客户数据格式错误！')
+    
+    success_count = 0
+    failed_count = 0
+    
+    for customer in customers:
+        phone = customer.get('phone', '').strip()
+        address = customer.get('address', '').strip()
+        
+        if not phone or not address:
+            failed_count += 1
+            continue
+        
+        try:
+            order = Order(
+                group_name=current_user.group.name if current_user.group else '',
+                salesman_id=current_user.id,
+                product_info=product_info,
+                category=category,
+                phone=phone,
+                address=address,
+                remark='',
+                customer_name=customer.get('name', '').strip(),
+                customer_wechat='',
+                paid_amount=paid_amount.strip() if paid_amount else None,
+                pay_date=None,
+                collect_amount=float(collect_amount) if collect_amount else 0,
+                gender='',
+                has_gift=False,
+                gift_info='',
+                group_id=current_user.group_id,
+                status='submitted'
+            )
+            db.session.add(order)
+            success_count += 1
+        except Exception as e:
+            print(f"创建订单失败: {e}")
+            failed_count += 1
+    
+    if success_count > 0:
+        db.session.commit()
+        
+        # 通知发货员
+        shipper_ids = [s.id for s in User.query.filter(User.roles.like('%shipper%'), User.is_active==True).all()]
+        if shipper_ids:
+            notify_users(shipper_ids,
+                         f'业务员 {current_user.name} 批量创建了 {success_count} 个订单，请及时处理！',
+                         order_id=None)
+    
+    return render_template('create_order.html',
+                           unread_count=get_unread_count(current_user.id),
+                           categories=get_active_categories(),
+                           success_count=success_count,
+                           failed_count=failed_count)
 
 
 @bp.route('/order/create', methods=['POST'])
@@ -265,6 +373,9 @@ def create_order():
     has_gift = request.form.get('has_gift') == 'on'
     gift_list = request.form.getlist('gift_info') if has_gift else []
     gift_info = '、'.join([g.strip() for g in gift_list if g.strip()])
+    
+    # 性别字段
+    gender = request.form.get('gender')
 
     # 判断是否是AJAX请求
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
@@ -297,7 +408,8 @@ def create_order():
                                  'address': address,
                                  'remark': remark or '',
                                  'has_gift': has_gift,
-                                 'gift_info': gift_list
+                                 'gift_info': gift_list,
+                                 'gender': gender if 'gender' in locals() else ''
                              },
                              error=error_msg)
     
@@ -325,14 +437,15 @@ def create_order():
                                      'address': address,
                                      'remark': remark or '',
                                      'has_gift': has_gift,
-                                     'gift_info': gift_list
+                                     'gift_info': gift_list,
+                                     'gender': gender if 'gender' in dir() else ''
                                  },
                                  error=error_msg)
 
     paid = paid_amount.strip() if paid_amount else None
     pay_d = datetime.strptime(pay_date, '%Y-%m-%d').date() if pay_date else None
     collect = float(collect_amount) if collect_amount else 0
-
+    
     order = Order(
         group_name=group_name,
         salesman_id=current_user.id,
@@ -346,6 +459,7 @@ def create_order():
         paid_amount=paid,
         pay_date=pay_d,
         collect_amount=collect,
+        gender=gender,
         has_gift=has_gift,
         gift_info=gift_info,
         group_id=current_user.group_id
@@ -404,6 +518,7 @@ def edit_order(order_id):
     if request.method == 'POST':
         group_name = request.form.get('group_name')
         customer_name = request.form.get('customer_name')
+        customer_wechat = request.form.get('customer_wechat')
         paid_amount = request.form.get('paid_amount')
         pay_date = request.form.get('pay_date')
         collect_amount = request.form.get('collect_amount')
@@ -412,10 +527,13 @@ def edit_order(order_id):
         phone = request.form.get('phone')
         address = request.form.get('address')
         remark = request.form.get('remark', '')
+        express_type = request.form.get('express_type')
+        tracking_number = request.form.get('tracking_number')
         action = request.form.get('action')
         has_gift = request.form.get('has_gift') == 'on'
         gift_list = request.form.getlist('gift_info') if has_gift else []
         gift_info = '、'.join([g.strip() for g in gift_list if g.strip()])
+        gender = request.form.get('gender')
 
         if not all([group_name, product_info, category, phone, address]):
             error_msg = '请填写所有必填字段！'
@@ -428,7 +546,7 @@ def edit_order(order_id):
                                  form_data={
                                      'group_name': group_name,
                                      'customer_name': customer_name or '',
-                                     'customer_wechat': '',
+                                     'customer_wechat': customer_wechat or '',
                                      'paid_amount': paid_amount or '',
                                      'pay_date': pay_date or '',
                                      'collect_amount': collect_amount or '',
@@ -438,7 +556,10 @@ def edit_order(order_id):
                                      'address': address,
                                      'remark': remark or '',
                                      'has_gift': has_gift,
-                                     'gift_info': gift_list
+                                     'gift_info': gift_list,
+                                     'gender': gender,
+                                     'express_type': express_type or '',
+                                     'tracking_number': tracking_number or ''
                                  },
                                  error=error_msg)
         
@@ -455,7 +576,7 @@ def edit_order(order_id):
                                      form_data={
                                          'group_name': group_name,
                                          'customer_name': customer_name or '',
-                                         'customer_wechat': '',
+                                         'customer_wechat': customer_wechat or '',
                                          'paid_amount': paid_amount or '',
                                          'pay_date': pay_date or '',
                                          'collect_amount': collect_amount or '',
@@ -465,12 +586,16 @@ def edit_order(order_id):
                                          'address': address,
                                          'remark': remark or '',
                                          'has_gift': has_gift,
-                                         'gift_info': gift_list
+                                         'gift_info': gift_list,
+                                         'gender': gender,
+                                         'express_type': express_type or '',
+                                         'tracking_number': tracking_number or ''
                                      },
                                      error=error_msg)
 
         order.group_name = group_name
         order.customer_name = customer_name
+        order.customer_wechat = customer_wechat
         order.paid_amount = paid_amount.strip() if paid_amount else None
         order.pay_date = datetime.strptime(pay_date, '%Y-%m-%d').date() if pay_date else None
         order.collect_amount = float(collect_amount) if collect_amount else 0
@@ -479,8 +604,11 @@ def edit_order(order_id):
         order.phone = phone
         order.address = address
         order.remark = remark
+        order.express_type = express_type
+        order.tracking_number = tracking_number
         order.has_gift = has_gift
         order.gift_info = gift_info
+        order.gender = gender
 
         if action == 'submit':
             order.status = 'submitted'
@@ -501,6 +629,54 @@ def edit_order(order_id):
                            unread_count=get_unread_count(current_user.id),
                            categories=get_active_categories(),
                            gifts=get_active_gifts())
+
+
+@bp.route('/order/edit_submitted/<int:order_id>', methods=['GET', 'POST'])
+@role_required('salesman')
+def edit_submitted_order(order_id):
+    """编辑待发货订单"""
+    order = Order.query.get_or_404(order_id)
+    if order.salesman_id != current_user.id or order.status != 'submitted':
+        flash('您只能编辑自己的待发货订单！', 'danger')
+        return redirect(url_for('orders.dashboard'))
+
+    if request.method == 'POST':
+        customer_name = request.form.get('customer_name')
+        phone = request.form.get('phone')
+        address = request.form.get('address')
+        remark = request.form.get('remark', '')
+        gender = request.form.get('gender')
+
+        if not all([phone, address]):
+            error_msg = '请填写必填字段！'
+            return render_template('edit_submitted_order.html',
+                                 order=order,
+                                 unread_count=get_unread_count(current_user.id),
+                                 form_data={
+                                     'customer_name': customer_name or '',
+                                     'phone': phone,
+                                     'address': address,
+                                     'remark': remark or '',
+                                     'gender': gender
+                                 },
+                                 error=error_msg)
+
+        order.customer_name = customer_name
+        order.phone = phone
+        order.address = address
+        order.remark = remark
+        order.gender = gender
+        
+        from models import _now_bj
+        order.update_time = _now_bj()
+        
+        flash('订单已更新！', 'success')
+        db.session.commit()
+        return redirect(url_for('orders.dashboard'))
+
+    return render_template('edit_submitted_order.html',
+                           order=order,
+                           unread_count=get_unread_count(current_user.id))
 
 
 @bp.route('/api/order/<int:order_id>')
@@ -548,7 +724,8 @@ def api_order_detail(order_id):
         'logistics_status': order.logistics_status or '',
         'create_time': order.create_time.strftime('%Y-%m-%d %H:%M:%S') if order.create_time else '',
         'update_time': order.update_time.strftime('%Y-%m-%d %H:%M:%S') if order.update_time else '',
-        'is_main_product': is_main_product
+        'is_main_product': is_main_product,
+        'gender': order.gender or ''
     })
 
 
@@ -677,10 +854,26 @@ def api_order_logistics_refresh(order_id):
 
 
 @bp.route('/api/order/<int:order_id>/edit', methods=['POST'])
-@role_required('admin')
+@login_required
 def api_order_edit(order_id):
-    """管理员编辑订单API"""
+    """编辑订单API（管理员可编辑所有，业务员只能编辑自己的）"""
     order = Order.query.get_or_404(order_id)
+    
+    # 权限检查：admin账号可编辑所有，其他管理员按组别，业务员只能编辑自己的
+    if current_user.username == 'admin':
+        pass  # admin账号可编辑所有
+    elif current_user.has_role('admin') and current_user.group_id:
+        # 其他管理员：按组别过滤
+        managed_group_ids = current_user.get_managed_group_ids()
+        if order.group_id not in managed_group_ids:
+            return jsonify({'error': '无权编辑此订单'}), 403
+    elif current_user.has_role('salesman'):
+        # 业务员：只能编辑自己的订单
+        if order.salesman_id != current_user.id:
+            return jsonify({'error': '无权编辑此订单'}), 403
+    else:
+        # 其他角色（如发货员）无权编辑
+        return jsonify({'error': '无权编辑此订单'}), 403
 
     # 保存旧值用于比较
     old_values = {
@@ -693,7 +886,8 @@ def api_order_edit(order_id):
         'collect_amount': order.collect_amount,
         'remark': order.remark,
         'tracking_number': order.tracking_number,
-        'express_type': order.express_type
+        'express_type': order.express_type,
+        'gender': order.gender
     }
 
     # 获取新值
@@ -707,6 +901,7 @@ def api_order_edit(order_id):
     new_remark = request.form.get('remark', '').strip()
     new_tracking_number = request.form.get('tracking_number', '').strip()
     new_express_type = request.form.get('express_type', '').strip()
+    new_gender = request.form.get('gender', '').strip()
 
     # 更新字段
     order.customer_name = new_customer_name
@@ -719,6 +914,7 @@ def api_order_edit(order_id):
     order.remark = new_remark
     order.tracking_number = new_tracking_number if new_tracking_number else None
     order.express_type = new_express_type if new_express_type else None
+    order.gender = new_gender if new_gender else None
     from models import _now_bj
     order.update_time = _now_bj()
 
@@ -736,7 +932,8 @@ def api_order_edit(order_id):
         'collect_amount': '代收金额',
         'remark': '备注',
         'tracking_number': '快递单号',
-        'express_type': '快递类型'
+        'express_type': '快递类型',
+        'gender': '性别'
     }
 
     for field, label in field_labels.items():

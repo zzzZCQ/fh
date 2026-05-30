@@ -21,9 +21,41 @@ from wework_partition import (
 # 客户端连接状态管理
 _client_connections = {}
 _connections_lock = threading.Lock()
+_config_change_time = None  # 配置变更时间戳
+
+def get_call_recording_enabled():
+    """从数据库获取通话读取功能配置"""
+    try:
+        from sqlalchemy import text
+        result = db.session.execute(text("SELECT config_value FROM app_config WHERE config_key='call_recording_enabled'"))
+        row = result.fetchone()
+        if row:
+            return row[0].lower() == 'true'
+    except Exception as e:
+        print(f"[配置] 读取通话读取配置失败: {e}")
+    return False
+
+def set_call_recording_enabled(enabled):
+    """设置通话读取功能配置"""
+    try:
+        from sqlalchemy import text
+        db.session.execute(text("UPDATE app_config SET config_value=:value WHERE config_key='call_recording_enabled'"), 
+                         {'value': 'True' if enabled else 'False'})
+        db.session.commit()
+        return True
+    except Exception as e:
+        print(f"[配置] 设置通话读取配置失败: {e}")
+        return False
 
 # 通话读取功能配置
-CALL_RECORDING_ENABLED = True  # 是否启用通话读取功能
+CALL_RECORDING_ENABLED = False
+
+def init_call_recording_config(app):
+    """初始化通话读取配置（需要在应用上下文中）"""
+    global CALL_RECORDING_ENABLED
+    with app.app_context():
+        CALL_RECORDING_ENABLED = get_call_recording_enabled()
+        print(f'[配置] 初始化通话读取配置: {"已启用" if CALL_RECORDING_ENABLED else "已停用"}')
 
 def cleanup_stale_connections(timeout_seconds=2100):
     """清理超时的连接（默认35分钟）"""
@@ -133,15 +165,17 @@ def dashboard():
     # 获取可用日期列表
     available_dates = get_available_dates()
     
-    return render_template(
-        'wework_call_dashboard.html',
+    # 从数据库获取最新的通话读取配置
+    call_recording_enabled = get_call_recording_enabled()
+    
+    return render_template('wework_call_dashboard.html',
         today_total_duration=stats['total_duration'],
         today_call_count=stats['total_count'],
         uploader_stats=uploader_stats,
         unread_count=get_unread_count(current_user.id),
         selected_date=target_date,
         available_dates=available_dates,
-        call_recording_enabled=CALL_RECORDING_ENABLED
+        call_recording_enabled=call_recording_enabled
     )
 
 
@@ -189,7 +223,8 @@ def client_heartbeat():
         return jsonify({
             'success': True, 
             'online_count': len(_client_connections),
-            'call_recording_enabled': CALL_RECORDING_ENABLED
+            'call_recording_enabled': CALL_RECORDING_ENABLED,
+            'config_change_time': _config_change_time
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -227,6 +262,8 @@ def call_recording_settings():
     global CALL_RECORDING_ENABLED
     
     if request.method == 'GET':
+        # 每次GET都从数据库读取最新配置
+        CALL_RECORDING_ENABLED = get_call_recording_enabled()
         return jsonify({
             'success': True,
             'call_recording_enabled': CALL_RECORDING_ENABLED
@@ -235,14 +272,38 @@ def call_recording_settings():
     if request.method == 'POST':
         data = request.get_json()
         if 'enabled' in data:
-            CALL_RECORDING_ENABLED = bool(data['enabled'])
-            print(f'[配置] 通话读取功能已{"启用" if CALL_RECORDING_ENABLED else "停用"}')
-            return jsonify({
-                'success': True,
-                'call_recording_enabled': CALL_RECORDING_ENABLED,
-                'message': f'通话读取功能已{"启用" if CALL_RECORDING_ENABLED else "停用"}'
-            })
+            enabled = bool(data['enabled'])
+            # 保存到数据库
+            if set_call_recording_enabled(enabled):
+                CALL_RECORDING_ENABLED = enabled
+                import time
+                global _config_change_time
+                _config_change_time = time.time()
+                print(f'[配置] 通话读取功能已{"启用" if CALL_RECORDING_ENABLED else "停用"}')
+                return jsonify({
+                    'success': True,
+                    'call_recording_enabled': CALL_RECORDING_ENABLED,
+                    'message': f'通话读取功能已{"启用" if CALL_RECORDING_ENABLED else "停用"}'
+                })
+            else:
+                return jsonify({'success': False, 'error': '保存配置失败'}), 500
         return jsonify({'success': False, 'error': '缺少enabled参数'}), 400
+
+
+@bp.route('/api/config_check', methods=['POST'])
+def config_check():
+    """客户端快速检查配置变更（轻量级接口）"""
+    try:
+        data = request.get_json() or {}
+        client_id = data.get('client_id')
+        
+        return jsonify({
+            'success': True,
+            'call_recording_enabled': CALL_RECORDING_ENABLED,
+            'config_change_time': _config_change_time
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @bp.route('/api/online_users', methods=['GET'])

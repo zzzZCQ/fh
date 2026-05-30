@@ -189,6 +189,70 @@ def _update_order_status_from_routes(order, routes):
     return_keywords = ['退回', '拒收', '无人签收', '退回寄件人', '返程']
     is_return = any(keyword in remark for keyword in return_keywords)
     
+    # 检查物流异常关键词
+    warning_keywords = ['派送不成功', '送不成功', '送不出去', '无法送达', '无法派送', '拒收', '退回', '异常', '滞留']
+    is_warning = any(keyword in remark for keyword in warning_keywords)
+    
+    # 更新异常标识（无论状态是否变化，都要更新异常标识）
+    from models import db
+    if is_warning:
+        order.logistics_warning = True
+        order.logistics_warning_remark = remark
+        print(f"[物流异常] 订单 {order.id}: 检测到异常 - {remark}")
+        
+        # 发送通知给业务员
+        if order.salesman_id:
+            try:
+                from models import User, BroadcastNotification, NotificationReceipt
+                
+                salesman = db.session.get(User, order.salesman_id)
+                if salesman:
+                    # 尝试导入 socket_events
+                    try:
+                        from socket_events import push_notification_to_user
+                    except ImportError:
+                        print("[物流异常通知] socket_events 未初始化，跳过实时推送")
+                        push_notification_to_user = None
+                    
+                    notification = BroadcastNotification(
+                        title='📦 物流异常提醒',
+                        content=f"[物流异常] 客户 {order.customer_name or '未知'} 的订单出现物流异常：\n\n快递单号：{order.tracking_number or '未填写'}\n收货地址：{order.address or '未知'}\n异常信息：{remark}\n\n请及时处理！",
+                        priority='important',
+                        target_type='user',
+                        target_ids=str(order.salesman_id),
+                        sender_id=1,
+                        status='sent',
+                        sent_time=_now_bj()
+                    )
+                    db.session.add(notification)
+                    db.session.flush()
+
+                    receipt = NotificationReceipt(
+                        notification_id=notification.id,
+                        user_id=order.salesman_id
+                    )
+                    db.session.add(receipt)
+
+                    if push_notification_to_user:
+                        notification_data = {
+                            'id': notification.id,
+                            'title': notification.title,
+                            'content': notification.content,
+                            'image_url': None,
+                            'priority': notification.priority,
+                            'timestamp': notification.sent_time.isoformat() if notification.sent_time else None
+                        }
+                        push_notification_to_user(order.salesman_id, notification_data)
+
+                    print(f"[物流异常通知] 已保存通知给业务员 {salesman.name} (ID: {order.salesman_id})")
+            except Exception as notify_err:
+                print(f"[物流异常通知] 发送通知失败: {notify_err}")
+                import traceback
+                traceback.print_exc()
+    else:
+        order.logistics_warning = False
+        order.logistics_warning_remark = None
+    
     if new_status:
         # 如果remark包含退回关键词，并且是已签收相关状态，强制设置为退回已签收
         if is_return and new_status in ['已签收', '退回已签收']:
@@ -207,6 +271,9 @@ def _update_order_status_from_routes(order, routes):
                         db.session.commit()
                     except ValueError:
                         pass
+            else:
+                # 状态没变，但异常标识可能变了，需要commit
+                db.session.commit()
             return  # 已更新为退回已签收，无需继续
         
         # 正常状态更新
@@ -226,6 +293,9 @@ def _update_order_status_from_routes(order, routes):
             from models import db
             db.session.commit()
             print(f"[物流状态更新] 订单 {order.id}: {old_status} -> {order.logistics_status} (remark: {remark})")
+        else:
+            # 状态没变，但异常标识可能变了，需要commit
+            db.session.commit()
 
 # ============ 下载令牌管理 ============
 _download_tokens = {}
@@ -442,6 +512,19 @@ def update_single_order_logistics(order):
         remark = latest.get('remark', '') or ''
         return_keywords = ['退回', '拒收', '无人签收', '退回寄件人', '返程']
         is_return = any(keyword in remark for keyword in return_keywords)
+        
+        # 检查物流异常关键词
+        warning_keywords = ['派送不成功', '送不成功', '送不出去', '无法送达', '无法派送', '拒收', '退回', '异常', '滞留']
+        is_warning = any(keyword in remark for keyword in warning_keywords)
+        
+        # 更新异常标识
+        if is_warning:
+            order.logistics_warning = True
+            order.logistics_warning_remark = remark
+            print(f"[物流异常] 订单 {order.id}: 检测到异常 - {remark}")
+        else:
+            order.logistics_warning = False
+            order.logistics_warning_remark = None
         
         if new_status:
             # 如果当前状态是已签收，但remark包含退回关键词，需要更新为退回已签收

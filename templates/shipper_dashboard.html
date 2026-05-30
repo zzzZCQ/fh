@@ -166,7 +166,11 @@
                         <td>{{ order.category }}</td>
 
                         <td>
-
+                            {% if order.logistics_warning %}
+                            <span class="badge bg-danger me-1" title="{{ order.logistics_warning_remark[:50] if order.logistics_warning_remark else '' }}">
+                                <i class="bi bi-exclamation-triangle"></i>
+                            </span>
+                            {% endif %}
                             {% if order.status == 'submitted' %}
 
                             <span class="badge" style="background-color:#ffc107; color:#000; width:25%; display:inline-block;">待发货</span>

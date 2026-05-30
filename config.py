@@ -8,8 +8,17 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 class Config:
     """基础配置"""
     SECRET_KEY = os.environ.get('SECRET_KEY', 'delivery-notification-secret-key')
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///delivery.db')
+    # MySQL数据库（生产环境）
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        'DATABASE_URL',
+        'mysql+pymysql://fh:123456@localhost:3306/delivery_db?charset=utf8mb4'
+    )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 10,
+        'pool_recycle': 3600,
+        'pool_pre_ping': True,
+    }
     # 静态文件缓存（秒）
     SEND_FILE_MAX_AGE_DEFAULT = 3600
 

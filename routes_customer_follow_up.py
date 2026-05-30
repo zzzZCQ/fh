@@ -1,7 +1,7 @@
 """客户对接管理"""
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file
 from flask_login import login_required, current_user
-from models import db, CustomerFollowUp, Order, Category, User
+from models import db, CustomerFollowUp, Order, Category, User, Group
 from helpers import get_unread_count
 import re
 import os
@@ -94,6 +94,24 @@ def _merge_products(existing, new_product):
     return ', '.join(result)
 
 
+def _get_filter_params():
+    """获取筛选参数，用于重定向时保留"""
+    return {
+        'keyword': request.args.get('keyword', ''),
+        'is_signed': request.args.get('is_signed', ''),
+        'is_followed': request.args.get('is_followed', ''),
+        'salesman_id': request.args.get('salesman_id', ''),
+        'category': request.args.get('category', ''),
+        'group_name': request.args.get('group_name', ''),
+        'per_page': request.args.get('per_page', ''),
+        'page': request.args.get('page', '')
+    }
+
+def _redirect_with_filters():
+    """重定向并保留筛选参数"""
+    return redirect(url_for('customer_follow_up.follow_up_list', **_get_filter_params()))
+
+
 @bp.route('/customer_follow_up')
 @login_required
 def follow_up_list():
@@ -147,7 +165,27 @@ def follow_up_list():
     elif is_followed == '0':
         query = query.filter_by(is_followed_up=False)
 
-    records = query.order_by(CustomerFollowUp.create_time.desc()).all()
+    category = request.args.get('category', '')
+    if category:
+        query = query.filter_by(category=category)
+        
+    group_name = request.args.get('group_name', '')
+    if group_name:
+        query = query.filter_by(group_name=group_name)
+
+    # 分页
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    if per_page not in [20, 50, 100]:
+        per_page = 20
+        
+    pagination = query.order_by(
+        CustomerFollowUp.group_name,
+        CustomerFollowUp.category,
+        CustomerFollowUp.salesman_name
+    ).paginate(page=page, per_page=per_page, error_out=False)
+    
+    records = pagination.items
 
     # 获取业务员列表（管理员用，只显示可管理的）
     salesmen = []
@@ -167,10 +205,40 @@ def follow_up_list():
     else:
         follow_up_users = User.query.filter(User.roles.like('%follow_up%')).all()
 
+    # 获取主品类别列表
+    categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
+    
+    # 获取组别列表
+    groups = []
+    if managed_group_ids:
+        groups = Group.query.filter(Group.id.in_(managed_group_ids)).order_by(Group.name).all()
+    elif current_user.group:
+        groups = [current_user.group]
+    
+    # 构建筛选参数，用于分页链接
+    filter_params = {}
+    if keyword:
+        filter_params['keyword'] = keyword
+    if is_signed:
+        filter_params['is_signed'] = is_signed
+    if is_followed:
+        filter_params['is_followed'] = is_followed
+    if category:
+        filter_params['category'] = category
+    if group_name:
+        filter_params['group_name'] = group_name
+    if request.args.get('salesman_id'):
+        filter_params['salesman_id'] = request.args.get('salesman_id')
+    filter_params['per_page'] = per_page
+
     return render_template('customer_follow_up.html',
                            records=records,
                            salesmen=salesmen,
                            follow_up_users=follow_up_users,
+                           categories=categories,
+                           groups=groups,
+                           pagination=pagination,
+                           filter_params=filter_params,
                            unread_count=get_unread_count(current_user.id))
 
 
@@ -186,24 +254,51 @@ def sync_follow_up():
         if fu_user:
             follow_up_person = fu_user.name
 
+    # 获取选择的产品类别
+    selected_category = request.form.get('category', '').strip()
+
     # 获取主品类别
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = [c.name for c in main_categories]
 
     if not main_cat_names:
         flash('没有配置主品类别，无法同步', 'warning')
-        return redirect(url_for('customer_follow_up.follow_up_list'))
+        return _redirect_with_filters()
 
-    # 查询当前用户的主品发货单（不管有没有管理员角色，都只同步自己的）
-    orders = Order.query.filter(
-        Order.salesman_id == current_user.id,
-        Order.category.in_(main_cat_names),
-        Order.status.in_(['submitted', 'shipped'])
-    ).all()
+    # 确定要同步的类别
+    sync_categories = [selected_category] if selected_category else main_cat_names
+
+    # 根据角色查询发货单
+    if current_user.has_role('admin'):
+        # 管理员：获取本级及以下所有用户的发货单
+        managed_group_ids = current_user.get_managed_group_ids()
+        managed_salesman_ids = []
+        if managed_group_ids:
+            managed_salesmen = User.query.filter(
+                User.group_id.in_(managed_group_ids),
+                (User.roles.like('%salesman%') | User.roles.like('%admin%'))
+            ).all()
+            managed_salesman_ids = [u.id for u in managed_salesmen]
+        
+        if managed_salesman_ids:
+            orders = Order.query.filter(
+                Order.salesman_id.in_(managed_salesman_ids),
+                Order.category.in_(sync_categories),
+                Order.status.in_(['submitted', 'shipped'])
+            ).all()
+        else:
+            orders = []
+    else:
+        # 普通用户：只同步自己的发货单
+        orders = Order.query.filter(
+            Order.salesman_id == current_user.id,
+            Order.category.in_(sync_categories),
+            Order.status.in_(['submitted', 'shipped'])
+        ).all()
 
     if not orders:
         flash('没有找到主品发货单数据', 'warning')
-        return redirect(url_for('customer_follow_up.follow_up_list'))
+        return _redirect_with_filters()
 
     sync_count = 0
     skip_count = 0
@@ -223,16 +318,25 @@ def sync_follow_up():
         first_order = order_list[0]
         salesman_name = first_order.salesman.name if first_order.salesman else ''
 
-        # 检查是否已存在
-        existing = CustomerFollowUp.query.filter_by(
-            customer_name=customer_name,
-            phone=phone
+        # 规范化客户姓名：去除首尾空格
+        customer_name_normalized = customer_name.strip()
+
+        # 检查是否已存在（使用规范化后的姓名和电话查询）
+        existing = CustomerFollowUp.query.filter(
+            CustomerFollowUp.customer_name == customer_name_normalized,
+            CustomerFollowUp.phone == phone
         ).first()
 
         # 重新汇总所有发货单的产品和金额
         total_amount = 0
         all_products = ''
         is_signed = False
+        customer_status_list = []  # 收集所有备注
+        best_customer_name = ''  # 记录最完整的客户姓名
+        best_customer_wechat = ''  # 记录最完整的微信名
+        best_gender = ''  # 记录性别
+        best_address = ''  # 记录最完整的地址
+
         for o in order_list:
             # 汇总金额
             amount = _extract_amount(o)
@@ -245,6 +349,24 @@ def sync_follow_up():
             # 签收状态：任意一条签收即为签收
             if o.logistics_status == '已签收':
                 is_signed = True
+            # 收集备注
+            if o.remark:
+                customer_status_list.append(o.remark)
+            # 收集最完整的客户信息
+            if o.customer_name and len(o.customer_name.strip()) > len(best_customer_name.strip()):
+                best_customer_name = o.customer_name.strip()
+            if o.customer_wechat and len(o.customer_wechat) > len(best_customer_wechat):
+                best_customer_wechat = o.customer_wechat
+            if o.gender:
+                best_gender = o.gender
+            if o.address and len(o.address) > len(best_address):
+                best_address = o.address
+
+        # 使用最完整的客户姓名
+        final_customer_name = best_customer_name if best_customer_name else customer_name_normalized
+
+        # 合并备注
+        customer_status = '\n'.join(customer_status_list) if customer_status_list else ''
 
         amount_str = str(int(total_amount)) if total_amount == int(total_amount) else str(total_amount)
 
@@ -253,12 +375,18 @@ def sync_follow_up():
             existing.is_main_signed = is_signed
             existing.purchased_products = all_products
             existing.amount = amount_str
+            existing.category = first_order.category or ''
             if salesman_name and existing.salesman_name != salesman_name:
                 existing.salesman_name = salesman_name
             if follow_up_person and not existing.follow_up_person:
                 existing.follow_up_person = follow_up_person
-            if first_order.customer_wechat:
-                existing.customer_wechat = first_order.customer_wechat
+            if best_customer_wechat:
+                existing.customer_wechat = best_customer_wechat
+            if best_gender:
+                existing.gender = best_gender
+            # 如果没有客户情况，从备注中提取（避免覆盖已有的内容）
+            if not existing.customer_status and customer_status:
+                existing.customer_status = customer_status
             skip_count += 1
         else:
             # 新增记录
@@ -268,12 +396,15 @@ def sync_follow_up():
                 salesman_name=salesman_name,
                 salesman_id=first_order.salesman_id,
                 follow_up_person=follow_up_person,
-                customer_name=customer_name,
-                customer_wechat=first_order.customer_wechat or '',
+                customer_name=final_customer_name,
+                customer_wechat=best_customer_wechat,
+                gender=best_gender or '',
                 phone=phone,
-                address=first_order.address or '',
+                address=best_address or first_order.address or '',
+                category=first_order.category or '',
                 purchased_products=all_products,
                 amount=amount_str,
+                customer_status=customer_status,
                 is_main_signed=is_signed,
                 is_followed_up=False
             )
@@ -282,7 +413,7 @@ def sync_follow_up():
 
     db.session.commit()
     flash(f'同步完成：新增 {sync_count} 条，更新 {skip_count} 条', 'success')
-    return redirect(url_for('customer_follow_up.follow_up_list'))
+    return _redirect_with_filters()
 
 
 @bp.route('/customer_follow_up/delete/<int:record_id>', methods=['POST'])
@@ -293,11 +424,11 @@ def delete_follow_up(record_id):
     # 业务员只能删除自己的，管理员可删所有
     if not current_user.has_role('admin') and record.salesman_id != current_user.id:
         flash('您没有权限删除此记录', 'danger')
-        return redirect(url_for('customer_follow_up.follow_up_list'))
+        return _redirect_with_filters()
     db.session.delete(record)
     db.session.commit()
     flash('客户对接记录已删除', 'success')
-    return redirect(url_for('customer_follow_up.follow_up_list'))
+    return _redirect_with_filters()
 
 
 @bp.route('/customer_follow_up/edit/<int:record_id>', methods=['POST'])
@@ -317,7 +448,7 @@ def edit_follow_up(record_id):
 
     if not can_edit:
         flash('您没有权限编辑此记录', 'danger')
-        return redirect(url_for('customer_follow_up.follow_up_list'))
+        return _redirect_with_filters()
 
     record.customer_name = request.form.get('customer_name', '').strip()
     record.customer_wechat = request.form.get('customer_wechat', '').strip()
@@ -328,10 +459,11 @@ def edit_follow_up(record_id):
     record.amount = request.form.get('amount', '').strip()
     record.follow_up_person = request.form.get('follow_up_person', '').strip()
     record.customer_status = request.form.get('customer_status', '').strip()
+    record.category = request.form.get('category', '').strip()
 
     db.session.commit()
     flash('客户对接信息已更新', 'success')
-    return redirect(url_for('customer_follow_up.follow_up_list'))
+    return _redirect_with_filters()
 
 
 @bp.route('/customer_follow_up/toggle_followed_up/<int:record_id>', methods=['POST'])
@@ -347,7 +479,7 @@ def toggle_followed_up(record_id):
 
     if not can_edit:
         flash('您没有权限操作此记录', 'danger')
-        return redirect(url_for('customer_follow_up.follow_up_list'))
+        return _redirect_with_filters()
 
     # 切换状态
     record.is_followed_up = not record.is_followed_up
@@ -355,11 +487,7 @@ def toggle_followed_up(record_id):
 
     status_text = '已对接' if record.is_followed_up else '未对接'
     flash(f'对接状态已变更为：{status_text}', 'success')
-    return redirect(url_for('customer_follow_up.follow_up_list',
-        keyword=request.args.get('keyword', ''),
-        is_signed=request.args.get('is_signed', ''),
-        is_followed=request.args.get('is_followed', ''),
-        salesman_id=request.args.get('salesman_id', '')))
+    return _redirect_with_filters()
 
 
 @bp.route('/api/customer_follow_up/<int:record_id>')
@@ -374,9 +502,11 @@ def api_follow_up_detail(record_id):
         'salesman_name': record.salesman_name,
         'follow_up_person': record.follow_up_person,
         'customer_name': record.customer_name,
+        'customer_wechat': record.customer_wechat,
         'gender': record.gender,
         'phone': record.phone,
         'address': record.address,
+        'category': record.category,
         'purchased_products': record.purchased_products,
         'amount': record.amount,
         'customer_status': record.customer_status,
@@ -392,7 +522,7 @@ def add_customer():
     # 只有管理员和业务员可以新增
     if not (current_user.has_role('admin') or current_user.has_role('salesman')):
         flash('您没有权限执行此操作', 'danger')
-        return redirect(url_for('customer_follow_up.follow_up_list'))
+        return _redirect_with_filters()
 
     # 获取表单数据
     group_name = request.form.get('group_name', '').strip()
@@ -403,6 +533,7 @@ def add_customer():
     gender = request.form.get('gender', '').strip()
     phone = request.form.get('phone', '').strip()
     address = request.form.get('address', '').strip()
+    category = request.form.get('category', '').strip()
     purchased_products = request.form.get('purchased_products', '').strip()
     amount = request.form.get('amount', '').strip()
     customer_status = request.form.get('customer_status', '').strip()
@@ -412,7 +543,7 @@ def add_customer():
     # 验证必填项
     if not customer_name or not phone:
         flash('客户姓名和电话不能为空！', 'danger')
-        return redirect(url_for('customer_follow_up.follow_up_list'))
+        return _redirect_with_filters()
 
     # 获取业务员信息
     salesman_name = current_user.name
@@ -429,7 +560,7 @@ def add_customer():
 
     if existing:
         flash('该客户已存在（相同客户姓名+电话）！', 'warning')
-        return redirect(url_for('customer_follow_up.follow_up_list'))
+        return _redirect_with_filters()
 
     # 创建记录
     record = CustomerFollowUp(
@@ -443,6 +574,7 @@ def add_customer():
         gender=gender,
         phone=phone,
         address=address,
+        category=category,
         purchased_products=purchased_products,
         amount=amount,
         customer_status=customer_status,
@@ -453,7 +585,7 @@ def add_customer():
     db.session.commit()
 
     flash(f'客户 {customer_name} 添加成功！', 'success')
-    return redirect(url_for('customer_follow_up.follow_up_list'))
+    return _redirect_with_filters()
 
 
 @bp.route('/customer_follow_up/export')
@@ -465,6 +597,8 @@ def export_follow_up():
     is_signed = request.args.get('is_signed', '')
     is_followed = request.args.get('is_followed', '')
     salesman_id = request.args.get('salesman_id', type=int)
+    category = request.args.get('category', '')
+    group_name = request.args.get('group_name', '')
 
     # 获取当前用户可管理的组ID列表
     managed_group_ids = current_user.get_managed_group_ids()
@@ -505,8 +639,16 @@ def export_follow_up():
         query = query.filter_by(is_followed_up=True)
     elif is_followed == '0':
         query = query.filter_by(is_followed_up=False)
+    if category:
+        query = query.filter_by(category=category)
+    if group_name:
+        query = query.filter_by(group_name=group_name)
 
-    records = query.order_by(CustomerFollowUp.create_time.desc()).all()
+    records = query.order_by(
+        CustomerFollowUp.group_name,
+        CustomerFollowUp.category,
+        CustomerFollowUp.salesman_name
+    ).all()
 
     # 创建Excel
     wb = openpyxl.Workbook()
@@ -531,7 +673,7 @@ def export_follow_up():
     # 第3行开始：数据
     row_num = 3
     for r in records:
-        ws.cell(row=row_num, column=1, value='')  # 微信名（暂无）
+        ws.cell(row=row_num, column=1, value=r.customer_wechat or '')
         ws.cell(row=row_num, column=2, value=r.customer_name or '')
         ws.cell(row=row_num, column=3, value=r.gender or '')
         ws.cell(row=row_num, column=4, value=r.phone or '')

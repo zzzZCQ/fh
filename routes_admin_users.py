@@ -35,11 +35,11 @@ def admin_users():
     if keyword:
         query = query.filter(db.or_(User.username.contains(keyword), User.name.contains(keyword)))
 
-    # 按组别排序，未分配的排最后
-    from sqlalchemy import asc, desc
+    # 按组别排序，未分配的排最后（MySQL兼容）
+    from sqlalchemy import asc, desc, case
     query = query.outerjoin(Group, User.group_id == Group.id).order_by(
-        Group.level.asc().nullslast(),
-        Group.id.asc().nullslast(),
+        case((Group.level == None, 99999), else_=Group.level).asc(),
+        case((Group.id == None, 99999), else_=Group.id).asc(),
         User.username.asc()
     )
 

@@ -98,9 +98,9 @@ def update_logistics():
         query = query.filter(Order.salesman_id == salesman_filter)
 
     # 获取 per_page 参数，与 dashboard 保持一致
-    per_page = request.form.get('per_page', 10, type=int)
-    if per_page not in [10, 50, 100]:
-        per_page = 10
+    per_page = request.form.get('per_page', 20, type=int)
+    if per_page not in [20, 50, 100, 500]:
+        per_page = 20
 
     # 先完全按照 dashboard 的查询逻辑获取用户看到的当前页的所有订单（包括排序）
     from sqlalchemy import case
@@ -109,13 +109,13 @@ def update_logistics():
     page_orders = query.outerjoin(Category, Category.name == Order.category).order_by(
         case((Order.status == 'submitted', 0), else_=1),
         case(
-            (Order.logistics_status == '运送中', 2),
-            (Order.logistics_status == '已发货', 2),
-            (Order.logistics_status == '待派送', 1),
-            (Order.logistics_status == '派送中', 3),
-            (Order.logistics_status == '已签收', 4),
-            (Order.logistics_status == '退回已签收', 5),
-            else_=5
+            (Order.logistics_status == '运送中', 3),
+            (Order.logistics_status == '已发货', 4),
+            (Order.logistics_status == '待派送', 2),
+            (Order.logistics_status == '派送中', 1),
+            (Order.logistics_status == '已签收', 5),
+            (Order.logistics_status == '退回已签收', 6),
+            else_=6
         ),
         case((Category.is_main_product == True, 0), else_=1),
         Order.create_time.desc()

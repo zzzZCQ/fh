@@ -203,24 +203,6 @@
 
     <!-- 侧边栏 -->
     <div class="sidebar">
-        <!-- 工具箱 -->
-        <div class="menu-group">
-            <div class="menu-label">工具箱</div>
-            <nav class="nav flex-column">
-                {% if current_user.has_role('salesman') %}
-                <a class="nav-link {% if request.endpoint == 'behavior.behavior_tracking_page' %}active{% endif %}" href="{{ url_for('behavior.behavior_tracking_page') }}">
-                    <i class="bi bi-table"></i> 行为轨迹处理
-                </a>
-                {% endif %}
-                <a class="nav-link {% if request.endpoint == 'tools.tools_page' %}active{% endif %}" href="{{ url_for('tools.tools_page') }}">
-                    <i class="bi bi-windows"></i> 企微双开
-                </a>
-                <a class="nav-link {% if request.endpoint == 'tools.files_page' %}active{% endif %}" href="{{ url_for('tools.files_page') }}">
-                    <i class="bi bi-folder"></i> 文件管理
-                </a>
-            </nav>
-        </div>
-
         <!-- 订单管理 -->
         <div class="menu-group">
             <div class="menu-label">订单管理</div>
@@ -233,9 +215,24 @@
                     <i class="bi bi-plus-circle"></i> 新建发货单
                 </a>
                 {% endif %}
+            </nav>
+        </div>
+
+        <!-- 客户管理 -->
+        <div class="menu-group">
+            <div class="menu-label">客户管理</div>
+            <nav class="nav flex-column">
                 {% if current_user.has_role('salesman') or current_user.has_role('follow_up') %}
                 <a class="nav-link {% if request.endpoint == 'customer_follow_up.follow_up_list' %}active{% endif %}" href="{{ url_for('customer_follow_up.follow_up_list') }}">
                     <i class="bi bi-person-check"></i> 客户对接
+                </a>
+                {% endif %}
+                <a class="nav-link {% if request.endpoint == 'behavior.customer_tracking' %}active{% endif %}" href="{{ url_for('behavior.customer_tracking') }}">
+                    <i class="bi bi-eye"></i> 客户跟踪
+                </a>
+                {% if current_user.has_role('admin') and current_user.group and current_user.group.level == 1 %}
+                <a class="nav-link {% if request.endpoint == 'wework.dashboard' %}active{% endif %}" href="{{ url_for('wework.dashboard') }}">
+                    <i class="bi bi-telephone-inbound"></i> 企微通话记录
                 </a>
                 {% endif %}
             </nav>
@@ -245,11 +242,6 @@
         <div class="menu-group">
             <div class="menu-label">业绩管理</div>
             <nav class="nav flex-column">
-                {% if current_user.has_role('admin') and current_user.group and current_user.group.level == 1 %}
-                <a class="nav-link {% if request.endpoint == 'wework.dashboard' %}active{% endif %}" href="{{ url_for('wework.dashboard') }}">
-                    <i class="bi bi-telephone-inbound"></i> 企微通话记录
-                </a>
-                {% endif %}
                 {% if current_user.has_role('salesman') %}
                 <a class="nav-link {% if request.endpoint == 'performance.performance_dashboard' %}active{% endif %}" 
                    href="{{ url_for('performance.performance_dashboard') }}">
@@ -310,15 +302,30 @@
                 <a class="nav-link {% if request.endpoint == 'import_routes.admin_performance_templates' %}active{% endif %}" href="{{ url_for('import_routes.admin_performance_templates') }}">
                     <i class="bi bi-graph-up"></i> 业绩报表模板
                 </a>
-                <a class="nav-link {% if request.endpoint == 'admin_config.admin_db_viewer' %}active{% endif %}" href="{{ url_for('admin_config.admin_db_viewer') }}">
-                    <i class="bi bi-database"></i> 数据库管理
-                </a>
                 <a class="nav-link {% if request.endpoint == 'tools.git_page' %}active{% endif %}" href="{{ url_for('tools.git_page') }}">
                     <i class="bi bi-git"></i> Git管理
                 </a>
             </nav>
         </div>
         {% endif %}
+
+        <!-- 工具箱 -->
+        <div class="menu-group">
+            <div class="menu-label">工具箱</div>
+            <nav class="nav flex-column">
+                {% if current_user.has_role('salesman') %}
+                <a class="nav-link {% if request.endpoint == 'behavior.behavior_tracking_page' %}active{% endif %}" href="{{ url_for('behavior.behavior_tracking_page') }}">
+                    <i class="bi bi-table"></i> 行为轨迹处理
+                </a>
+                {% endif %}
+                <a class="nav-link {% if request.endpoint == 'tools.tools_page' %}active{% endif %}" href="{{ url_for('tools.tools_page') }}">
+                    <i class="bi bi-windows"></i> 企微双开
+                </a>
+                <a class="nav-link {% if request.endpoint == 'tools.files_page' %}active{% endif %}" href="{{ url_for('tools.files_page') }}">
+                    <i class="bi bi-folder"></i> 文件管理
+                </a>
+            </nav>
+        </div>
     </div>
     {% endif %}
 

@@ -16,21 +16,44 @@
                 </div>
                 <div class="card-body">
                     <form method="POST" action="{{ url_for('behavior.upload_behavior_files') }}" enctype="multipart/form-data">
+                        {% if has_base_file %}
+                        <!-- 基础表已存在，显示状态 -->
+                        <div class="mb-3 p-3 bg-success bg-opacity-10 rounded border border-success">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div>
+                                    <i class="bi bi-check-circle text-success me-2"></i>
+                                    <span class="text-success font-medium">基础表已就绪</span>
+                                    <div class="small text-success mt-1">行为轨迹表.xlsx 已上传，无需重复上传</div>
+                                </div>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="replace_base" name="replace_base">
+                                    <label class="form-check-label small" for="replace_base">重新上传基础表</label>
+                                </div>
+                            </div>
+                            <input type="file" class="form-control d-none" name="base_file" accept=".xlsx,.xls" id="base_file_input">
+                        </div>
+                        {% else %}
+                        <!-- 基础表不存在，必须上传 -->
                         <div class="mb-3">
-                            <label class="form-label">基础表（行为轨迹表.xlsx）</label>
-                            <input type="file" class="form-control" name="base_file" accept=".xlsx,.xls">
-                            <div class="form-text">
-                                {% if has_base_file %}
-                                <span class="text-success"><i class="bi bi-check-circle"></i> 已上传，重新上传将覆盖</span>
-                                {% else %}
+                            <label class="form-label">基础表（行为轨迹表.xlsx）<span class="text-danger">*</span></label>
+                            <input type="file" class="form-control" name="base_file" accept=".xlsx,.xls" required>
+                            <div class="form-text text-muted">
                                 包含昵称列和日期列的基础表格（首次必须上传）
-                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="mb-3">
+                            <label class="form-label">选择文件夹（推荐）</label>
+                            <input type="file" class="form-control" name="folder_files" webkitdirectory directory>
+                            <div class="form-text text-muted">
+                                会自动上传文件夹内所有Excel数据文件
                             </div>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">手动选择数据文件（可多选）</label>
+                            <label class="form-label">或手动选择数据文件（可多选）</label>
                             <input type="file" class="form-control" name="data_files" accept=".xlsx,.xls" multiple>
-                            <div class="form-text">
+                            <div class="form-text text-muted">
                                 文件名格式：MMDD完播.xlsx、415未完播.xls、414.xls 等
                             </div>
                         </div>
@@ -48,8 +71,9 @@
                 </div>
                 <div class="card-body">
                     <ol class="mb-0 small">
-                        <li>上传<strong>行为轨迹表.xlsx</strong>作为基础表（首次必须上传）</li>
-                        <li>点击"选择文件夹"自动上传所有Excel文件（推荐）</li>
+                        <li><strong>首次使用：</strong>上传<strong>行为轨迹表.xlsx</strong>作为基础表</li>
+                        <li><strong>后续使用：</strong>直接上传数据文件即可，基础表会自动复用</li>
+                        <li>点击"选择文件夹"自动上传所有Excel数据文件（推荐）</li>
                         <li>或手动选择数据文件上传</li>
                         <li>点击"开始处理"自动填充数据</li>
                         <li>点击"下载结果"获取处理后的文件</li>
@@ -70,10 +94,10 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-folder me-2"></i>已上传文件</h5>
-                    <span class="badge bg-secondary">{{ files|length }} 个文件</span>
+                    <span class="badge bg-secondary">{{ files_info|length }} 个文件</span>
                 </div>
                 <div class="card-body">
-                    {% if files %}
+                    {% if files_info %}
                     <table class="table table-sm table-hover">
                         <thead>
                             <tr>
@@ -83,26 +107,24 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for file in files %}
+                            {% for file_info in files_info %}
                             <tr>
-                                <td>{{ file }}</td>
+                                <td>{{ file_info.name }}</td>
                                 <td>
-                                    {% if file == '行为轨迹表.xlsx' %}
+                                    {% if file_info.type == 'base' %}
                                     <span class="badge bg-primary">基础表</span>
-                                    {% elif '完播' in file %}
-                                    <span class="badge bg-success">完播数据</span>
-                                    {% elif '未完播' in file %}
+                                    {% elif file_info.type == 'incomplete' %}
                                     <span class="badge bg-warning">未完播数据</span>
-                                    {% elif file.endswith('.xlsx') or file.endswith('.xls') %}
-                                    <span class="badge bg-info">数据文件</span>
+                                    {% elif file_info.type == 'complete' %}
+                                    <span class="badge bg-success">完播数据</span>
                                     {% else %}
-                                    <span class="badge bg-secondary">其他</span>
+                                    <span class="badge bg-info">数据文件</span>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if file == '行为轨迹表.xlsx' %}
+                                    {% if file_info.type == 'base' %}
                                     <span class="text-success"><i class="bi bi-check-circle"></i> 已就绪</span>
-                                    {% elif file.replace('.xlsx', '').replace('.xls', '').replace('完播', '').replace('未完播', '') in processed_dates %}
+                                    {% elif file_info.is_processed %}
                                     <span class="text-muted"><i class="bi bi-check-circle-fill"></i> 已处理</span>
                                     {% else %}
                                     <span class="text-warning"><i class="bi bi-hourglass"></i> 待处理</span>
@@ -126,8 +148,11 @@
                     
                     {% if has_base_file %}
                     <div class="mt-3 text-center">
-                        <a href="{{ url_for('behavior.download_behavior_result') }}" class="btn btn-outline-primary">
+                        <a href="{{ url_for('behavior.download_behavior_result') }}" class="btn btn-outline-primary me-2">
                             <i class="bi bi-download"></i> 下载结果文件
+                        </a>
+                        <a href="{{ url_for('behavior.behavior_tracking_result') }}" class="btn btn-outline-info">
+                            <i class="bi bi-eye"></i> 在线查看结果
                         </a>
                     </div>
                     {% endif %}
@@ -141,14 +166,28 @@
                 </div>
             </div>
             
+            <!-- 操作面板 -->
+            <div class="card mt-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-tools me-2"></i>操作</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('behavior.clear_behavior_processed') }}" class="btn btn-outline-warning flex-fill" onclick="return confirm('确定清空已处理记录？')">
+                            <i class="bi bi-arrow-counterclockwise"></i> 清空处理记录
+                        </a>
+                        <a href="{{ url_for('behavior.clear_behavior_all') }}" class="btn btn-outline-danger flex-fill" onclick="return confirm('确定清空所有文件（包括基础表）？这将开始新一期！')">
+                            <i class="bi bi-trash2"></i> 新一期重置
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
             <!-- 已处理日期 -->
             {% if processed_dates %}
             <div class="card mt-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="card-header">
                     <h5 class="mb-0"><i class="bi bi-check2-all me-2"></i>已处理日期</h5>
-                    <a href="{{ url_for('behavior.clear_behavior_processed') }}" class="btn btn-outline-warning btn-sm" onclick="return confirm('确定清空已处理记录？')">
-                        <i class="bi bi-trash"></i> 清空记录
-                    </a>
                 </div>
                 <div class="card-body">
                     <div class="d-flex flex-wrap gap-1">

@@ -1,0 +1,765 @@
+{% extends "base.html" %}
+
+{% block title %}客户跟踪 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-eye me-2"></i>客户跟踪</h2>
+    </div>
+    
+    <!-- 筛选区域 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" action="{{ url_for('behavior.customer_tracking') }}" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label small text-muted">组别</label>
+                    <select name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">全部组别</option>
+                        {% for group in groups %}
+                        <option value="{{ group.id }}" {% if selected_group == group.id %}selected{% endif %}>
+                            {{ group.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small text-muted">业务员</label>
+                    <select name="salesman_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">全部业务员</option>
+                        {% for salesman in salesmen %}
+                        <option value="{{ salesman.id }}" {% if selected_salesman == salesman.id %}selected{% endif %}>
+                            {{ salesman.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 align-self-end">
+                    <a href="{{ url_for('behavior.customer_tracking') }}" class="btn btn-secondary btn-sm">重置</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- 业务员统计列表（手动填写） -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-3">
+                <span><i class="bi bi-bar-chart me-2"></i>业务员统计</span>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="mb-0">日期：</label>
+                    <input type="date" id="statsDate" class="form-control form-control-sm" 
+                           value="{{ today_str }}" onchange="loadStatsByDate()">
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-primary" onclick="saveAllStats()">
+                    <i class="bi bi-save me-1"></i>保存
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="copySalesmanStats()">
+                    <i class="bi bi-clipboard me-1"></i>复制
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped" id="salesmanStatsTable">
+                    <thead>
+                        <tr>
+                            <th>组别</th>
+                            <th>业务员</th>
+                            <th>总进线</th>
+                            <th>激活数</th>
+                            <th>激活率</th>
+                            <th>触达数</th>
+                            <th>触达率</th>
+                            <th>完播数</th>
+                            <th>完播率</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stats in salesman_stats %}
+                        <tr data-user-id="{{ stats.user_id }}" data-can-edit="{{ 'true' if stats.can_edit else 'false' }}">
+                            <td>{{ stats.group_name }}</td>
+                            <td>{{ stats.salesman_name }}</td>
+                            <td>
+                                <input type="number" class="form-control form-control-sm data-input" 
+                                       data-field="total_incoming"
+                                       value="{{ stats.total_incoming }}" 
+                                       min="0" {{ 'readonly' if not stats.can_edit else '' }}>
+                            </td>
+                            <td>
+                                <input type="number" class="form-control form-control-sm data-input" 
+                                       data-field="activated_count"
+                                       value="{{ stats.activated_count }}" 
+                                       min="0" {{ 'readonly' if not stats.can_edit else '' }}>
+                            </td>
+                            <td><span class="rate-value">{{ stats.activated_rate }}%</span></td>
+                            <td>
+                                <input type="number" class="form-control form-control-sm data-input" 
+                                       data-field="touched_count"
+                                       value="{{ stats.touched_count }}" 
+                                       min="0" {{ 'readonly' if not stats.can_edit else '' }}>
+                            </td>
+                            <td><span class="rate-value">{{ stats.touched_rate }}%</span></td>
+                            <td>
+                                <input type="number" class="form-control form-control-sm data-input" 
+                                       data-field="completed_count"
+                                       value="{{ stats.completed_count }}" 
+                                       min="0" {{ 'readonly' if not stats.can_edit else '' }}>
+                            </td>
+                            <td><span class="rate-value">{{ stats.completed_rate }}%</span></td>
+                            <td>
+                                <input type="text" class="form-control form-control-sm data-input" 
+                                       data-field="note"
+                                       value="{{ stats.note or '' }}" 
+                                       {{ 'readonly' if not stats.can_edit else '' }}>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if salesman_stats_summary and salesman_stats_summary.total_count > 0 %}
+                    <tfoot>
+                        <tr class="table-info font-weight-bold">
+                            <td colspan="2">合计（{{ salesman_stats_summary.total_count }}人）</td>
+                            <td>{{ salesman_stats_summary.total_incoming }}</td>
+                            <td>{{ salesman_stats_summary.total_activated }}</td>
+                            <td>{{ salesman_stats_summary.avg_activated_rate }}%</td>
+                            <td>{{ salesman_stats_summary.total_touched }}</td>
+                            <td>{{ salesman_stats_summary.avg_touched_rate }}%</td>
+                            <td>{{ salesman_stats_summary.total_completed }}</td>
+                            <td>{{ salesman_stats_summary.avg_completed_rate }}%</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+            
+            {% if salesman_stats|length == 0 %}
+            <div class="text-center text-muted py-10">暂无统计数据</div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- 客户明细数据表格 -->
+    <div class="card">
+        <div class="card-header">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span>客户跟踪明细（共 {{ rows_data|length }} 条记录）</span>
+                <div class="d-flex align-items-center gap-2">
+                    <form method="get" action="{{ url_for('behavior.customer_tracking') }}" class="d-flex align-items-center gap-2">
+                        <input type="hidden" name="group_id" value="{{ selected_group or '' }}">
+                        <input type="hidden" name="salesman_id" value="{{ selected_salesman or '' }}">
+                        <input type="hidden" name="page_size" value="{{ page_size }}">
+                        <input type="text" name="nickname" class="form-control form-control-sm" 
+                               value="{{ selected_nickname or '' }}" placeholder="输入客户昵称..." style="width: 180px;">
+                        <select name="is_followed" class="form-select form-select-sm" style="width: 100px;">
+                            <option value="">全部</option>
+                            <option value="1" {% if selected_followed == '1' %}selected{% endif %}>已跟进</option>
+                            <option value="0" {% if selected_followed == '0' %}selected{% endif %}>未跟进</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary btn-sm">筛选</button>
+                        {% if selected_nickname or selected_followed %}
+                        <a href="{{ url_for('behavior.customer_tracking', group_id=selected_group, salesman_id=selected_salesman, page_size=page_size) }}" 
+                           class="btn btn-outline-secondary btn-sm">清除</a>
+                        {% endif %}
+                    </form>
+                    <div class="small text-muted ms-3">
+                        <span class="me-3"><i class="bi bi-square-fill" style="color:#32CD32;"></i> 完播（1）</span>
+                        <span class="me-3"><i class="bi bi-square-fill" style="color:#FFFF00;"></i> 未完播（2）</span>
+                        <span><i class="bi bi-square-fill" style="color:#FF0000;"></i> 未观看（3）</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if not show_data %}
+            <div class="text-center py-10">
+                <div class="text-muted mb-3">请选择业务员或组别查看客户跟踪明细</div>
+            </div>
+            {% else %}
+            <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                <table class="table table-sm table-striped" id="trackingTable">
+                    <thead>
+                        <tr>
+                            <th style="position: sticky; left: 0; background: #fff; z-index: 1; width: 20px;">组别</th>
+                            <th style="position: sticky; left: 20px; background: #fff; z-index: 1; width: 20px;">业务员</th>
+                            <th style="position: sticky; left: 40px; background: #fff; z-index: 1; width: 30px;">客户昵称</th>
+                            <th style="position: sticky; left: 70px; background: #fff; z-index: 1; width: 60px;">跟进状态</th>
+                            {% for date in dates %}
+                            <th style="width: 40px; text-align: center;">{{ date }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows_data %}
+                        <tr style="cursor: pointer;" onclick="showCustomerDetail({{ loop.index0 }})" data-row-index="{{ loop.index0 }}">
+                            <td style="position: sticky; left: 0; background: #fff; z-index: 1;">{{ row.group_name }}</td>
+                            <td style="position: sticky; left: 20px; background: #fff; z-index: 1;">{{ row.salesman_name }}</td>
+                            <td style="position: sticky; left: 40px; background: #fff; z-index: 1;">{{ row.nickname }}</td>
+                            <td style="position: sticky; left: 70px; background: #fff; z-index: 1;" class="follow-status">
+                                {% if row.is_followed %}
+                                <span class="badge bg-success">已跟进</span>
+                                {% else %}
+                                <span class="badge bg-secondary">未跟进</span>
+                                {% endif %}
+                            </td>
+                            {% for date in dates %}
+                            <td style="text-align: center; {% if row.dates.get(date) and row.dates[date].play_status == 1 %}background-color: #32CD32; color: white;{% elif row.dates.get(date) and row.dates[date].play_status == 2 %}background-color: #FFFF00;{% elif row.dates.get(date) %}background-color: #FF0000; color: white;{% endif %}">
+                                {% if row.dates.get(date) %}
+                                {% if row.dates[date].call_duration > 0 %}{{ row.dates[date].play_status }}（{{ (row.dates[date].call_duration // 60) }}分{{ row.dates[date].call_duration % 60 }}秒）{% else %}{{ row.dates[date].play_status }}{% endif %}
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- 分页控件 -->
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div class="text-muted">共 {{ total_records }} 条记录</div>
+                <div class="d-flex gap-2 align-items-center">
+                    <!-- 每页显示条数 -->
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="text-muted">每页显示:</span>
+                        <select class="form-select form-select-sm" onchange="changePageSize(this.value)">
+                            <option value="20" {% if page_size == 20 %}selected{% endif %}>20</option>
+                            <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+                            <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+                            <option value="500" {% if page_size == 500 %}selected{% endif %}>500</option>
+                        </select>
+                    </div>
+                    <!-- 分页按钮 -->
+                    {% if total_pages > 1 %}
+                    <nav>
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                                <a class="page-link" href="?page={{ page - 1 }}&page_size={{ page_size }}{% if selected_group %}&group_id={{ selected_group }}{% endif %}{% if selected_salesman %}&salesman_id={{ selected_salesman }}{% endif %}{% if selected_nickname %}&nickname={{ selected_nickname }}{% endif %}{% if selected_followed %}&is_followed={{ selected_followed }}{% endif %}">上一页</a>
+                            </li>
+                            {% for p in range(1, total_pages + 1) %}
+                            <li class="page-item {% if p == page %}active{% endif %}">
+                                <a class="page-link" href="?page={{ p }}&page_size={{ page_size }}{% if selected_group %}&group_id={{ selected_group }}{% endif %}{% if selected_salesman %}&salesman_id={{ selected_salesman }}{% endif %}{% if selected_nickname %}&nickname={{ selected_nickname }}{% endif %}{% if selected_followed %}&is_followed={{ selected_followed }}{% endif %}">{{ p }}</a>
+                            </li>
+                            {% endfor %}
+                            <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                                <a class="page-link" href="?page={{ page + 1 }}&page_size={{ page_size }}{% if selected_group %}&group_id={{ selected_group }}{% endif %}{% if selected_salesman %}&salesman_id={{ selected_salesman }}{% endif %}{% if selected_nickname %}&nickname={{ selected_nickname }}{% endif %}{% if selected_followed %}&is_followed={{ selected_followed }}{% endif %}">下一页</a>
+                            </li>
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+            </div>
+            
+            {% if not show_data %}
+            <div class="text-center text-muted py-10">请选择业务员或组别查看客户跟踪明细</div>
+            {% elif rows_data|length == 0 %}
+            <div class="text-center text-muted py-10">暂无数据</div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 客户详情弹窗 -->
+<div class="modal fade" id="customerDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-person me-2"></i>客户详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="customerDetailContent">
+                <!-- 内容将通过JavaScript填充 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="saveCustomerBtn" class="btn btn-success" onclick="saveCustomerInfo()">
+                    <i class="bi bi-check me-1"></i>保存
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 存储客户数据的JSON -->
+<script type="application/json" id="customerData">
+{{ rows_data|tojson }}
+</script>
+<script type="application/json" id="datesData">
+{{ dates|tojson }}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadStatsByDate() {
+    const dateVal = document.getElementById('statsDate').value;
+    const groupId = '{{ selected_group or '' }}';
+    const salesmanId = '{{ selected_salesman or '' }}';
+    let url = '?page=1&page_size={{ page_size }}&stats_date=' + dateVal;
+    if (groupId) url += '&group_id=' + groupId;
+    if (salesmanId) url += '&salesman_id=' + salesmanId;
+    window.location.href = url;
+}
+
+function saveAllStats() {
+    const dateVal = document.getElementById('statsDate').value;
+    const table = document.getElementById('salesmanStatsTable');
+    const rows = table.querySelectorAll('tbody tr');
+    const statsData = [];
+    
+    rows.forEach(row => {
+        const userId = row.dataset.userId;
+        const canEdit = row.dataset.canEdit === 'true';
+        if (!canEdit) return;
+        
+        const totalInput = row.querySelector('[data-field="total_incoming"]');
+        const touchedInput = row.querySelector('[data-field="touched_count"]');
+        const activatedInput = row.querySelector('[data-field="activated_count"]');
+        const completedInput = row.querySelector('[data-field="completed_count"]');
+        const noteInput = row.querySelector('[data-field="note"]');
+        
+        statsData.push({
+            user_id: parseInt(userId),
+            date: dateVal,
+            total_incoming: parseInt(totalInput.value) || 0,
+            touched_count: parseInt(touchedInput.value) || 0,
+            activated_count: parseInt(activatedInput.value) || 0,
+            completed_count: parseInt(completedInput.value) || 0,
+            note: noteInput.value || ''
+        });
+    });
+    
+    fetch('{{ url_for("behavior.batch_save_stats") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ stats: statsData })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            showToast('保存成功', 'success');
+            // 更新百分比显示和统计数值
+            result.updated_stats.forEach(stat => {
+                const row = document.querySelector(`tr[data-user-id="${stat.user_id}"]`);
+                if (row) {
+                    const rateSpans = row.querySelectorAll('.rate-value');
+                    if (rateSpans[0]) rateSpans[0].textContent = stat.activated_rate + '%';  // 激活率
+                    if (rateSpans[1]) rateSpans[1].textContent = stat.touched_rate + '%';  // 触达率
+                    if (rateSpans[2]) rateSpans[2].textContent = stat.completed_rate + '%';  // 完播率
+                    
+                    // 更新触达数和完播数为从客户明细汇总的数据
+                    const inputs = row.querySelectorAll('input');
+                    if (inputs[2]) inputs[2].value = stat.touched_count;  // 触达数 (现在在第3个位置)
+                    if (inputs[3]) inputs[3].value = stat.completed_count;  // 完播数
+                }
+            });
+        } else {
+            showToast('保存失败', 'danger');
+        }
+    })
+    .catch(err => {
+        showToast('保存失败', 'danger');
+        console.error(err);
+    });
+}
+
+function copySalesmanStats() {
+    const table = document.getElementById('salesmanStatsTable');
+    let text = '';
+    
+    // 复制表头
+    const headers = table.querySelectorAll('thead th');
+    const headerRow = [];
+    headers.forEach((th, index) => {
+        if (index === 0 || index === 1 || index >= 2) { // 包含所有列
+            headerRow.push(th.textContent.trim());
+        }
+    });
+    text += headerRow.join('\t') + '\n';
+    
+    // 复制数据行
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        const dataRow = [];
+        const cells = row.querySelectorAll('td');
+        cells.forEach((cell, index) => {
+            const input = cell.querySelector('input');
+            if (input) {
+                dataRow.push(input.value);
+            } else {
+                const rate = cell.querySelector('.rate-value');
+                if (rate) {
+                    dataRow.push(rate.textContent);
+                } else {
+                    dataRow.push(cell.textContent.trim());
+                }
+            }
+        });
+        text += dataRow.join('\t') + '\n';
+    });
+    
+    // 复制汇总行
+    const footerRows = table.querySelectorAll('tfoot tr');
+    footerRows.forEach(row => {
+        const dataRow = [];
+        const cells = row.querySelectorAll('td');
+        cells.forEach((cell, index) => {
+            // 跳过合并的单元格（colspan > 1），用空字符串代替以对齐
+            if (cell.colSpan > 1) {
+                for (let i = 0; i < cell.colSpan; i++) {
+                    dataRow.push('');
+                }
+            } else {
+                const rate = cell.querySelector('.rate-value');
+                if (rate) {
+                    dataRow.push(rate.textContent);
+                } else {
+                    dataRow.push(cell.textContent.trim());
+                }
+            }
+        });
+        text += dataRow.join('\t') + '\n';
+    });
+    
+    // 复制到剪贴板 - 兼容多种方式
+    if (navigator.clipboard && window.isSecureContext) {
+        // 使用现代 Clipboard API
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('复制成功', 'success');
+        }).catch(err => {
+            fallbackCopy(text);
+        });
+    } else {
+        // 使用传统方式
+        fallbackCopy(text);
+    }
+    
+    function fallbackCopy(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                showToast('复制成功', 'success');
+            } else {
+                showToast('复制失败', 'danger');
+            }
+        } catch (err) {
+            showToast('复制失败', 'danger');
+            console.error('复制失败:', err);
+        }
+        document.body.removeChild(textArea);
+    }
+}
+
+function changePageSize(newSize) {
+    const dateVal = document.getElementById('statsDate').value;
+    let url = '?page=1&page_size=' + newSize + '&stats_date=' + dateVal;
+    if ('{{ selected_group or '' }}') url += '&group_id={{ selected_group or '' }}';
+    if ('{{ selected_salesman or '' }}') url += '&salesman_id={{ selected_salesman or '' }}';
+    if ('{{ selected_nickname or '' }}') url += '&nickname={{ selected_nickname or '' }}';
+    if ('{{ selected_followed or '' }}') url += '&is_followed={{ selected_followed or '' }}';
+    window.location.href = url;
+}
+
+function showCustomerDetail(rowIndex) {
+    // 从JSON获取数据
+    const customerData = JSON.parse(document.getElementById('customerData').textContent);
+    const dates = JSON.parse(document.getElementById('datesData').textContent);
+    
+    const row = customerData[rowIndex];
+    if (!row) return;
+    
+    // 存储当前客户数据和索引供编辑使用
+    window.currentCustomerData = row;
+    window.currentCustomerRowIndex = rowIndex;
+    
+    // 计算统计信息
+    let completedCount = 0;
+    let touchedCount = 0;
+    let totalCallDuration = 0;
+    let totalDays = 0;
+    
+    dates.forEach(date => {
+        const record = row.dates[date];
+        if (record) {
+            totalDays++;
+            if (record.play_status === 1) completedCount++;
+            if (record.call_duration > 0) touchedCount++;
+            totalCallDuration += record.call_duration;
+        }
+    });
+    
+    // 构建HTML内容
+    let content = `
+        <!-- 客户信息 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <span><i class="bi bi-info-circle me-2"></i>基本信息</span>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="text-muted small">客户昵称</label>
+                        <div class="fw-bold">${row.nickname}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-muted small">所属业务员</label>
+                        <div class="fw-bold">${row.salesman_name || '-'}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-muted small">所属组别</label>
+                        <div class="fw-bold">${row.group_name || '-'}</div>
+                    </div>
+                </div>
+                <hr>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted">客户名</label>
+                        <input type="text" class="form-control form-control-sm" id="edit_customer_name" value="${row.customer_name || ''}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted">性别</label>
+                        <select class="form-select form-select-sm" id="edit_gender">
+                            <option value="">请选择</option>
+                            <option value="男" ${row.gender === '男' ? 'selected' : ''}>男</option>
+                            <option value="女" ${row.gender === '女' ? 'selected' : ''}>女</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted">年龄</label>
+                        <input type="number" class="form-control form-control-sm" id="edit_age" value="${row.age || ''}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted">电话</label>
+                        <input type="text" class="form-control form-control-sm" id="edit_phone" value="${row.phone || ''}">
+                    </div>
+                </div>
+                <div class="row g-3 mt-2">
+                    <div class="col-md-12">
+                        <label class="form-label small text-muted">地址</label>
+                        <input type="text" class="form-control form-control-sm" id="edit_address" value="${row.address || ''}">
+                    </div>
+                </div>
+                <div class="row g-3 mt-2">
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted">身体情况</label>
+                        <textarea class="form-control form-control-sm" id="edit_health_condition" rows="2">${row.health_condition || ''}</textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted">用药情况</label>
+                        <textarea class="form-control form-control-sm" id="edit_medication_status" rows="2">${row.medication_status || ''}</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 统计信息 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <span><i class="bi bi-bar-chart me-2"></i>统计信息</span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="text-muted small">记录天数</div>
+                        <div class="fw-bold fs-4">${totalDays}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">完播天数</div>
+                        <div class="fw-bold fs-4 text-primary">${completedCount}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">触达天数</div>
+                        <div class="fw-bold fs-4 text-success">${touchedCount}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">总通话时长</div>
+                        <div class="fw-bold fs-4">${Math.floor(totalCallDuration / 60)}分${totalCallDuration % 60}秒</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 详细记录 -->
+        <div class="card">
+            <div class="card-header">
+                <span><i class="bi bi-list me-2"></i>行为轨迹记录</span>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th>观看状态</th>
+                                <th>通话时长</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+    `;
+    
+    // 添加每日记录
+    dates.forEach(date => {
+        const record = row.dates[date];
+        let statusHtml = '';
+        let durationHtml = '-';
+        
+        if (record) {
+            if (record.play_status === 1) {
+                statusHtml = '<span class="badge" style="background-color: #32cd32; color: white;">完播</span>';
+            } else if (record.play_status === 2) {
+                statusHtml = '<span class="badge bg-warning text-dark">未完播</span>';
+            } else {
+                statusHtml = '<span class="badge bg-danger">未观看</span>';
+            }
+            
+            if (record.call_duration > 0) {
+                durationHtml = `${Math.floor(record.call_duration / 60)}分${record.call_duration % 60}秒`;
+            }
+        } else {
+            statusHtml = '<span class="badge bg-secondary">无记录</span>';
+        }
+        
+        content += `
+            <tr>
+                <td>${date}</td>
+                <td>${statusHtml}</td>
+                <td>${durationHtml}</td>
+            </tr>
+        `;
+    });
+    
+    content += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // 更新弹窗内容
+    document.getElementById('customerDetailContent').innerHTML = content;
+    
+    // 显示弹窗
+    const modal = new bootstrap.Modal(document.getElementById('customerDetailModal'));
+    modal.show();
+}
+
+// 保存客户信息
+function saveCustomerInfo() {
+    const row = window.currentCustomerData;
+    const rowIndex = window.currentCustomerRowIndex;
+    
+    // 获取表单值
+    const customer_name = document.getElementById('edit_customer_name').value;
+    const gender = document.getElementById('edit_gender').value;
+    const age = parseInt(document.getElementById('edit_age').value) || 0;
+    const phone = document.getElementById('edit_phone').value;
+    const address = document.getElementById('edit_address').value;
+    const health_condition = document.getElementById('edit_health_condition').value;
+    const medication_status = document.getElementById('edit_medication_status').value;
+    
+    const formData = {
+        user_id: row.user_id,
+        nickname: row.nickname,
+        customer_name: customer_name,
+        gender: gender,
+        age: age,
+        phone: phone,
+        address: address,
+        health_condition: health_condition,
+        medication_status: medication_status
+    };
+    
+    console.log('[DEBUG] 发送的数据:', formData);
+    
+    fetch('{{ url_for('behavior.save_customer_info') }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('网络请求失败');
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('[DEBUG] 后端返回:', data);
+        if (data.success) {
+            // 确保更新原始数据源
+            const customerData = JSON.parse(document.getElementById('customerData').textContent);
+            if (customerData[rowIndex]) {
+                customerData[rowIndex].customer_name = customer_name;
+                customerData[rowIndex].gender = gender;
+                customerData[rowIndex].age = age;
+                customerData[rowIndex].phone = phone;
+                customerData[rowIndex].address = address;
+                customerData[rowIndex].health_condition = health_condition;
+                customerData[rowIndex].medication_status = medication_status;
+                customerData[rowIndex].is_followed = true;
+                // 更新DOM中的数据源
+                document.getElementById('customerData').textContent = JSON.stringify(customerData);
+            }
+            
+            // 更新当前使用的数据
+            row.customer_name = customer_name;
+            row.gender = gender;
+            row.age = age;
+            row.phone = phone;
+            row.address = address;
+            row.health_condition = health_condition;
+            row.medication_status = medication_status;
+            row.is_followed = true;
+            
+            // 更新列表显示
+            updateRowFollowStatus(rowIndex, true);
+            
+            alert('保存成功！');
+        } else {
+            alert('保存失败：' + (data.message || '未知错误'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('保存失败，请重试：' + error.message);
+    });
+}
+
+// 更新列表行的跟进状态显示
+function updateRowFollowStatus(rowIndex, isFollowed) {
+    const table = document.querySelector('#trackingTable tbody');
+    if (table) {
+        const rows = table.querySelectorAll('tr');
+        if (rows[rowIndex]) {
+            const followCell = rows[rowIndex].querySelector('.follow-status');
+            if (followCell) {
+                if (isFollowed) {
+                    followCell.innerHTML = '<span class="badge bg-success">已跟进</span>';
+                } else {
+                    followCell.innerHTML = '<span class="badge bg-secondary">未跟进</span>';
+                }
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

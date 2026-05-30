@@ -81,12 +81,12 @@
 
 
 <!-- 业务员统计 -->
-{% if uploader_stats %}
 <div class="card mb-4">
     <div class="card-header">
         <h6 class="mb-0"><i class="bi bi-person-check"></i> {{ selected_date.strftime('%Y-%m-%d') if selected_date else '' }} 业务员统计</h6>
     </div>
     <div class="card-body">
+        {% if uploader_stats %}
         <div class="table-responsive">
             <table class="table table-sm table-hover mb-0">
                 <thead>
@@ -102,16 +102,20 @@
                     <tr style="cursor: pointer;" onclick="showSalesmanDetailModal({{ uploader_id if uploader_id else 0 }}, '{{ stats.name }}')">
                         <td><strong>{{ stats.name }}</strong></td>
                         <td>{{ stats.count }}</td>
-                        <td>{{ stats.duration | format_duration }}</td>
-                        <td>{{ (stats.duration // stats.count if stats.count > 0 else 0) | format_duration }}</td>
+                        <td>{{ stats.duration | format_duration if stats.duration else '-' }}</td>
+                        <td>{{ ((stats.duration // stats.count) if stats.count > 0 else 0) | format_duration }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+        {% else %}
+        <div class="text-center text-muted py-3">
+            <i class="bi bi-inbox"></i> 暂无通话记录
+        </div>
+        {% endif %}
     </div>
 </div>
-{% endif %}
 
 <!-- 业务员通话详情模态框 -->
 <div class="modal fade" id="salesmanDetailModal" tabindex="-1">
@@ -233,6 +237,8 @@ function exportRecords() {
     window.location.href = '/wework/api/export?date=' + dateValue;
 }
 
+let showAllOnlineUsers = false;
+
 function refreshOnlineUsers() {
     const listEl = document.getElementById('onlineUsersList');
     const countEl = document.getElementById('onlineCount');
@@ -248,29 +254,49 @@ function refreshOnlineUsers() {
                 return;
             }
             
-            let html = '<div class="row g-2">';
-            data.online_users.forEach(user => {
+            const maxVisible = showAllOnlineUsers ? data.online_users.length : 10; // 默认只显示10个（2行5列）
+            let html = '<div class="d-flex flex-wrap" style="gap: 0.5rem;">';
+            
+            for (let i = 0; i < Math.min(maxVisible, data.online_users.length); i++) {
+                const user = data.online_users[i];
                 html += `
-                    <div class="col-md-4 col-lg-3">
-                        <div class="border rounded p-2 bg-light">
+                    <div style="width: calc(20% - 0.4rem); min-width: 140px;">
+                        <div class="border rounded p-2 bg-light h-100">
                             <div class="d-flex align-items-center">
                                 <span class="badge bg-success me-2"><i class="bi bi-circle-fill" style="font-size: 8px;"></i></span>
                                 <strong>${user.user_name || '未知用户'}</strong>
                             </div>
                             <div class="text-muted small mt-1">
                                 ${user.computer_name ? '<i class="bi bi-pc"></i> ' + user.computer_name + '<br>' : ''}
-                                <i class="bi bi-clock"></i> 最后心跳: ${user.last_heartbeat}
+                                <i class="bi bi-clock"></i> ${user.last_heartbeat}
                             </div>
                         </div>
                     </div>
                 `;
-            });
+            }
             html += '</div>';
+            
+            // 如果超过10个，显示展开/收起按钮
+            if (data.online_users.length > 10) {
+                html += `
+                    <div class="text-center mt-2">
+                        <button class="btn btn-sm btn-outline-primary" onclick="toggleShowAllOnlineUsers(this)">
+                            ${showAllOnlineUsers ? '<i class="bi bi-chevron-up"></i> 收起' : '<i class="bi bi-chevron-down"></i> 查看全部 (' + data.online_users.length + ')'}
+                        </button>
+                    </div>
+                `;
+            }
+            
             listEl.innerHTML = html;
         })
         .catch(err => {
             listEl.innerHTML = '<div class="text-center text-danger"><i class="bi bi-exclamation-triangle"></i> 加载失败</div>';
         });
+}
+
+function toggleShowAllOnlineUsers(btn) {
+    showAllOnlineUsers = !showAllOnlineUsers;
+    refreshOnlineUsers();
 }
 
 function refreshOnlineUsersAuto() {

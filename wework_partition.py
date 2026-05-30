@@ -133,13 +133,16 @@ def get_records_by_date(target_date, uploader_id=None, visible_uploader_ids=None
     """
     获取指定日期的通话记录
     """
-    # 先检查分表是否存在
+    # 先检查分表是否存在，如果不存在则创建
     suffix = get_table_suffix(target_date)
     table_name = f'wework_call_record_{suffix}'
     inspector = inspect(db.engine)
     tables = inspector.get_table_names()
+    
+    # 如果分表不存在，先创建
     if table_name not in tables:
-        return []
+        print(f'[分表] 自动创建分表: {table_name}')
+        get_partition_model(target_date)
     
     PartitionModel = get_partition_model(target_date)
     
@@ -158,17 +161,16 @@ def get_stats_by_date(target_date, visible_uploader_ids=None):
     """
     获取指定日期的统计数据
     """
-    # 先检查分表是否存在
+    # 先检查分表是否存在，如果不存在则创建
     suffix = get_table_suffix(target_date)
     table_name = f'wework_call_record_{suffix}'
     inspector = inspect(db.engine)
     tables = inspector.get_table_names()
+    
+    # 如果分表不存在，先创建
     if table_name not in tables:
-        return {
-            'total_count': 0,
-            'total_duration': 0,
-            'uploader_stats': []
-        }
+        print(f'[分表] 自动创建分表: {table_name}')
+        get_partition_model(target_date)
     
     PartitionModel = get_partition_model(target_date)
     

@@ -158,12 +158,16 @@ class Order(db.Model):
     paid_amount = db.Column(db.String(200))  # 已付定金（文本，如"100企微410"）
     pay_date = db.Column(db.Date)  # 付款日期
     collect_amount = db.Column(db.Float)  # 代收金额
+    gender = db.Column(db.String(10))  # 性别（非必填）
     # 赠品信息
     has_gift = db.Column(db.Boolean, default=False)  # 是否有赠品
     gift_info = db.Column(db.String(200))  # 赠品内容
     # 物流信息
     logistics_status = db.Column(db.String(20), default='已发货')  # 已发货、派送中、待派送、已签收、拒签、退回已签收
     sign_time = db.Column(db.DateTime)  # 签收时间（顺丰API返回）
+    # 物流异常标识
+    logistics_warning = db.Column(db.Boolean, default=False)  # 是否有物流异常
+    logistics_warning_remark = db.Column(db.Text)  # 物流异常备注
     # 关联组别（冗余存储，方便查询）
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'))
     # 时间戳
@@ -178,6 +182,23 @@ class Order(db.Model):
 
     salesman = db.relationship('User', backref=db.backref('orders', lazy=True))
     group = db.relationship('Group', backref=db.backref('orders', lazy=True))
+    
+    @property
+    def salesman_name(self):
+        """获取业务员姓名"""
+        if self.salesman:
+            return self.salesman.name
+        return ''
+    
+    @property
+    def status_text(self):
+        """获取状态文本"""
+        status_map = {
+            'draft': '草稿',
+            'submitted': '待发货',
+            'shipped': self.logistics_status or '已发货'
+        }
+        return status_map.get(self.status, self.status)
 
 
 class Notification(db.Model):
@@ -267,6 +288,7 @@ class CustomerFollowUp(db.Model):
     gender = db.Column(db.String(10), default='')  # 性别
     phone = db.Column(db.String(50), default='')  # 电话
     address = db.Column(db.String(500), default='')  # 地址
+    category = db.Column(db.String(100), default='')  # 产品类别
     purchased_products = db.Column(db.String(500), default='')  # 已购产品（主品+数量）
     amount = db.Column(db.String(50), default='')  # 金额
     customer_status = db.Column(db.String(500), default='')  # 客户情况
@@ -354,3 +376,72 @@ class WeworkCallRecord(db.Model):
     create_time = db.Column(db.DateTime, default=_now_bj)
     
     uploader = db.relationship('User', backref=db.backref('wework_call_records', lazy=True))
+
+
+class SalesmanDailyStats(db.Model):
+    """业务员每日统计（手动填写）"""
+    __tablename__ = 'salesman_daily_stats'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    date = db.Column(db.Date, nullable=False)  # 统计日期
+    total_incoming = db.Column(db.Integer, default=0)  # 总进线
+    touched_count = db.Column(db.Integer, default=0)  # 触达数
+    activated_count = db.Column(db.Integer, default=0)  # 激活数
+    completed_count = db.Column(db.Integer, default=0)  # 完播数
+    note = db.Column(db.Text)  # 备注
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    update_time = db.Column(db.DateTime, default=_now_bj, onupdate=_now_bj)
+    
+    user = db.relationship('User', backref=db.backref('daily_stats', lazy=True))
+    
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'date', name='unique_user_date'),
+    )
+
+
+class BehaviorTrackingRecord(db.Model):
+    """行为轨迹记录模型"""
+    __tablename__ = 'behavior_tracking_record'
+    __table_args__ = (
+        db.Index('idx_bt_user_nickname', 'user_id', 'nickname'),
+        db.Index('idx_bt_date', 'month', 'day'),
+        db.Index('idx_bt_user_date', 'user_id', 'month', 'day'),
+    )
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    nickname = db.Column(db.String(200), nullable=False)
+    month = db.Column(db.Integer, nullable=False)
+    day = db.Column(db.Integer, nullable=False)
+    play_status = db.Column(db.Integer, nullable=False, default=3)
+    call_duration_seconds = db.Column(db.Integer, default=0)
+    play_order = db.Column(db.Integer, default=0)
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    update_time = db.Column(db.DateTime, default=_now_bj, onupdate=_now_bj)
+    
+    user = db.relationship('User', backref=db.backref('behavior_tracking_records', lazy=True))
+
+
+class CustomerInfo(db.Model):
+    """客户详细信息"""
+    __tablename__ = 'customer_info'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    nickname = db.Column(db.String(200), nullable=False)
+    customer_name = db.Column(db.String(100), default='')  # 客户名
+    gender = db.Column(db.String(10), default='')  # 性别
+    age = db.Column(db.Integer, default=0)  # 年龄
+    address = db.Column(db.String(500), default='')  # 地址
+    phone = db.Column(db.String(50), default='')  # 电话
+    health_condition = db.Column(db.Text, default='')  # 身体情况
+    medication_status = db.Column(db.Text, default='')  # 用药情况
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    update_time = db.Column(db.DateTime, default=_now_bj, onupdate=_now_bj)
+    
+    user = db.relationship('User', backref=db.backref('customer_infos', lazy=True))
+    
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'nickname', name='unique_user_nickname'),
+    )

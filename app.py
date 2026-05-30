@@ -25,16 +25,20 @@ def from_json_filter(value):
 @app.template_filter('format_duration')
 def format_duration_filter(seconds):
     """格式化时长显示"""
-    if not seconds:
+    try:
+        if not seconds:
+            return '-'
+        seconds = int(seconds)
+        minutes, secs = divmod(seconds, 60)
+        hours, mins = divmod(minutes, 60)
+        if hours > 0:
+            return f'{hours}时{mins}分{secs}秒'
+        elif minutes > 0:
+            return f'{mins}分{secs}秒'
+        else:
+            return f'{secs}秒'
+    except (ValueError, TypeError):
         return '-'
-    minutes, secs = divmod(seconds, 60)
-    hours, mins = divmod(minutes, 60)
-    if hours > 0:
-        return f'{hours}时{mins}分{secs}秒'
-    elif minutes > 0:
-        return f'{mins}分{secs}秒'
-    else:
-        return f'{secs}秒'
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -107,12 +111,12 @@ def run_migrations():
     # user表迁移
     user_columns = [col['name'] for col in inspector.get_columns('user')]
     if 'roles' not in user_columns:
-        db.session.execute(text("ALTER TABLE user ADD COLUMN roles VARCHAR(100) DEFAULT 'salesman'"))
-        db.session.execute(text("UPDATE user SET roles = role"))
+        db.session.execute(text("ALTER TABLE `user` ADD COLUMN roles VARCHAR(100) DEFAULT 'salesman'"))
+        db.session.execute(text("UPDATE `user` SET roles = role"))
         db.session.commit()
         print('[迁移] 已添加roles列，数据已从role迁移')
     if 'can_dingtalk_export' not in user_columns:
-        db.session.execute(text('ALTER TABLE user ADD COLUMN can_dingtalk_export BOOLEAN DEFAULT 0'))
+        db.session.execute(text('ALTER TABLE `user` ADD COLUMN can_dingtalk_export TINYINT(1) DEFAULT 0'))
         db.session.commit()
         print('[迁移] 已添加can_dingtalk_export列')
     
@@ -147,7 +151,7 @@ def run_migrations():
     try:
         order_columns = [col['name'] for col in inspector.get_columns('order')]
         if 'sign_time' not in order_columns:
-            db.session.execute(text("ALTER TABLE order ADD COLUMN sign_time DATETIME"))
+            db.session.execute(text("ALTER TABLE `order` ADD COLUMN sign_time DATETIME"))
             db.session.commit()
             print('[迁移] 已添加order.sign_time列')
     except Exception:
@@ -161,22 +165,22 @@ def run_migrations():
             # 更新现有文件记录的group_id（从上传者的group_id获取）
             db.session.execute(text("""
                 UPDATE tool_file 
-                SET group_id = (SELECT group_id FROM user WHERE user.id = tool_file.uploader_id)
+                SET group_id = (SELECT group_id FROM `user` WHERE `user`.id = tool_file.uploader_id)
             """))
             db.session.commit()
             print('[迁移] 已添加tool_file.group_id列')
     except Exception:
         pass  # tool_file表可能不存在
     
-    # 创建order_reminder表
+    # 创建order_reminder表（MySQL语法兼容）
     try:
         db.session.execute(text("""
             CREATE TABLE IF NOT EXISTS order_reminder (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
                 order_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
                 expected_shipping_time DATETIME NOT NULL,
-                is_sent BOOLEAN DEFAULT 0,
+                is_sent TINYINT(1) DEFAULT 0,
                 sent_time DATETIME,
                 create_time DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -184,7 +188,8 @@ def run_migrations():
         db.session.commit()
         print('[迁移] 已创建order_reminder表')
     except Exception as e:
-        print(f'[迁移] order_reminder表创建/检查: {e}')
+        if 'already exists' not in str(e).lower():
+            print(f'[迁移] order_reminder表创建/检查: {e}')
 
 
 def init_db():
@@ -206,6 +211,10 @@ scheduler.start()
 # ============ 初始化数据库 ============
 with app.app_context():
     init_db()
+
+# ============ 初始化企微通话配置 ============
+from routes_wework import init_call_recording_config
+init_call_recording_config(app)
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)

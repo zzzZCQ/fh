@@ -1286,3 +1286,145 @@ def export_team_performance():
     filename = f'团队业绩报表_{year}年{month}月.xlsx'
     return send_file(output, as_attachment=True, download_name=filename,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ==================== 产品维度 API ====================
+@bp.route('/admin/team_performance/api/product_overview')
+@role_required('admin')
+def product_overview():
+    """产品维度概览API - 简化版，确保不会卡死"""
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    group_id = request.args.get('group_id', type=int)
+    
+    if not year or not month:
+        now = _now_bj()
+        year, month = now.year, now.month
+    
+    # 计算月份范围
+    start_date = datetime(year, month, 1)
+    end_date = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
+    
+    # 获取管理的用户ID列表
+    user_ids = get_managed_user_ids(group_id)
+    if not user_ids:
+        return jsonify({
+            'total_amount': 0,
+            'total_count': 0,
+            'signed_amount': 0,
+            'signed_count': 0,
+            'products': []
+        })
+    
+    # 获取主产品类别列表
+    main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
+    main_cat_names = {c.name for c in main_categories}
+    
+    # 当月所有订单（根据create_time判断）
+    all_orders = Order.query.filter(
+        Order.salesman_id.in_(user_ids),
+        Order.status.in_(['draft', 'submitted', 'shipped']),
+        Order.logistics_status != '退回已签收',
+        Order.create_time >= start_date,
+        Order.create_time <= end_date
+    ).all()
+    
+    # 当月已签收订单（根据sign_time判断）
+    signed_orders = Order.query.filter(
+        Order.salesman_id.in_(user_ids),
+        Order.status == 'shipped',
+        Order.logistics_status == '已签收',
+        Order.sign_time >= start_date,
+        Order.sign_time <= end_date
+    ).all()
+    
+    # 统计产品数据
+    product_stats = {}
+    total_amount = 0
+    total_count = 0
+    signed_amount = 0
+    signed_count = 0
+    male_count = 0
+    female_count = 0
+    unknown_gender_count = 0
+    
+    # 统计所有订单
+    for order in all_orders:
+        category = order.category or '未知产品'
+        # 只统计主产品
+        if category not in main_cat_names:
+            continue
+        # 计算订单金额
+        paid_str = str(order.paid_amount or '')
+        paid_num = float(re.match(r'[\d.]+', paid_str).group()) if re.match(r'[\d.]+', paid_str) else 0
+        collect_num = float(order.collect_amount or 0)
+        amount = paid_num + collect_num
+        
+        if amount <= 0:
+            continue  # 金额为0的订单不统计
+        
+        if category not in product_stats:
+            product_stats[category] = {
+                'category': category,
+                'total_amount': 0,
+                'total_count': 0,
+                'signed_amount': 0,
+                'signed_count': 0,
+                'male_count': 0,
+                'female_count': 0,
+                'unknown_gender_count': 0
+            }
+        
+        product_stats[category]['total_amount'] += amount
+        product_stats[category]['total_count'] += 1
+        
+        # 统计性别
+        gender = order.gender or ''
+        if gender == '男':
+            product_stats[category]['male_count'] += 1
+            male_count += 1
+        elif gender == '女':
+            product_stats[category]['female_count'] += 1
+            female_count += 1
+        else:
+            product_stats[category]['unknown_gender_count'] += 1
+            unknown_gender_count += 1
+        
+        # 总体统计
+        total_amount += amount
+        total_count += 1
+    
+    # 统计已签收订单
+    for order in signed_orders:
+        category = order.category or '未知产品'
+        # 只统计主产品
+        if category not in main_cat_names:
+            continue
+        # 计算订单金额
+        paid_str = str(order.paid_amount or '')
+        paid_num = float(re.match(r'[\d.]+', paid_str).group()) if re.match(r'[\d.]+', paid_str) else 0
+        collect_num = float(order.collect_amount or 0)
+        amount = paid_num + collect_num
+        
+        if amount <= 0:
+            continue
+        
+        if category in product_stats:
+            product_stats[category]['signed_amount'] += amount
+            product_stats[category]['signed_count'] += 1
+        
+        # 总体统计
+        signed_amount += amount
+        signed_count += 1
+    
+    # 转换为列表并按总金额排序
+    products_list = list(product_stats.values())
+    products_list.sort(key=lambda x: x['total_amount'], reverse=True)
+    
+    return jsonify({
+        'total_amount': total_amount,
+        'total_count': total_count,
+        'signed_amount': signed_amount,
+        'signed_count': signed_count,
+        'products': products_list
+    })

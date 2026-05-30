@@ -33,19 +33,14 @@ def batch_import_page():
 @bp.route('/admin/import_template/upload', methods=['POST'])
 @role_required('admin')
 def upload_import_template():
-    """上传导入模板"""
+    """上传导入模板（支持从现有模板复制）"""
     category_id = request.form.get('category_id', type=int)
     file = request.files.get('file')
+    copy_from_template_id = request.form.get('copy_from_template_id', type=int)
 
     if not category_id:
         flash('请选择产品类别！', 'danger')
-        return redirect(url_for('import_routes.batch_import_page'))
-    if not file or file.filename == '':
-        flash('请选择文件！', 'danger')
-        return redirect(url_for('import_routes.batch_import_page'))
-    if not allowed_file(file.filename):
-        flash('只允许上传Excel文件（.xlsx, .xls）！', 'danger')
-        return redirect(url_for('import_routes.batch_import_page'))
+        return redirect(url_for('templates.admin_templates'))
 
     # 收集字段映射
     field_mapping = {}
@@ -64,11 +59,35 @@ def upload_import_template():
 
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-    filename = secure_filename(file.filename)
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    saved_name = f"import_{category_id}_{timestamp}_{filename}"
-    filepath = os.path.join(UPLOAD_FOLDER, saved_name)
-    file.save(filepath)
+    filename = None
+    filepath = None
+
+    # 处理文件：优先使用复制的文件，否则上传新文件
+    if copy_from_template_id:
+        # 从现有模板复制
+        source_template = ImportTemplate.query.get(copy_from_template_id)
+        if source_template and os.path.exists(source_template.filepath):
+            filename = source_template.filename
+            # 创建新文件名（添加时间戳）
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            saved_name = f"import_{category_id}_{timestamp}_{filename}"
+            filepath = os.path.join(UPLOAD_FOLDER, saved_name)
+            # 复制文件
+            import shutil
+            shutil.copy2(source_template.filepath, filepath)
+    elif file and file.filename:
+        # 上传新文件
+        if not allowed_file(file.filename):
+            flash('只允许上传Excel文件（.xlsx, .xls）！', 'danger')
+            return redirect(url_for('templates.admin_templates'))
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        saved_name = f"import_{category_id}_{timestamp}_{filename}"
+        filepath = os.path.join(UPLOAD_FOLDER, saved_name)
+        file.save(filepath)
+    else:
+        flash('请选择文件或从现有模板复制！', 'danger')
+        return redirect(url_for('templates.admin_templates'))
 
     existing = ImportTemplate.query.filter_by(category_id=category_id).first()
     if existing:

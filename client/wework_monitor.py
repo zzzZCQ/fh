@@ -35,11 +35,14 @@ class WeworkCallMonitor:
         self.computer_name = socket.gethostname()
         self.client_id = str(uuid.uuid4())
         self.last_heartbeat_time = 0
+        self.last_config_check_time = 0
+        self.config_check_interval = 30  # 每30秒检查一次配置变更
         self.heartbeat_interval = 1800  # 每30分钟发送一次心跳
         self.user_id = self.settings.get('user_id')
         self.user_name = self.settings.get('username', self.local_user)
         self.log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wework_monitor.log')
         self.call_recording_enabled = True  # 服务端配置的通话读取功能状态
+        self.config_change_time = None  # 上次的配置变更时间戳
     
     def _log(self, message, level='INFO'):
         """记录日志到文件"""
@@ -77,6 +80,11 @@ class WeworkCallMonitor:
                             status_text = '启用' if self.call_recording_enabled else '停用'
                             print(f'🔧 服务端通知：通话读取功能已{status_text}')
                             self._log(f'服务端配置更新：通话读取功能已{status_text}')
+                    
+                    # 更新配置变更时间戳
+                    if 'config_change_time' in result:
+                        self.config_change_time = result['config_change_time']
+                    
                     self._log(f'心跳发送成功')
                     return True
                 else:
@@ -87,6 +95,37 @@ class WeworkCallMonitor:
         except Exception as e:
             self._log(f'心跳发送异常: {e}', 'ERROR')
             print(f'心跳发送失败: {e}')
+            return False
+    
+    def check_config_change(self):
+        """快速检查配置变更（轻量级接口）"""
+        try:
+            server_url = self.settings.get('server_url', 'http://192.168.100.22:5000')
+            config_check_url = f"{server_url}/wework/api/config_check"
+            
+            data = {
+                'client_id': self.client_id
+            }
+            
+            response = requests.post(config_check_url, json=data, timeout=5)
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('success'):
+                    # 检查配置变更时间戳
+                    new_change_time = result.get('config_change_time')
+                    if new_change_time != self.config_change_time:
+                        # 配置已变更
+                        self.config_change_time = new_change_time
+                        new_enabled = result.get('call_recording_enabled', False)
+                        if new_enabled != self.call_recording_enabled:
+                            self.call_recording_enabled = new_enabled
+                            status_text = '启用' if self.call_recording_enabled else '停用'
+                            print(f'🔧 配置已变更：通话读取功能已{status_text}')
+                            self._log(f'快速配置检查：通话读取功能已{status_text}')
+                    return True
+            return False
+        except Exception as e:
+            # 配置检查失败不影响主流程，静默处理
             return False
     
     def capture_window(self, hwnd):
@@ -539,6 +578,11 @@ class WeworkCallMonitor:
                 if current_time - self.last_heartbeat_time >= self.heartbeat_interval:
                     self.send_heartbeat()
                     self.last_heartbeat_time = current_time
+                
+                # 检查是否需要快速检查配置变更
+                if current_time - self.last_config_check_time >= self.config_check_interval:
+                    self.check_config_change()
+                    self.last_config_check_time = current_time
                 
                 # 根据服务端配置决定是否检测通话
                 if not self.call_recording_enabled:

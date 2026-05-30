@@ -86,20 +86,55 @@
             <!-- 日期筛选（按月） -->
             <input type="month" class="form-control" name="month" value="{{ month_filter or '' }}" style="width:140px;">
 
-            <!-- 状态筛选（整合业务状态+物流状态） -->
-            <select name="status" class="form-select" style="width:110px;">
-                <option value="">状态</option>
-                {% if can_see_draft %}
-                <option value="draft" {% if request.args.get('status') == 'draft' %}selected{% endif %}>草稿</option>
-                {% endif %}
-                <option value="submitted" {% if request.args.get('status') == 'submitted' %}selected{% endif %}>待发货</option>
-                <option value="shipped" {% if request.args.get('status') == 'shipped' %}selected{% endif %}>已发货</option>
-                <option value="运送中" {% if request.args.get('status') == '运送中' %}selected{% endif %}>运送中</option>
-                <option value="待派送" {% if request.args.get('status') == '待派送' %}selected{% endif %}>待派送</option>
-                <option value="派送中" {% if request.args.get('status') == '派送中' %}selected{% endif %}>派送中</option>
-                <option value="已签收" {% if request.args.get('status') == '已签收' %}selected{% endif %}>已签收</option>
-                <option value="退回已签收" {% if request.args.get('status') == '退回已签收' %}selected{% endif %}>退回已签收</option>
-            </select>
+            <!-- 状态筛选（整合业务状态+物流状态，可多选） -->
+            <div class="dropdown" style="display:inline-block;">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" style="width:110px; white-space:nowrap;">
+                    {% set selected_statuses = request.args.getlist('status') %}
+                    {% if selected_statuses %}
+                        已选{{ selected_statuses|length }}个
+                    {% else %}
+                        状态
+                    {% endif %}
+                </button>
+                <div class="dropdown-menu p-3" style="min-width:200px;">
+                    {% if can_see_draft %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="status" value="draft" id="status_draft" {% if 'draft' in selected_statuses %}checked{% endif %}>
+                        <label class="form-check-label" for="status_draft">草稿</label>
+                    </div>
+                    {% endif %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="status" value="submitted" id="status_submitted" {% if 'submitted' in selected_statuses %}checked{% endif %}>
+                        <label class="form-check-label" for="status_submitted">待发货</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="status" value="shipped" id="status_shipped" {% if 'shipped' in selected_statuses %}checked{% endif %}>
+                        <label class="form-check-label" for="status_shipped">已发货</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="status" value="运送中" id="status_transporting" {% if '运送中' in selected_statuses %}checked{% endif %}>
+                        <label class="form-check-label" for="status_transporting">运送中</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="status" value="待派送" id="status_pending_delivery" {% if '待派送' in selected_statuses %}checked{% endif %}>
+                        <label class="form-check-label" for="status_pending_delivery">待派送</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="status" value="派送中" id="status_delivering" {% if '派送中' in selected_statuses %}checked{% endif %}>
+                        <label class="form-check-label" for="status_delivering">派送中</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="status" value="已签收" id="status_signed" {% if '已签收' in selected_statuses %}checked{% endif %}>
+                        <label class="form-check-label" for="status_signed">已签收</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="status" value="退回已签收" id="status_returned_signed" {% if '退回已签收' in selected_statuses %}checked{% endif %}>
+                        <label class="form-check-label" for="status_returned_signed">退回已签收</label>
+                    </div>
+                    <hr>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearStatusFilters()">清除</button>
+                </div>
+            </div>
 
             <input type="text" class="form-control" name="customer_keyword" placeholder="客户名" value="{{ request.args.get('customer_keyword', '') }}" style="width:90px;">
             <input type="text" class="form-control" name="tracking_keyword" placeholder="快递单号" value="{{ request.args.get('tracking_keyword', '') }}" style="width:100px;">
@@ -109,12 +144,14 @@
         <!-- 更新物流 -->
         <form method="POST" action="{{ url_for('shipping.update_logistics') }}" class="d-inline" style="white-space:nowrap;" id="updateLogisticsForm">
             <input type="hidden" name="page" value="{{ request.args.get('page', 1) }}">
-            <input type="hidden" name="per_page" value="{{ request.args.get('per_page', 10) }}">
+            <input type="hidden" name="per_page" value="{{ request.args.get('per_page', 20) }}">
             <input type="hidden" name="customer_keyword" value="{{ request.args.get('customer_keyword', '') }}">
             <input type="hidden" name="tracking_keyword" value="{{ request.args.get('tracking_keyword', '') }}">
-            <input type="hidden" name="status" value="{{ request.args.get('status', '') }}">
             <input type="hidden" name="category" value="{{ request.args.get('category', '') }}">
             <input type="hidden" name="month" value="{{ request.args.get('month', '') }}">
+            {% for s in request.args.getlist('status') %}
+            <input type="hidden" name="status" value="{{ s }}">
+            {% endfor %}
             {% if can_filter_salesman %}
             <input type="hidden" name="salesman_id" value="{{ request.args.get('salesman_id', '') }}">
             {% endif %}
@@ -184,7 +221,8 @@
                     </thead>
                     <tbody>
                         {% for order in orders.items %}
-                        <tr style="cursor: pointer;" onclick="showOrderDetail({{ order.id }})">
+                        {% set is_non_main_signed = order.category not in main_product_categories and order.logistics_status == '已签收' %}
+                        <tr style="cursor: pointer; {% if is_non_main_signed %}background-color: #f0f0f0 !important; opacity: 0.7;{% endif %}" onclick="showOrderDetail({{ order.id }})">
                             <td>{{ order.group_name }}</td>
                             <td>{{ order.salesman.name }}</td>
                             <td>{{ order.customer_name }}</td>
@@ -193,13 +231,22 @@
                             <td>{{ order.collect_amount }}</td>
                             <td>{{ order.category }}</td>
                             <td>
+                                {% if order.logistics_warning %}
+                                <span class="badge bg-danger me-1" title="{{ order.logistics_warning_remark[:50] if order.logistics_warning_remark else '' }}">
+                                    <i class="bi bi-exclamation-triangle"></i>
+                                </span>
+                                {% endif %}
                                 {% if order.status == 'draft' %}
                                 <span class="badge bg-secondary">草稿</span>
                                 {% elif order.status == 'submitted' %}
                                 <span class="badge" style="background-color:#ffc107; color:#000; width:25%; display:inline-block;">待发货</span>
                                 {% elif order.status == 'shipped' %}
                                     {% if order.logistics_status == '已签收' %}
+                                    {% if order.category not in main_product_categories %}
+                                    <span class="badge" style="background-color:#6c757d; color:#fff; width:100%; display:inline-block;">已签收</span>
+                                    {% else %}
                                     <span class="badge" style="background-color:#198754; color:#fff; width:100%; display:inline-block;">已签收</span>
+                                    {% endif %}
                                     {% elif order.logistics_status == '退回已签收' %}
                                     <span class="badge" style="background-color:#ffc107; color:#000; width:100%; display:inline-block;">退回已签收</span>
                                     {% elif order.logistics_status == '拒签' %}
@@ -248,10 +295,7 @@
                                 {% if can_ship and order.status == 'submitted' %}
                                 <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#shipModal{{ order.id }}">发货</button>
                                 {% endif %}
-                                <!-- 编辑（草稿状态） -->
-                                {% if can_edit_order and order.status == 'draft' and not order.delete_requested %}
-                                <a href="{{ url_for('orders.edit_order', order_id=order.id) }}" class="btn btn-outline-primary btn-sm">编辑</a>
-                                {% endif %}
+
                                 <!-- 删除按钮：只能删除自己的订单 -->
                                 {% if can_edit_order and not order.delete_requested and order.salesman_id == current_user.id %}
                                 <form method="POST" action="{{ url_for('orders.delete_order', order_id=order.id) }}" class="d-inline">
@@ -329,19 +373,21 @@
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div class="d-flex align-items-center gap-2">
                     <span>每页显示</span>
-                    <select class="form-select form-select-sm" style="width: 80px;" onchange="location.href=this.value">
-                        <option value="{{ url_for('orders.dashboard', page=1, per_page=10, customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', ''), status=request.args.get('status', ''), group_id=request.args.get('group_id', ''), month=request.args.get('month', '')) }}" {% if request.args.get('per_page', '10') == '10' %}selected{% endif %}>10</option>
-                        <option value="{{ url_for('orders.dashboard', page=1, per_page=50, customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', ''), status=request.args.get('status', ''), group_id=request.args.get('group_id', ''), month=request.args.get('month', '')) }}" {% if request.args.get('per_page') == '50' %}selected{% endif %}>50</option>
-                        <option value="{{ url_for('orders.dashboard', page=1, per_page=100, customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', ''), status=request.args.get('status', ''), group_id=request.args.get('group_id', ''), month=request.args.get('month', '')) }}" {% if request.args.get('per_page') == '100' %}selected{% endif %}>100</option>
+                    <select class="form-select form-select-sm" style="width: 80px;" onchange="changePageSize(this.value)">
+                        <option value="20" {% if request.args.get('per_page', '20') == '20' %}selected{% endif %}>20</option>
+                        <option value="50" {% if request.args.get('per_page', '20') == '50' %}selected{% endif %}>50</option>
+                        <option value="100" {% if request.args.get('per_page', '20') == '100' %}selected{% endif %}>100</option>
+                        <option value="500" {% if request.args.get('per_page', '20') == '500' %}selected{% endif %}>500</option>
                     </select>
                     <span>条</span>
+                    <span class="text-muted ms-2">共 <strong>{{ orders.total }}</strong> 条结果</span>
                 </div>
                 {% if orders.pages > 1 %}
                 <nav aria-label="Page navigation">
                     <ul class="pagination mb-0">
                         {% if orders.has_prev %}
                         <li class="page-item">
-                            <a class="page-link" href="{{ url_for('orders.dashboard', page=orders.prev_num, per_page=request.args.get('per_page', 10), customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', ''), status=request.args.get('status', ''), group_id=request.args.get('group_id', ''), month=request.args.get('month', '')) }}">上一页</a>
+                            <a class="page-link" href="#" onclick="goToPage({{ orders.prev_num }}, {{ request.args.get('per_page', 20) }}); return false;">上一页</a>
                         </li>
                         {% endif %}
                         {% for page in orders.iter_pages() %}
@@ -349,7 +395,7 @@
                             {% if page == orders.page %}
                             <li class="page-item active"><a class="page-link" href="#">{{ page }}</a></li>
                             {% else %}
-                            <li class="page-item"><a class="page-link" href="{{ url_for('orders.dashboard', page=page, per_page=request.args.get('per_page', 10), customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', ''), status=request.args.get('status', ''), group_id=request.args.get('group_id', ''), month=request.args.get('month', '')) }}">{{ page }}</a></li>
+                            <li class="page-item"><a class="page-link" href="#" onclick="goToPage({{ page }}, {{ request.args.get('per_page', 20) }}); return false;">{{ page }}</a></li>
                             {% endif %}
                         {% else %}
                         <li class="page-item disabled"><a class="page-link">...</a></li>
@@ -357,7 +403,7 @@
                         {% endfor %}
                         {% if orders.has_next %}
                         <li class="page-item">
-                            <a class="page-link" href="{{ url_for('orders.dashboard', page=orders.next_num, per_page=request.args.get('per_page', 10), customer_keyword=request.args.get('customer_keyword', ''), tracking_keyword=request.args.get('tracking_keyword', ''), category=request.args.get('category', ''), salesman_id=request.args.get('salesman_id', ''), status=request.args.get('status', ''), group_id=request.args.get('group_id', ''), month=request.args.get('month', '')) }}">下一页</a>
+                            <a class="page-link" href="#" onclick="goToPage({{ orders.next_num }}, {{ request.args.get('per_page', 20) }}); return false;">下一页</a>
                         </li>
                         {% endif %}
                     </ul>
@@ -372,6 +418,64 @@
 {% endblock %}
 
 {% block scripts %}
+
+<script>
+// 获取当前所有 URL 参数
+function getCurrentParams() {
+    const params = new URLSearchParams();
+    const form = document.getElementById('filterForm');
+    
+    // 添加其他参数
+    const customerKeyword = form.querySelector('[name="customer_keyword"]');
+    const trackingKeyword = form.querySelector('[name="tracking_keyword"]');
+    const category = form.querySelector('[name="category"]');
+    const month = form.querySelector('[name="month"]');
+    
+    if (customerKeyword && customerKeyword.value) params.set('customer_keyword', customerKeyword.value);
+    if (trackingKeyword && trackingKeyword.value) params.set('tracking_keyword', trackingKeyword.value);
+    if (category && category.value) params.set('category', category.value);
+    if (month && month.value) params.set('month', month.value);
+    
+    // 添加销售员和组别
+    const salesman = form.querySelector('[name="salesman_id"]');
+    if (salesman && salesman.value) params.set('salesman_id', salesman.value);
+    
+    const group = form.querySelector('[name="group_id"]');
+    if (group && group.value) params.set('group_id', group.value);
+    
+    // 添加多个状态参数
+    document.querySelectorAll('.dropdown-menu input[name="status"]:checked').forEach(cb => {
+        params.append('status', cb.value);
+    });
+    
+    return params;
+}
+
+// 跳转到指定页码
+function goToPage(page, perPage) {
+    const params = getCurrentParams();
+    params.set('page', page);
+    params.set('per_page', perPage);
+    window.location.href = '?' + params.toString();
+}
+
+// 修改每页显示数量
+function changePageSize(perPage) {
+    const params = getCurrentParams();
+    params.set('page', 1);
+    params.set('per_page', perPage);
+    window.location.href = '?' + params.toString();
+}
+
+// 清除状态筛选
+function clearStatusFilters() {
+    document.querySelectorAll('.dropdown-menu input[name="status"]').forEach(cb => {
+        cb.checked = false;
+    });
+    // 提交表单以刷新结果
+    document.getElementById('filterForm').submit();
+}
+</script>
 
 <!-- 导出预览弹窗 -->
 <div class="modal fade" id="exportPreviewModal" tabindex="-1">
@@ -390,6 +494,8 @@
                 <input type="hidden" id="export_tracking_keyword">
                 <input type="hidden" id="export_category">
                 <input type="hidden" id="export_salesman_id">
+                <!-- 用于存储选中的状态列表 -->
+                <div id="export_status_fields"></div>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" id="confirmExportBtn" class="btn btn-success" style="display:none;" onclick="submitExport()">
                     <i class="bi bi-download"></i> 确认导出
@@ -480,31 +586,41 @@ function showOrderDetail(orderId) {
             const statusMap = {'draft': '草稿', 'submitted': '待发货', 'shipped': '已发货'};
             const status = data.status === 'shipped' ? (data.logistics_status || '已发货') : (statusMap[data.status] || data.status);
 
-            if (canEditDetail) {
-                // 管理员：可编辑模式
+            const isOwnOrder = data.salesman_id === {{ current_user.id }};
+            const isEditableStatus = ['draft', 'submitted'].includes(data.status);
+            const canEditThisOrder = canEditDetail && ({{ current_user.has_role('admin')|lower }} || (isOwnOrder && isEditableStatus));
+            
+            if (canEditThisOrder) {
+                // 管理员 或 业务员编辑自己的订单：可编辑模式
                 document.getElementById('orderDetailContent').innerHTML = `
                     <form id="orderEditForm">
                     <input type="hidden" name="order_id" value="${data.id}">
                     <div class="row">
                         <div class="col-md-6">
                             <table class="table table-sm">
-                                <tr><th width="100">组名</th><td>${data.group_name}</td></tr>
-                                <tr><th>业务员</th><td>${data.salesman_name}</td></tr>
+                                <tr><th width="100">组别</th><td>${data.group_name}</td></tr>
+                                <tr><th>微信名</th><td><input type="text" class="form-control form-control-sm" name="customer_wechat" value="${data.customer_wechat || ''}"></td></tr>
                                 <tr><th>客户名</th><td><input type="text" class="form-control form-control-sm" name="customer_name" value="${data.customer_name || ''}"></td></tr>
-                                <tr><th>电话</th><td><input type="text" class="form-control form-control-sm" name="phone" value="${data.phone || ''}"></td></tr>
-                                <tr><th>地址</th><td><input type="text" class="form-control form-control-sm" name="address" value="${data.address || ''}"></td></tr>
+                                <tr><th>已付定金</th><td><input type="text" class="form-control form-control-sm" name="paid_amount" value="${data.paid_amount || ''}"></td></tr>
                                 <tr><th>类别</th><td>${data.category}</td></tr>
+                                <tr><th>快递</th><td><input type="text" class="form-control form-control-sm" name="express_type" value="${data.express_type || ''}"></td></tr>
+                                <tr><th>状态</th><td>${status}</td></tr>
                             </table>
                         </div>
                         <div class="col-md-6">
                             <table class="table table-sm">
-                                <tr><th width="100">已付定金</th><td><input type="text" class="form-control form-control-sm" name="paid_amount" value="${data.paid_amount || ''}"></td></tr>
+                                <tr><th width="100">业务员</th><td>${data.salesman_name}</td></tr>
+                                <tr><th>性别</th><td>
+                                    <select class="form-select form-select-sm" name="gender">
+                                        <option value="">请选择</option>
+                                        <option value="男" ${data.gender === '男' ? 'selected' : ''}>男</option>
+                                        <option value="女" ${data.gender === '女' ? 'selected' : ''}>女</option>
+                                    </select>
+                                </td></tr>
+                                <tr><th>电话</th><td><input type="text" class="form-control form-control-sm" name="phone" value="${data.phone || ''}"></td></tr>
                                 <tr><th>代收金额</th><td><input type="number" class="form-control form-control-sm" name="collect_amount" value="${data.collect_amount || 0}"></td></tr>
-                                <tr><th>微信名</th><td><input type="text" class="form-control form-control-sm" name="customer_wechat" value="${data.customer_wechat || ''}"></td></tr>
-                                <tr><th>赠品</th><td>${data.has_gift ? (data.gift_info || '有') : '无'}</td></tr>
-                                <tr><th>快递</th><td><input type="text" class="form-control form-control-sm" name="express_type" value="${data.express_type || ''}"></td></tr>
+                                <tr><th>地址</th><td><input type="text" class="form-control form-control-sm" name="address" value="${data.address || ''}"></td></tr>
                                 <tr><th>单号</th><td><input type="text" class="form-control form-control-sm" name="tracking_number" value="${data.tracking_number || ''}"></td></tr>
-                                <tr><th>状态</th><td>${status}</td></tr>
                             </table>
                         </div>
                     </div>
@@ -528,28 +644,28 @@ function showOrderDetail(orderId) {
                     <div id="logisticsSection"></div>
                 `;
             } else {
-                // 业务员/发货员：只读模式
+                // 只读模式
                 document.getElementById('orderDetailContent').innerHTML = `
                     <div class="row">
                         <div class="col-md-6">
                             <table class="table table-sm">
-                                <tr><th width="100">组名</th><td>${data.group_name}</td></tr>
-                                <tr><th>业务员</th><td>${data.salesman_name}</td></tr>
+                                <tr><th width="100">组别</th><td>${data.group_name}</td></tr>
+                                <tr><th>微信名</th><td>${data.customer_wechat || '-'}</td></tr>
                                 <tr><th>客户名</th><td>${data.customer_name}</td></tr>
-                                <tr><th>电话</th><td>${data.phone}</td></tr>
-                                <tr><th>地址</th><td>${data.address}</td></tr>
+                                <tr><th>已付定金</th><td>${data.paid_amount || '-'}</td></tr>
                                 <tr><th>类别</th><td>${data.category}</td></tr>
+                                <tr><th>快递</th><td>${data.express_type || '-'}</td></tr>
+                                <tr><th>状态</th><td>${status}</td></tr>
                             </table>
                         </div>
                         <div class="col-md-6">
                             <table class="table table-sm">
-                                <tr><th width="100">已付定金</th><td>${data.paid_amount || '-'}</td></tr>
+                                <tr><th width="100">业务员</th><td>${data.salesman_name}</td></tr>
+                                <tr><th>性别</th><td>${data.gender || '-'}</td></tr>
+                                <tr><th>电话</th><td>${data.phone}</td></tr>
                                 <tr><th>代收金额</th><td>${data.collect_amount || '-'}</td></tr>
-                                <tr><th>微信名</th><td>${data.customer_wechat || '-'}</td></tr>
-                                <tr><th>赠品</th><td>${data.has_gift ? (data.gift_info || '有') : '无'}</td></tr>
-                                <tr><th>快递</th><td>${data.express_type || '-'}</td></tr>
+                                <tr><th>地址</th><td>${data.address}</td></tr>
                                 <tr><th>单号</th><td>${data.tracking_number || '-'}</td></tr>
-                                <tr><th>状态</th><td>${status}</td></tr>
                             </table>
                         </div>
                     </div>
@@ -804,16 +920,33 @@ function loadExportPreview() {
     const params = new URLSearchParams();
     params.set('customer_keyword', form.querySelector('[name="customer_keyword"]').value);
     params.set('tracking_keyword', form.querySelector('[name="tracking_keyword"]').value);
-    params.set('status', form.querySelector('[name="status"]').value);
     params.set('category', form.querySelector('[name="category"]').value);
     const salesmanSel = form.querySelector('[name="salesman_id"]');
     if (salesmanSel) params.set('salesman_id', salesmanSel.value);
+    
+    // 添加多个状态参数
+    const selectedStatuses = [];
+    document.querySelectorAll('.dropdown-menu input[name="status"]:checked').forEach(cb => {
+        params.append('status', cb.value);
+        selectedStatuses.push(cb.value);
+    });
 
     // 保存筛选参数到表单
     document.getElementById('export_customer_keyword').value = params.get('customer_keyword') || '';
     document.getElementById('export_tracking_keyword').value = params.get('tracking_keyword') || '';
     document.getElementById('export_category').value = params.get('category') || '';
     document.getElementById('export_salesman_id').value = params.get('salesman_id') || '';
+    
+    // 保存状态列表到隐藏容器
+    const statusFieldsContainer = document.getElementById('export_status_fields');
+    statusFieldsContainer.innerHTML = '';
+    selectedStatuses.forEach(status => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'status';
+        input.value = status;
+        statusFieldsContainer.appendChild(input);
+    });
 
     // 加载预览数据
     fetch('/api/export/preview?' + params.toString())
@@ -880,6 +1013,17 @@ function submitExport() {
             input.value = el.value;
             form.appendChild(input);
         }
+    });
+    
+    // 添加状态字段
+    var statusFieldsContainer = document.getElementById('export_status_fields');
+    var statusInputs = statusFieldsContainer.querySelectorAll('input');
+    statusInputs.forEach(function(input) {
+        var newInput = document.createElement('input');
+        newInput.type = 'hidden';
+        newInput.name = 'status';
+        newInput.value = input.value;
+        form.appendChild(newInput);
     });
 
     document.body.appendChild(form);
