@@ -88,15 +88,18 @@
                                         </div>
                                         <div class="col-md-3">
                                             <label for="single_phone" class="form-label">收货电话 <span class="text-danger">*</span></label>
-                                            <input type="tel" class="form-control" id="single_phone" name="phone" pattern="^1[3-9]\d{9}$" required placeholder="请输入11位手机号" value="{{ form_data.phone if form_data else '' }}">
+                                            <input type="tel" class="form-control" id="single_phone" name="phone" pattern="^1[3-9]\d{9}$" required placeholder="请输入11位手机号" value="{{ form_data.phone if form_data else '' }}" oninput="validatePhone(this, 'single_phone_status')">
+                                            <div id="single_phone_status" class="mt-1"></div>
                                         </div>
                                         <div class="col-md-3">
-                                            <label for="single_paid_amount" class="form-label">已付金额</label>
-                                            <input type="text" class="form-control" id="single_paid_amount" name="paid_amount" placeholder="如：100企微410" value="{{ form_data.paid_amount if form_data else '' }}">
+                                            <label for="single_paid_amount" class="form-label">已付金额 <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="single_paid_amount" name="paid_amount" placeholder="如：0 或 100企微0531" value="{{ form_data.paid_amount if form_data else '' }}" oninput="validatePaidAmount(this, 'single_paid_status')" required>
+                                            <div class="form-text text-muted small">金额=0时填"0"，金额>0时填"金额+企微+日期"</div>
+                                            <div id="single_paid_status" class="mt-1"></div>
                                         </div>
                                         <div class="col-md-3">
-                                            <label for="single_collect_amount" class="form-label">代付金额</label>
-                                            <input type="number" step="0.01" class="form-control" id="single_collect_amount" name="collect_amount" placeholder="0.00" value="{{ form_data.collect_amount if form_data else '' }}">
+                                            <label for="single_collect_amount" class="form-label">代付金额 <span class="text-danger">*</span></label>
+                                            <input type="number" step="0.01" class="form-control" id="single_collect_amount" name="collect_amount" placeholder="0.00" value="{{ form_data.collect_amount if form_data else '' }}" required>
                                         </div>
                                     </div>
                                     
@@ -219,12 +222,14 @@
                                         </select>
                                     </div>
                                     <div class="col-md-4">
-                                        <label for="batch_paid_amount" class="form-label">已付金额</label>
-                                        <input type="text" class="form-control" id="batch_paid_amount" placeholder="如：100企微410">
+                                        <label for="batch_paid_amount" class="form-label">已付金额 <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="batch_paid_amount" placeholder="如：0 或 100企微0531" oninput="validatePaidAmount(this, 'batch_paid_status')" required>
+                                        <div class="form-text text-muted small">金额=0时填"0"，金额>0时填"金额+企微+日期"</div>
+                                        <div id="batch_paid_status" class="mt-1"></div>
                                     </div>
                                     <div class="col-md-4">
-                                        <label for="batch_collect_amount" class="form-label">代付金额</label>
-                                        <input type="number" step="0.01" class="form-control" id="batch_collect_amount" placeholder="0.00">
+                                        <label for="batch_collect_amount" class="form-label">代付金额 <span class="text-danger">*</span></label>
+                                        <input type="number" step="0.01" class="form-control" id="batch_collect_amount" placeholder="0.00" required>
                                     </div>
                                 </div>
                                 
@@ -283,6 +288,60 @@
 
 {% block scripts %}
 <script>
+// 实时校验已付金额格式
+function validatePaidAmount(input, statusId) {
+    const value = input.value.trim();
+    const statusDiv = document.getElementById(statusId);
+    
+    if (!value) {
+        statusDiv.innerHTML = '';
+        input.classList.remove('is-invalid', 'is-valid');
+        return;
+    }
+    
+    // 如果是"0"或"0.00"，直接通过
+    if (value === '0' || value === '0.00' || value === '0.0') {
+        statusDiv.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> 格式正确</span>';
+        input.classList.remove('is-invalid');
+        input.classList.add('is-valid');
+        return;
+    }
+    
+    const pattern = /^(\d+(\.\d+)?)企微(\d{4})$/;
+    if (pattern.test(value)) {
+        statusDiv.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> 格式正确</span>';
+        input.classList.remove('is-invalid');
+        input.classList.add('is-valid');
+    } else {
+        statusDiv.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> 格式错误！金额>0时应为：金额+企微+日期（如100企微0531）</span>';
+        input.classList.remove('is-valid');
+        input.classList.add('is-invalid');
+    }
+}
+
+// 实时校验手机号格式
+function validatePhone(input, statusId) {
+    const value = input.value.trim();
+    const statusDiv = document.getElementById(statusId);
+    
+    if (!value) {
+        statusDiv.innerHTML = '';
+        input.classList.remove('is-invalid', 'is-valid');
+        return;
+    }
+    
+    const pattern = /^1[3-9]\d{9}$/;
+    if (pattern.test(value)) {
+        statusDiv.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> 格式正确</span>';
+        input.classList.remove('is-invalid');
+        input.classList.add('is-valid');
+    } else {
+        statusDiv.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> 请输入正确的11位手机号</span>';
+        input.classList.remove('is-valid');
+        input.classList.add('is-invalid');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     // 单个订单的类别示例数据
     const categoryExamples = {
@@ -290,6 +349,18 @@ document.addEventListener('DOMContentLoaded', function() {
         '{{ cat.name }}': {{ cat.example | tojson | safe }},
         {% endfor %}
     };
+    
+    // 页面加载时自动校验已有的已付金额
+    const singlePaidAmount = document.getElementById('single_paid_amount');
+    if (singlePaidAmount && singlePaidAmount.value.trim()) {
+        validatePaidAmount(singlePaidAmount, 'single_paid_status');
+    }
+    
+    // 页面加载时自动校验已有的手机号
+    const singlePhone = document.getElementById('single_phone');
+    if (singlePhone && singlePhone.value.trim()) {
+        validatePhone(singlePhone, 'single_phone_status');
+    }
 
     // 单个订单类别示例
     function updateSingleCategoryExample() {
@@ -352,11 +423,37 @@ function confirmDuplicate() {
 function checkAndSubmitOrder() {
     const form = document.getElementById('createOrderForm');
     const phone = document.getElementById('single_phone').value.trim();
+    const paidAmount = document.getElementById('single_paid_amount').value.trim();
+    const collectAmount = document.getElementById('single_collect_amount').value.trim();
     
     // 先检查手机号格式
     if (!/^1[3-9]\d{9}$/.test(phone)) {
         alert('请输入正确的11位手机号！');
         document.getElementById('single_phone').focus();
+        return;
+    }
+    
+    // 检查已付金额必填
+    if (!paidAmount) {
+        alert('请填写已付金额！');
+        document.getElementById('single_paid_amount').focus();
+        return;
+    }
+    
+    // 检查已付金额格式
+    if (paidAmount !== '0' && paidAmount !== '0.00' && paidAmount !== '0.0') {
+        const pattern = /^(\d+(\.\d+)?)企微(\d{4})$/;
+        if (!pattern.test(paidAmount)) {
+            alert('已付金额格式错误！金额>0时应为：金额+企微+日期（如100企微0531）');
+            document.getElementById('single_paid_amount').focus();
+            return;
+        }
+    }
+    
+    // 检查代付金额必填
+    if (!collectAmount) {
+        alert('请填写代付金额！');
+        document.getElementById('single_collect_amount').focus();
         return;
     }
     
@@ -450,6 +547,63 @@ function parseSingleCustomer(text) {
     const SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁宣贲邓郁单杭洪包诸左石崔吉钮龚程嵇邢滑裴陆荣翁荀羊於惠甄曲家封芮羿储靳汲邴糜松井段富巫乌焦巴弓牧隗山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴郁胥能苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍却璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾母沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公'.split('');
     const surnameSet = new Set(SURNAMES);
     const addrKeywords = ['省','市','区','县','镇','村','乡','街道','路','巷','弄','号','栋','楼','室','单元','小区','花园','公寓','大厦','广场','中心','城','苑','庭','居','庄','园'];
+    
+    // 第一步：处理连续文本（没有空格的情况）
+    let processedText = text;
+    const phoneMatch = text.match(/1[3-9]\d{9}/);
+    if (phoneMatch) {
+        const phoneStr = phoneMatch[0];
+        phone = phoneStr;
+        const phoneIndex = text.indexOf(phoneStr);
+        const beforePhone = text.substring(0, phoneIndex).trim();
+        const afterPhone = text.substring(phoneIndex + phoneStr.length).trim();
+        
+        // 尝试从手机号前面提取姓名（2-4个汉字）
+        if (beforePhone) {
+            const possibleNames = beforePhone.match(/([\u4e00-\u9fff]{2,4})$/);
+            if (possibleNames) {
+                const candidateName = possibleNames[1];
+                // 检查是否是有效姓名
+                const EXCLUDE = new Set(['收货','地址','电话','姓名','备注','产品','赠品','快递','代收','已付','山东省','山西省','河南省','河北省','湖南省','湖北省','江苏省','江西省','浙江省','福建省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','北京','天津','上海','重庆','自治区']);
+                if (!EXCLUDE.has(candidateName)) {
+                    let isAddr = false;
+                    for (const kw of addrKeywords) {
+                        if (candidateName.includes(kw)) {
+                            isAddr = true;
+                            break;
+                        }
+                    }
+                    if (!isAddr && surnameSet.has(candidateName[0])) {
+                        name = candidateName;
+                    }
+                }
+            }
+        }
+        
+        // 手机号后面的就是地址
+        if (afterPhone) {
+            address = afterPhone;
+        }
+        
+        // 如果没从前面找到姓名，尝试从地址前面找
+        if (!name && afterPhone) {
+            // 地址前面如果是连续汉字，可能是姓名
+            const possibleNames2 = beforePhone.match(/([\u4e00-\u9fff]{2,4})$/);
+            if (possibleNames2) {
+                const candidateName = possibleNames2[1];
+                const EXCLUDE = new Set(['收货','地址','电话','姓名','备注','产品','赠品','快递','代收','已付','山东省','山西省','河南省','河北省','湖南省','湖北省','江苏省','江西省','浙江省','福建省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','北京','天津','上海','重庆','自治区']);
+                if (!EXCLUDE.has(candidateName) && surnameSet.has(candidateName[0])) {
+                    name = candidateName;
+                }
+            }
+        }
+        
+        // 如果都解析成功了，直接返回
+        if (name && phone && address) {
+            console.log('智能识别 - 连续文本解析结果:', { name, phone, address });
+            return { name, phone, address };
+        }
+    }
     
     function isName(s) {
         if (!s || s.length < 2 || s.length > 4) return false;
@@ -561,8 +715,8 @@ function submitBatchOrder() {
     }
     
     const category = document.getElementById('batch_category').value;
-    const paidAmount = document.getElementById('batch_paid_amount').value;
-    const collectAmount = document.getElementById('batch_collect_amount').value;
+    const paidAmount = document.getElementById('batch_paid_amount').value.trim();
+    const collectAmount = document.getElementById('batch_collect_amount').value.trim();
     const productInfo = document.getElementById('batch_product_info').value;
     
     if (!category) {
@@ -572,6 +726,30 @@ function submitBatchOrder() {
     
     if (!productInfo.trim()) {
         alert('请填写产品信息');
+        return;
+    }
+    
+    // 检查已付金额必填
+    if (!paidAmount) {
+        alert('请填写已付金额！');
+        document.getElementById('batch_paid_amount').focus();
+        return;
+    }
+    
+    // 检查已付金额格式
+    if (paidAmount !== '0' && paidAmount !== '0.00' && paidAmount !== '0.0') {
+        const pattern = /^(\d+(\.\d+)?)企微(\d{4})$/;
+        if (!pattern.test(paidAmount)) {
+            alert('已付金额格式错误！金额>0时应为：金额+企微+日期（如100企微0531）');
+            document.getElementById('batch_paid_amount').focus();
+            return;
+        }
+    }
+    
+    // 检查代付金额必填
+    if (!collectAmount) {
+        alert('请填写代付金额！');
+        document.getElementById('batch_collect_amount').focus();
         return;
     }
     
