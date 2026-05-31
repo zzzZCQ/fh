@@ -785,6 +785,16 @@ def extract_contact_name(text):
     
     print(f'[OCR] 原始识别文本: {repr(text[:500])}')
     
+    # 1. 先清理OCR错误
+    # 口X -> PC
+    text = re.sub(r'口X', 'PC', text)
+    
+    # 2. 排除日期格式（MMDD格式，5位数字如0530、0526）
+    text = re.sub(r'\d{5}', ' ', text)
+    
+    # 3. 排除11位手机号
+    text = re.sub(r'1[3-9]\d{9}', ' ', text)
+    
     # 方案1：如果有"完"字，只提取"完"后面的中文名
     # 格式：0530完心想事成 -> 心想事成
     match = re.search(r'完([\u4e00-\u9fa5]{2,20})', text)
@@ -818,6 +828,15 @@ def extract_contact_name(text):
             if name and len(name) >= 2:
                 print(f'[OCR] 提取联系人: {name}')
                 return name
+    
+    # 方案3：直接提取2-4个连续汉字（常见姓名长度）
+    # 排除省市区等地址词
+    chinese_names = re.findall(r'[\u4e00-\u9fa5]{2,4}', text)
+    addr_words = ['省', '市', '区', '县', '镇', '村', '街', '路', '道', '号', '栋', '楼', '室']
+    for name in chinese_names:
+        if not any(word in name for word in addr_words):
+            print(f'[OCR] 提取联系人: {name}')
+            return name
     
     print(f'[OCR] 未找到联系人')
     return None

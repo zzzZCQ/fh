@@ -430,19 +430,41 @@ class WeworkCallMonitor:
         if not text:
             return None
         
+        # 1. 先清理OCR错误
+        # 口X -> PC
+        text = re.sub(r'口X', 'PC', text)
+        
+        # 2. 排除的词
         exclude_words = ['语音通话', '视频通话', '正在呼叫', '企业微信', '微信', '通话', '接通', 
                        '等待', '结束', '取消', '的', '和', '与', '添加', '成员', '搜索', 
-                       '通讯录', '聊天', '发现', '我', '工作台']
+                       '通讯录', '聊天', '发现', '我', '工作台', 'PC']
         
+        # 3. 排除日期格式（MMDD格式，5位数字）
+        text = re.sub(r'\d{5}', ' ', text)
+        
+        # 4. 排除11位手机号
+        text = re.sub(r'1[3-9]\d{9}', ' ', text)
+        
+        # 5. 排除常见后缀
+        text = re.sub(r'@(?:微信|企业微信)', '', text)
+        
+        # 6. 提取2-4个连续汉字（常见姓名长度）
+        chinese_names = re.findall(r'[\u4e00-\u9fa5]{2,4}', text)
+        for name in chinese_names:
+            if name not in exclude_words:
+                # 排除省市区等地址词
+                addr_words = ['省', '市', '区', '县', '镇', '村', '街', '路', '道', '号', '栋', '楼', '室']
+                if not any(word in name for word in addr_words):
+                    print(f'🎯 提取到联系人: {name}')
+                    return name
+        
+        # 7. 尝试其他模式
         patterns = [
-            (r'([^@\s]+)@(?:微信|企业微信)', 1),
             (r'(?:正在)?呼叫\s*([^@\s，。,，]+)', 1),
             (r'(?:正在)?拨打\s*([^@\s，。,，]+)', 1),
             (r'(?:与|和)\s*([^\s，。,，]+?)(?:的)?(?:通话|视频)', 1),
-            (r'^([^\n\r]{2,8})$', 1),
         ]
         
-        # 尝试正则表达式匹配
         for pattern, group in patterns:
             match = re.search(pattern, text)
             if match:
@@ -451,20 +473,6 @@ class WeworkCallMonitor:
                 if name and len(name) >= 2 and name not in exclude_words:
                     print(f'🎯 正则提取到联系人: {name}')
                     return name
-        
-        # 提取所有可能的中文词
-        matches = re.findall(r'[\u4e00-\u9fa5]{2,10}', text)
-        for m in matches:
-            if m not in exclude_words:
-                print(f'🎯 中文词提取到联系人: {m}')
-                return m
-        
-        # 提取所有字母数字组合
-        matches = re.findall(r'[a-zA-Z0-9\u4e00-\u9fa5]{2,20}', text)
-        for m in matches:
-            if m not in exclude_words:
-                print(f'🎯 通用提取到联系人: {m}')
-                return m
         
         return None
     
