@@ -1048,17 +1048,27 @@ def customer_tracking():
     # 构建数据结构（按客户维度）并计算完播天数
     # 先收集所有user_id
     user_ids = list(set(record.user_id for record in records))
-    # 批量查询客户信息 - 使用复合键 (user_id, nickname)
+    # 批量查询客户信息 - 使用清洗后的昵称作为匹配键
     customer_infos = {}
     for c in CustomerInfo.query.filter(CustomerInfo.user_id.in_(user_ids)).all():
+        # 存储时同时保存原始键和清洗后的键
         customer_infos[(c.user_id, c.nickname)] = c
+        # 额外添加一个使用清洗后昵称的键
+        clean_c_nick = clean_nickname(c.nickname)
+        customer_infos[(c.user_id, f'__clean__{clean_c_nick}')] = c
     
     data = {}
     for record in records:
         key = (record.user_id, record.nickname)
+        customer_info = customer_infos.get(key)
+        
+        # 如果原始键没找到，尝试用清洗后的昵称匹配
+        if not customer_info:
+            clean_record_nick = clean_nickname(record.nickname)
+            customer_info = customer_infos.get((record.user_id, f'__clean__{clean_record_nick}'))
+        
         if key not in data:
             user = User.query.get(record.user_id)
-            customer_info = customer_infos.get(key)
             data[key] = {
                 'user_id': record.user_id,
                 'salesman_name': user.name if user else '',
@@ -1331,13 +1341,29 @@ def save_customer_info():
     
     user_id = data.get('user_id')
     nickname = data.get('nickname')
+    clean_nick = clean_nickname(nickname)
     
-    # 查找或创建客户信息记录
+    # 先尝试用原始昵称查找
     customer_info = CustomerInfo.query.filter_by(user_id=user_id, nickname=nickname).first()
+    
+    # 如果没找到，查找同一用户下清洗后昵称匹配的记录
+    if not customer_info:
+        all_customer_infos = CustomerInfo.query.filter_by(user_id=user_id).all()
+        for c_info in all_customer_infos:
+            if clean_nickname(c_info.nickname) == clean_nick:
+                customer_info = c_info
+                print(f'[DEBUG] 通过清洗后昵称匹配到记录: {c_info.nickname}')
+                break
+    
     print('[DEBUG] 查找结果:', '找到记录' if customer_info else '创建新记录')
     
     if not customer_info:
         customer_info = CustomerInfo(user_id=user_id, nickname=nickname)
+    else:
+        # 如果找到记录，更新昵称为最新版本
+        if customer_info.nickname != nickname:
+            print(f'[DEBUG] 更新昵称: {customer_info.nickname} -> {nickname}')
+            customer_info.nickname = nickname
     
     # 更新字段 - 直接设置，允许空字符串覆盖原值
     customer_info.customer_name = data.get('customer_name') if data.get('customer_name') is not None else ''

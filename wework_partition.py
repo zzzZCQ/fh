@@ -72,13 +72,12 @@ def save_record_to_partition(data):
         uploader_id = data.get('uploader_id')
         
         # 检查是否已经存在进行中的相同通话记录
-        # 使用更宽松的匹配条件：相同用户、相同上传者、时间间隔在5秒内的进行中记录
+        # 匹配条件：相同上传者、时间间隔在10秒内的记录（不管user_name是什么）
         existing = PartitionModel.query.filter(
-            PartitionModel.user_name == user_name,
             PartitionModel.uploader_id == uploader_id,
             PartitionModel.status == 'ongoing',
-            PartitionModel.call_start_time >= call_start_time - timedelta(seconds=5),
-            PartitionModel.call_start_time <= call_start_time + timedelta(seconds=5)
+            PartitionModel.call_start_time >= call_start_time - timedelta(seconds=10),
+            PartitionModel.call_start_time <= call_start_time + timedelta(seconds=10)
         ).first()
         
         if existing:
@@ -95,10 +94,16 @@ def save_record_to_partition(data):
                             (call_end_time - call_start_time).total_seconds()
                         )
                         existing.status = 'completed'
-                    db.session.commit()
-                    print(f'[分表] 更新通话记录结束时间: ID={existing.id}')
-                    return True, existing.id, 'updated', None
-            return True, existing.id, 'existing', None
+            
+            # 如果新的user_name比现有的好（不是"PC的通话"、"未知联系人"），就更新user_name
+            bad_names = ['PC的通话', '未知联系人', '未知用户']
+            if user_name and user_name not in bad_names:
+                if existing.user_name in bad_names or not existing.user_name:
+                    existing.user_name = user_name
+                    print(f'[分表] 更新通话记录联系人: ID={existing.id}, {existing.user_name}')
+            
+            db.session.commit()
+            return True, existing.id, 'updated', None
         
         # 创建新记录
         call_end_time = data.get('call_end_time')

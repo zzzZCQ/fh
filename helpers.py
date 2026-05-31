@@ -30,7 +30,19 @@ def get_unread_count(user_id):
 
 
 def get_active_categories():
-    return Category.query.filter_by(is_active=True).order_by(Category.sort_order.asc(), Category.id.asc()).all()
+    from models import _now_bj
+    now = _now_bj()
+    return Category.query.filter(
+        Category.is_active == True,
+        (Category.expire_time == None) | (Category.expire_time > now)
+    ).order_by(Category.sort_order.asc(), Category.id.asc()).all()
+
+
+def get_all_categories():
+    """获取所有类别（包括已过期的），用于订单列表筛选"""
+    return Category.query.filter_by(is_active=True).order_by(
+        Category.sort_order.asc(), Category.id.asc()
+    ).all()
 
 
 def get_active_gifts(category_id=None):

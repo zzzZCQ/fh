@@ -293,9 +293,6 @@
                 <a class="nav-link {% if request.endpoint == 'admin_config.admin_categories' %}active{% endif %}" href="{{ url_for('admin_config.admin_categories') }}">
                     <i class="bi bi-tags"></i> 类别配置
                 </a>
-                <a class="nav-link {% if request.endpoint == 'admin_config.admin_gifts' %}active{% endif %}" href="{{ url_for('admin_config.admin_gifts') }}">
-                    <i class="bi bi-gift"></i> 赠品配置
-                </a>
                 <a class="nav-link {% if request.endpoint == 'templates.admin_templates' %}active{% endif %}" href="{{ url_for('templates.admin_templates') }}">
                     <i class="bi bi-file-earmark-excel"></i> 模板管理
                 </a>
@@ -304,6 +301,9 @@
                 </a>
                 <a class="nav-link {% if request.endpoint == 'tools.git_page' %}active{% endif %}" href="{{ url_for('tools.git_page') }}">
                     <i class="bi bi-git"></i> Git管理
+                </a>
+                <a class="nav-link {% if request.endpoint == 'admin_config.admin_version' %}active{% endif %}" href="{{ url_for('admin_config.admin_version') }}">
+                    <i class="bi bi-info-circle"></i> 版本配置
                 </a>
             </nav>
         </div>

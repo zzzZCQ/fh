@@ -17,6 +17,7 @@ def admin_categories():
     page = request.args.get('page', 1, type=int)
     name_keyword = request.args.get('name_keyword', '').strip()
     is_main_product = request.args.get('is_main_product', '')
+    is_gift = request.args.get('is_gift', '')
 
     query = Category.query
 
@@ -27,12 +28,21 @@ def admin_categories():
         query = query.filter(Category.is_main_product == True)
     elif is_main_product == '0':
         query = query.filter(Category.is_main_product == False)
+    if is_gift == '1':
+        query = query.filter(Category.is_gift == True)
+    elif is_gift == '0':
+        query = query.filter(Category.is_gift == False)
 
     categories = query.order_by(Category.sort_order.asc(), Category.id.asc()).paginate(
         page=page, per_page=10, error_out=False)
 
+    from models import _now_bj
+    # 获取所有启用的主品
+    main_products = Category.query.filter_by(is_active=True, is_main_product=True).order_by(Category.sort_order.asc(), Category.id.asc()).all()
     return render_template('admin_categories.html', categories=categories,
-                           unread_count=get_unread_count(current_user.id))
+                           main_products=main_products,
+                           unread_count=get_unread_count(current_user.id),
+                           now_bj=_now_bj())
 
 
 @bp.route('/admin/category/add', methods=['POST'])
@@ -41,19 +51,40 @@ def add_category():
     name = request.form.get('name', '').strip()
     sort_order = request.form.get('sort_order', 0, type=int)
     is_main_product = request.form.get('is_main_product') == 'on'
+    is_gift = request.form.get('is_gift') == 'on'
+    related_main_product_id = request.form.get('related_main_product_id', '', type=int) or None
     unit_price = request.form.get('unit_price', 0.0, type=float)
+    expire_time_str = request.form.get('expire_time', '').strip()
+    
+    from models import _now_bj
+    expire_time = None
+    if expire_time_str:
+        try:
+            from datetime import datetime
+            expire_time = datetime.strptime(expire_time_str, '%Y-%m-%dT%H:%M')
+        except ValueError:
+            pass
+    
     if not name:
         flash('类别名称不能为空！', 'danger')
         return redirect(url_for('admin_config.admin_categories'))
     if Category.query.filter_by(name=name).first():
         flash('类别名称已存在！', 'danger')
         return redirect(url_for('admin_config.admin_categories'))
+    
+    # 如果不是赠品，清空关联主品
+    if not is_gift:
+        related_main_product_id = None
+    
     db.session.add(Category(
         name=name, 
         sort_order=sort_order, 
-        is_main_product=is_main_product, 
+        is_main_product=is_main_product,
+        is_gift=is_gift,
+        related_main_product_id=related_main_product_id,
         example=request.form.get('example', '').strip(),
-        unit_price=unit_price
+        unit_price=unit_price,
+        expire_time=expire_time
     ))
     db.session.commit()
     flash(f'类别 "{name}" 添加成功！', 'success')
@@ -68,7 +99,19 @@ def edit_category(category_id):
     sort_order = request.form.get('sort_order', 0, type=int)
     is_active = request.form.get('is_active') == 'on'
     is_main_product = request.form.get('is_main_product') == 'on'
+    is_gift = request.form.get('is_gift') == 'on'
+    related_main_product_id = request.form.get('related_main_product_id', '', type=int) or None
     unit_price = request.form.get('unit_price', 0.0, type=float)
+    expire_time_str = request.form.get('expire_time', '').strip()
+    
+    expire_time = None
+    if expire_time_str:
+        try:
+            from datetime import datetime
+            expire_time = datetime.strptime(expire_time_str, '%Y-%m-%dT%H:%M')
+        except ValueError:
+            pass
+    
     if not name:
         flash('类别名称不能为空！', 'danger')
         return redirect(url_for('admin_config.admin_categories'))
@@ -76,12 +119,22 @@ def edit_category(category_id):
     if existing and existing.id != category_id:
         flash('类别名称已存在！', 'danger')
         return redirect(url_for('admin_config.admin_categories'))
+    
     category.name = name
     category.sort_order = sort_order
     category.is_main_product = is_main_product
+    category.is_gift = is_gift
+    
+    # 如果不是赠品，清空关联主品
+    if not is_gift:
+        category.related_main_product_id = None
+    else:
+        category.related_main_product_id = related_main_product_id
+    
     category.example = request.form.get('example', '').strip()
     category.is_active = is_active
     category.unit_price = unit_price
+    category.expire_time = expire_time
     db.session.commit()
     flash(f'类别 "{name}" 更新成功！', 'success')
     return redirect(url_for('admin_config.admin_categories'))
@@ -242,3 +295,50 @@ def send_broadcast():
     importance_text = {'normal': '一般', 'important': '重要', 'urgent': '紧急'}.get(importance, '一般')
     flash(f'消息已发送（{importance_text}），共发送给 {count} 位用户！', 'success')
     return redirect(url_for('admin_config.admin_broadcast'))
+
+
+# ============ 版本配置 ============
+@bp.route('/admin/version')
+@role_required('admin')
+def admin_version():
+    """版本配置页面"""
+    if current_user.username != 'admin':
+        flash('只有超级管理员可以访问版本配置！', 'danger')
+        return redirect(url_for('orders.dashboard'))
+    
+    from config import APP_VERSION, MIN_SUPPORTED_VERSION, VERSION_RELEASE_DATE
+    return render_template('admin_version.html',
+                           app_version=APP_VERSION,
+                           min_supported_version=MIN_SUPPORTED_VERSION,
+                           version_release_date=VERSION_RELEASE_DATE,
+                           unread_count=get_unread_count(current_user.id))
+
+
+@bp.route('/admin/version/update', methods=['POST'])
+@role_required('admin')
+def update_version():
+    """更新版本配置"""
+    if current_user.username != 'admin':
+        flash('只有超级管理员可以修改版本配置！', 'danger')
+        return redirect(url_for('orders.dashboard'))
+    
+    app_version = request.form.get('app_version', '').strip()
+    min_supported_version = request.form.get('min_supported_version', '').strip()
+    version_release_date = request.form.get('version_release_date', '').strip()
+    
+    # 更新 config.py 文件
+    config_path = os.path.join(os.path.dirname(__file__), 'config.py')
+    with open(config_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # 替换版本配置
+    import re
+    content = re.sub(r'APP_VERSION\s*=\s*".*?"', f'APP_VERSION = "{app_version}"', content)
+    content = re.sub(r'MIN_SUPPORTED_VERSION\s*=\s*".*?"', f'MIN_SUPPORTED_VERSION = "{min_supported_version}"', content)
+    content = re.sub(r'VERSION_RELEASE_DATE\s*=\s*".*?"', f'VERSION_RELEASE_DATE = "{version_release_date}"', content)
+    
+    with open(config_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    
+    flash('版本配置更新成功！重启应用后生效。', 'success')
+    return redirect(url_for('admin_config.admin_version'))

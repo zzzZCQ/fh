@@ -4,6 +4,11 @@ import os
 # 基础路径
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
+# 版本配置
+APP_VERSION = "1.0.1"  # 当前版本
+MIN_SUPPORTED_VERSION = "1.0.0"  # 最低支持的版本，低于此版本的客户端不可用
+VERSION_RELEASE_DATE = "2026-05-31"  # 版本发布日期
+
 
 class Config:
     """基础配置"""

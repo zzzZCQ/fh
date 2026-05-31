@@ -5,11 +5,47 @@ import os
 import winsound
 import winreg
 import subprocess
+import ctypes
+import requests
+from packaging import version as version_parser
 from pathlib import Path
 
 from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox
 from PyQt5.QtCore import Qt, QObject, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont
+
+# 版本号
+CLIENT_VERSION = "1.0.1"
+
+# 互斥锁，防止同一台电脑上运行多个客户端实例
+MUTEX_NAME = "Global\\WeworkNotificationClientMutex"
+mutex = None
+
+def create_mutex():
+    """创建命名互斥锁"""
+    try:
+        kernel32 = ctypes.windll.kernel32
+        mutex = kernel32.CreateMutexW(None, True, MUTEX_NAME)
+        if mutex:
+            if ctypes.get_last_error() == 0:
+                return mutex
+            else:
+                # 已经有实例在运行了
+                kernel32.CloseHandle(mutex)
+                return None
+        return None
+    except Exception as e:
+        print(f"创建互斥锁失败: {e}")
+        return None
+
+def release_mutex(mutex_handle):
+    """释放互斥锁"""
+    try:
+        if mutex_handle:
+            ctypes.windll.kernel32.ReleaseMutex(mutex_handle)
+            ctypes.windll.kernel32.CloseHandle(mutex_handle)
+    except Exception as e:
+        print(f"释放互斥锁失败: {e}")
 
 from settings import Settings
 from tray_icon import TrayIcon
@@ -177,6 +213,11 @@ class MainWindow:
         # 先初始化托盘（必须在任何UI操作之前）
         self.init_tray()
         
+        # 检查版本
+        if not self.check_version():
+            # 版本检查失败，不启动
+            return
+        
         if not self.settings.is_configured():
             # 未配置时显示设置窗口
             self.show_settings()
@@ -188,9 +229,50 @@ class MainWindow:
         
         # 检查是否已配置，没有配置则不启动连接
         if self.settings.is_configured():
-            self.tray.show_message('已启动', '通知客户端已在后台运行')
+            self.tray.show_message('已启动', f'通知客户端 v{CLIENT_VERSION} 已在后台运行')
         else:
             self.tray.show_message('未配置', '请点击托盘图标设置登录信息')
+    
+    def check_version(self):
+        """检查客户端版本"""
+        try:
+            server_url = self.settings.get('server_url', 'http://192.168.100.22:5000')
+            api_url = f"{server_url.rstrip('/')}/wework/api/version"
+            
+            response = requests.get(api_url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success'):
+                    server_version = data.get('server_version', '1.0.0')
+                    min_version = data.get('min_supported_version', '1.0.0')
+                    release_date = data.get('release_date', '')
+                    
+                    # 检查版本
+                    try:
+                        client_ver = version_parser.parse(CLIENT_VERSION)
+                        min_ver = version_parser.parse(min_version)
+                        
+                        if client_ver < min_ver:
+                            QMessageBox.critical(
+                                None, 
+                                "版本过旧", 
+                                f"客户端版本 v{CLIENT_VERSION} 过旧！\n"
+                                f"最低支持版本: v{min_version}\n"
+                                f"服务器版本: v{server_version}\n"
+                                f"发布日期: {release_date}\n\n"
+                                f"请联系管理员获取新版本！"
+                            )
+                            return False
+                        
+                        print(f"[版本检查] 客户端: v{CLIENT_VERSION}, 服务器: v{server_version}")
+                    except Exception as e:
+                        print(f"[版本检查] 版本解析失败: {e}")
+            else:
+                print(f"[版本检查] 获取版本信息失败: {response.status_code}")
+        except Exception as e:
+            print(f"[版本检查] 连接服务器失败: {e}")
+        
+        return True
     
     def init_tray(self):
         """初始化托盘"""
@@ -388,6 +470,11 @@ class MainWindow:
         if hasattr(self, 'wework_monitor'):
             self.wework_monitor.stop()
         
+        # 释放互斥锁
+        global mutex
+        if mutex:
+            release_mutex(mutex)
+        
         self.app.quit()
     
     def play_sound(self, sound_type):
@@ -412,5 +499,18 @@ class MainWindow:
 
 
 if __name__ == '__main__':
-    window = MainWindow()
-    window.run()
+    # 先尝试获取互斥锁
+    mutex = create_mutex()
+    if not mutex:
+        # 已经有实例在运行了
+        app = QApplication(sys.argv)
+        QMessageBox.warning(None, "警告", "客户端已经在运行中！\n同一台电脑上只能运行一个客户端实例。")
+        sys.exit(1)
+    
+    try:
+        window = MainWindow()
+        window.run()
+    finally:
+        # 释放互斥锁
+        if mutex:
+            release_mutex(mutex)

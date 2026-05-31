@@ -3,7 +3,7 @@
 {% block title %}类别配置 - 发货通知系统{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
+<div class="container-fluid mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>产品类别配置</h2>
     </div>
@@ -11,12 +11,12 @@
     <!-- 筛选条件 -->
     <div class="card mb-4">
         <div class="card-body">
-            <form method="GET" action="{{ url_for('admin_config.admin_categories') }}" class="row g-3">
-                <div class="col-md-4">
+            <form method="GET" action="{{ url_for('admin_config.admin_categories') }}" class="row g-3 align-items-end">
+                <div class="col-md-3">
                     <label class="form-label">类别名称</label>
                     <input type="text" class="form-control" name="name_keyword" value="{{ request.args.get('name_keyword', '') }}" placeholder="输入类别名称">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label">是否主品</label>
                     <select class="form-select" name="is_main_product">
                         <option value="">全部</option>
@@ -24,7 +24,15 @@
                         <option value="0" {% if request.args.get('is_main_product') == '0' %}selected{% endif %}>非主品</option>
                     </select>
                 </div>
-                <div class="col-md-5 d-flex align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label">是否赠品</label>
+                    <select class="form-select" name="is_gift">
+                        <option value="">全部</option>
+                        <option value="1" {% if request.args.get('is_gift') == '1' %}selected{% endif %}>赠品</option>
+                        <option value="0" {% if request.args.get('is_gift') == '0' %}selected{% endif %}>非赠品</option>
+                    </select>
+                </div>
+                <div class="col-md-5">
                     <button type="submit" class="btn btn-outline-primary me-2">
                         <i class="bi bi-search"></i> 查询
                     </button>
@@ -43,16 +51,20 @@
     <div class="card">
         <div class="card-body">
             {% if categories.items %}
-            <table class="table table-striped table-hover">
-                <thead>
+            <div class="table-responsive">
+                <table class="table table-striped table-hover table-sm">
+                <thead class="table-light">
                     <tr>
-                        <th style="width: 80px;">排序</th>
-                        <th>类别名称</th>
-                        <th style="width: 80px;">类型</th>
-                        <th style="width: 100px;">单价</th>
+                        <th style="width: 60px;">排序</th>
+                        <th style="width: 140px;">类别名称</th>
+                        <th style="width: 70px;">类型</th>
+                        <th style="width: 70px;">赠品</th>
+                        <th style="width: 120px;">关联主品</th>
+                        <th style="width: 90px;">单价</th>
+                        <th style="width: 110px;">有效期</th>
                         <th>示例</th>
                         <th style="width: 70px;">状态</th>
-                        <th style="width: 150px;">操作</th>
+                        <th style="width: 140px;">操作</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -68,6 +80,24 @@
                             {% endif %}
                         </td>
                         <td>
+                            {% if category.is_gift %}
+                            <span class="badge bg-warning text-dark">赠品</span>
+                            {% else %}
+                            <span class="badge bg-light text-dark">否</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if category.is_gift %}
+                                {% if category.related_main_product %}
+                                <span class="text-info">{{ category.related_main_product.name }}</span>
+                                {% else %}
+                                <span class="text-muted">通用赠品</span>
+                                {% endif %}
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if category.unit_price and category.unit_price > 0 %}
                             <span class="text-success fw-bold">¥{{ category.unit_price }}</span>
                             {% else %}
@@ -75,8 +105,19 @@
                             {% endif %}
                         </td>
                         <td>
+                            {% if category.expire_time %}
+                                {% if category.expire_time < now_bj %}
+                                <span class="text-danger small" title="已过期">已过期</span>
+                                {% else %}
+                                <span class="text-muted small">{{ category.expire_time.strftime('%Y-%m-%d') }}</span>
+                                {% endif %}
+                            {% else %}
+                            <span class="text-success small">永久有效</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if category.example %}
-                            <span class="text-muted" style="max-width:200px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ category.example }}">{{ category.example }}</span>
+                            <span class="text-muted" style="max-width:180px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ category.example }}">{{ category.example }}</span>
                             {% else %}
                             <span class="text-muted small">未设置</span>
                             {% endif %}
@@ -89,7 +130,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editModal{{ category.id }}">编辑</button>
+                            <button type="button" class="btn btn-outline-primary btn-sm me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ category.id }}">编辑</button>
                             <form method="POST" action="{{ url_for('admin_config.delete_category', category_id=category.id) }}" class="d-inline" onsubmit="return confirm('确定要删除此类别吗？')">
                                 <button type="submit" class="btn btn-outline-danger btn-sm">删除</button>
                             </form>
@@ -120,9 +161,28 @@
                                             <input type="number" step="0.01" class="form-control" name="unit_price" value="{{ category.unit_price or 0 }}" min="0" placeholder="0">
                                             <div class="form-text">设置后，提交订单时会验证金额（单价×数量）是否匹配</div>
                                         </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">有效期</label>
+                                            <input type="datetime-local" class="form-control" name="expire_time" value="{{ category.expire_time.strftime('%Y-%m-%dT%H:%M') if category.expire_time else '' }}">
+                                            <div class="form-text">设置后，过了有效期该类别将不再显示在新增订单中。留空表示永久有效。</div>
+                                        </div>
                                         <div class="mb-3 form-check">
                                             <input type="checkbox" class="form-check-input" id="is_main_product{{ category.id }}" name="is_main_product" {% if category.is_main_product %}checked{% endif %}>
                                             <label class="form-check-label" for="is_main_product{{ category.id }}">主品（需要完整信息）</label>
+                                        </div>
+                                        <div class="mb-3 form-check">
+                                            <input type="checkbox" class="form-check-input" id="is_gift{{ category.id }}" name="is_gift" {% if category.is_gift %}checked{% endif %}>
+                                            <label class="form-check-label" for="is_gift{{ category.id }}">赠品（用于补发赠品功能）</label>
+                                        </div>
+                                        <div class="mb-3" id="related_main_product_div{{ category.id }}">
+                                            <label class="form-label">关联主品</label>
+                                            <select class="form-select" name="related_main_product_id">
+                                                <option value="">通用赠品（适用于所有主品）</option>
+                                                {% for mp in main_products %}
+                                                <option value="{{ mp.id }}" {% if category.related_main_product_id == mp.id %}selected{% endif %}>{{ mp.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            <div class="form-text">选择关联的主品后，该赠品仅在对应主品的订单中显示</div>
                                         </div>
                                         <div class="mb-3">
                                             <label class="form-label">排序</label>
@@ -143,14 +203,15 @@
                     </div>
                     {% endfor %}
                 </tbody>
-            </table>
+                </table>
+            </div>
 
             <!-- 分页 -->
-            <nav aria-label="Page navigation">
+            <nav aria-label="Page navigation" class="mt-4">
                 <ul class="pagination justify-content-center">
                     {% if categories.has_prev %}
                     <li class="page-item">
-                        <a class="page-link" href="{{ url_for('admin_config.admin_categories', page=categories.prev_num, name_keyword=request.args.get('name_keyword', ''), is_main_product=request.args.get('is_main_product', '')) }}">上一页</a>
+                        <a class="page-link" href="{{ url_for('admin_config.admin_categories', page=categories.prev_num, name_keyword=request.args.get('name_keyword', ''), is_main_product=request.args.get('is_main_product', ''), is_gift=request.args.get('is_gift', '')) }}">上一页</a>
                     </li>
                     {% else %}
                     <li class="page-item disabled"><span class="page-link">上一页</span></li>
@@ -162,7 +223,7 @@
                             <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
                             {% else %}
                             <li class="page-item">
-                                <a class="page-link" href="{{ url_for('admin_config.admin_categories', page=page_num, name_keyword=request.args.get('name_keyword', ''), is_main_product=request.args.get('is_main_product', '')) }}">{{ page_num }}</a>
+                                <a class="page-link" href="{{ url_for('admin_config.admin_categories', page=page_num, name_keyword=request.args.get('name_keyword', ''), is_main_product=request.args.get('is_main_product', ''), is_gift=request.args.get('is_gift', '')) }}">{{ page_num }}</a>
                             </li>
                             {% endif %}
                         {% else %}
@@ -172,14 +233,14 @@
 
                     {% if categories.has_next %}
                     <li class="page-item">
-                        <a class="page-link" href="{{ url_for('admin_config.admin_categories', page=categories.next_num, name_keyword=request.args.get('name_keyword', ''), is_main_product=request.args.get('is_main_product', '')) }}">下一页</a>
+                        <a class="page-link" href="{{ url_for('admin_config.admin_categories', page=categories.next_num, name_keyword=request.args.get('name_keyword', ''), is_main_product=request.args.get('is_main_product', ''), is_gift=request.args.get('is_gift', '')) }}">下一页</a>
                     </li>
                     {% else %}
                     <li class="page-item disabled"><span class="page-link">下一页</span></li>
                     {% endif %}
                 </ul>
             </nav>
-            <div class="text-center text-muted">
+            <div class="text-center text-muted mt-2">
                 共 {{ categories.total }} 条记录，第 {{ categories.page }} / {{ categories.pages }} 页
             </div>
             {% else %}
@@ -216,10 +277,29 @@
                         <input type="number" step="0.01" class="form-control" id="unit_price" name="unit_price" value="0" min="0" placeholder="0">
                         <div class="form-text">设置后，提交订单时会验证金额（单价×数量）是否匹配</div>
                     </div>
+                    <div class="mb-3">
+                        <label for="expire_time" class="form-label">有效期</label>
+                        <input type="datetime-local" class="form-control" id="expire_time" name="expire_time">
+                        <div class="form-text">设置后，过了有效期该类别将不再显示在新增订单中。留空表示永久有效。</div>
+                    </div>
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="is_main_product" name="is_main_product" checked>
                         <label class="form-check-label" for="is_main_product">主品（需要完整信息）</label>
                         <div class="form-text">非主品（如赠品）只需简单信息</div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="is_gift" name="is_gift">
+                        <label class="form-check-label" for="is_gift">赠品（用于补发赠品功能）</label>
+                    </div>
+                    <div class="mb-3" id="related_main_product_div_add">
+                        <label class="form-label">关联主品</label>
+                        <select class="form-select" name="related_main_product_id">
+                            <option value="">通用赠品（适用于所有主品）</option>
+                            {% for mp in main_products %}
+                            <option value="{{ mp.id }}">{{ mp.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">选择关联的主品后，该赠品仅在对应主品的订单中显示</div>
                     </div>
                     <div class="mb-3">
                         <label for="sort_order" class="form-label">排序</label>
@@ -235,4 +315,31 @@
         </div>
     </div>
 </div>
+
+<script>
+// 初始化时根据是否为赠品显示/隐藏关联主品选择
+document.addEventListener('DOMContentLoaded', function() {
+    // 处理新增模态框
+    const addIsGiftCheckbox = document.getElementById('is_gift');
+    const addRelatedDiv = document.getElementById('related_main_product_div_add');
+    if (addIsGiftCheckbox && addRelatedDiv) {
+        addRelatedDiv.style.display = addIsGiftCheckbox.checked ? 'block' : 'none';
+        addIsGiftCheckbox.addEventListener('change', function() {
+            addRelatedDiv.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+    
+    // 处理编辑模态框
+    {% for category in categories.items %}
+    const editIsGiftCheckbox{{ category.id }} = document.getElementById('is_gift{{ category.id }}');
+    const editRelatedDiv{{ category.id }} = document.getElementById('related_main_product_div{{ category.id }}');
+    if (editIsGiftCheckbox{{ category.id }} && editRelatedDiv{{ category.id }}) {
+        editRelatedDiv{{ category.id }}.style.display = editIsGiftCheckbox{{ category.id }}.checked ? 'block' : 'none';
+        editIsGiftCheckbox{{ category.id }}.addEventListener('change', function() {
+            editRelatedDiv{{ category.id }}.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+    {% endfor %}
+});
+</script>
 {% endblock %}

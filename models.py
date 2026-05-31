@@ -221,10 +221,15 @@ class Category(db.Model):
     name = db.Column(db.String(50), unique=True, nullable=False)
     example = db.Column(db.Text, default='')  # 示例，新增订单时展示在产品信息上方
     is_main_product = db.Column(db.Boolean, default=True)  # 是否为主品（主品需要填写完整信息，非主品如赠品只需简单信息）
+    is_gift = db.Column(db.Boolean, default=False)  # 是否为赠品（用于补发赠品功能）
+    related_main_product_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=True)  # 关联的主品ID（仅赠品有效，为空表示通用赠品）
     unit_price = db.Column(db.Float, default=0.0)  # 单价
     sort_order = db.Column(db.Integer, default=0)
     is_active = db.Column(db.Boolean, default=True)
+    expire_time = db.Column(db.DateTime, nullable=True)  # 有效期，过了这个时间后类别不再显示在新增订单中
     create_time = db.Column(db.DateTime, default=_now_bj)
+    
+    related_main_product = db.relationship('Category', remote_side=[id])  # 关联的主品
 
 
 class Gift(db.Model):

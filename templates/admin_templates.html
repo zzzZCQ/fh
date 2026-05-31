@@ -12,13 +12,20 @@
         vertical-align: middle;
     }
     
+    /* 卡片主体 - 设置最大高度并启用滚动 */
+    .card-body.p-0 {
+        max-height: calc(100vh - 250px);
+        overflow-y: auto;
+    }
+    
     /* 表格容器需要overflow */
     .table-scroll-wrapper {
         overflow-x: auto;
         position: relative;
+        min-height: 200px;
     }
     .table-scroll-wrapper table {
-        min-width: 1200px;
+        min-width: 1400px;
     }
     
     /* 固定列基础样式 */
@@ -30,29 +37,49 @@
     /* 类别列 - 固定最左侧 */
     .sticky-col-left-1 {
         left: 0;
-        z-index: 12;
+        z-index: 30;
         box-shadow: 2px 0 3px rgba(0,0,0,0.1);
     }
     
     /* 导出模板列 - 固定 */
     .sticky-col-left-2 {
         left: 150px;
-        z-index: 12;
+        z-index: 29;
         box-shadow: 2px 0 3px rgba(0,0,0,0.1);
     }
     
     /* 导入模板列 - 固定 */
     .sticky-col-left-3 {
         left: 270px;
-        z-index: 7;
+        z-index: 28;
         box-shadow: 2px 0 3px rgba(0,0,0,0.05);
     }
     
     /* 操作列 - 固定最右侧 */
     .sticky-col-right {
         right: 0;
-        z-index: 7;
+        z-index: 30;
         box-shadow: -2px 0 3px rgba(0,0,0,0.1);
+        background: white;
+    }
+    
+    /* 表头固定在顶部 */
+    thead th {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background-color: #f8f9fa;
+    }
+    
+    /* 确保表头固定列的背景色和层级正确 */
+    thead th.sticky-col {
+        z-index: 35;
+        background-color: #f8f9fa;
+    }
+    
+    /* 表格内容行固定列 */
+    tbody td.sticky-col {
+        background: white;
     }
 </style>
 {% endblock %}

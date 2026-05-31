@@ -1324,7 +1324,6 @@ def product_overview():
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status.in_(['draft', 'submitted', 'shipped']),
-        Order.logistics_status != '退回已签收',
         Order.create_time >= start_date,
         Order.create_time <= end_date
     ).all()
@@ -1368,6 +1367,7 @@ def product_overview():
                 'category': category,
                 'total_amount': 0,
                 'total_count': 0,
+                'valid_amount': 0,
                 'signed_amount': 0,
                 'signed_count': 0,
                 'male_count': 0,
@@ -1377,6 +1377,10 @@ def product_overview():
         
         product_stats[category]['total_amount'] += amount
         product_stats[category]['total_count'] += 1
+        
+        # 统计有效业绩（不包含退回已签收和拒签）
+        if order.logistics_status not in ['退回已签收', '拒签']:
+            product_stats[category]['valid_amount'] += amount
         
         # 统计性别
         gender = order.gender or ''
@@ -1427,4 +1431,87 @@ def product_overview():
         'signed_amount': signed_amount,
         'signed_count': signed_count,
         'products': products_list
+    })
+
+
+@bp.route('/admin/team_performance/api/product_orders')
+@role_required('admin')
+def get_product_orders():
+    """获取指定产品的订单列表"""
+    category = request.args.get('category', '')
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    group = request.args.get('group', '')
+    
+    if not year or not month:
+        now = _now_bj()
+        year, month = now.year, now.month
+    
+    # 计算日期范围
+    month_start = datetime(year, month, 1)
+    month_end = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
+    
+    # 构建查询
+    query = Order.query.filter(
+        Order.create_time >= month_start,
+        Order.create_time <= month_end
+    )
+    
+    # 类别筛选
+    if category:
+        query = query.filter(Order.category == category)
+    
+    # 组别筛选
+    if group:
+        query = query.filter(Order.group_name == group)
+    
+    # 获取订单
+    orders = query.order_by(Order.create_time.desc()).limit(500).all()
+    
+    # 转换为字典列表
+    orders_data = []
+    for order in orders:
+        # 计算总金额（已付+代收）
+        try:
+            paid_str = str(order.paid_amount or '')
+            paid_num = float(re.match(r'[\d.]+', paid_str).group()) if re.match(r'[\d.]+', paid_str) else 0
+        except Exception:
+            paid_num = 0
+        
+        collect_num = float(order.collect_amount or 0)
+        total_amount = paid_num + collect_num
+        
+        # 只展示金额>0的订单
+        if total_amount <= 0:
+            continue
+            
+        try:
+            create_time_str = order.create_time.isoformat() if order.create_time else None
+        except Exception:
+            create_time_str = None
+            
+        try:
+            signed_time_str = order.sign_time.strftime('%Y-%m-%d') if order.sign_time else None
+        except Exception:
+            signed_time_str = None
+            
+        orders_data.append({
+            'id': order.id,
+            'group_name': order.group_name,
+            'salesman_name': order.salesman_name,
+            'customer_name': order.customer_name,
+            'phone': order.phone,
+            'tracking_number': order.tracking_number,
+            'amount': total_amount,
+            'product_info': order.product_info,
+            'status': order.status,
+            'logistics_status': order.logistics_status,
+            'create_time': create_time_str,
+            'signed_time': signed_time_str
+        })
+    
+    return jsonify({
+        'success': True,
+        'orders': orders_data,
+        'total': len(orders_data)
     })

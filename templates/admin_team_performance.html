@@ -226,6 +226,7 @@
                                     <th>产品类别</th>
                                     <th>出单数</th>
                                     <th>总业绩</th>
+                                    <th>有效业绩</th>
                                     <th>已签收数</th>
                                     <th>已签收业绩</th>
                                     <th>签收率</th>
@@ -235,7 +236,7 @@
                                 </tr>
                             </thead>
                             <tbody id="productTableBody">
-                                <tr><td colspan="9" class="text-center text-muted">点击产品维度Tab加载数据...</td></tr>
+                                <tr><td colspan="10" class="text-center text-muted">点击产品维度Tab加载数据...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -284,50 +285,87 @@
 
 <!-- 产品详情模态框 -->
 <div class="modal fade" id="productDetailModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="productModalTitle">产品详情</h5>
+                <h5 class="modal-title" id="productModalTitle">产品详情 - 订单列表</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <!-- 产品概览 -->
-                <div class="row mb-4">
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-body">
-                                <h6 class="card-title">基本信息</h6>
-                                <div class="mb-2">
-                                    <strong>出单数：</strong>
-                                    <span id="productDetailTotalCount">-</span>
-                                </div>
-                                <div class="mb-2">
-                                    <strong>总业绩：</strong>
-                                    <span id="productDetailTotalAmount" class="text-primary">-</span>
-                                </div>
-                                <div class="mb-2">
-                                    <strong>已签收数：</strong>
-                                    <span id="productDetailSignedCount">-</span>
-                                </div>
-                                <div class="mb-2">
-                                    <strong>已签收业绩：</strong>
-                                    <span id="productDetailSignedAmount" class="text-success">-</span>
-                                </div>
-                                <div class="mb-2">
-                                    <strong>签收率：</strong>
-                                    <span id="productDetailSignRate" class="badge bg-success">-</span>
-                                </div>
+                <div class="row mb-3">
+                    <div class="col-md-2">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">出单数</h6>
+                                <h3 id="productDetailTotalCount">-</h3>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-body">
-                                <h6 class="card-title">性别分布</h6>
-                                <div id="productGenderChart" style="height: 300px;"></div>
+                    <div class="col-md-2">
+                        <div class="card bg-info text-white">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">总业绩</h6>
+                                <h3 id="productDetailTotalAmount">-</h3>
                             </div>
                         </div>
                     </div>
+                    <div class="col-md-2">
+                        <div class="card" style="background-color: #17a2b8; color: white;">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">有效业绩</h6>
+                                <h3 id="productDetailValidAmount">-</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">已签收数</h6>
+                                <h3 id="productDetailSignedCount">-</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="card bg-warning text-dark">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">已签收业绩</h6>
+                                <h3 id="productDetailSignedAmount">-</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="card bg-secondary text-white">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">签收率</h6>
+                                <h3 id="productDetailSignRate">-</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 订单列表 -->
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>组别</th>
+                                <th>业务员</th>
+                                <th>客户姓名</th>
+                                <th>电话</th>
+                                <th>快递单号</th>
+                                <th>金额</th>
+                                <th>下单时间</th>
+                                <th>签收状态</th>
+                                <th>签收时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productOrderList">
+                            <tr>
+                                <td colspan="9" class="text-center text-muted">加载中...</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
             <div class="modal-footer">
@@ -806,7 +844,7 @@ function renderProductChart(data) {
 function renderProductTable(data) {
     const tbody = document.getElementById('productTableBody');
     if (!data.products || data.products.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">暂无数据</td></tr>';
         return;
     }
     
@@ -817,13 +855,13 @@ function renderProductTable(data) {
         const signRate = p.total_count > 0 ? Math.round(p.signed_count / p.total_count * 100) : 0;
         const malePercent = p.total_count > 0 ? ((p.male_count / p.total_count) * 100).toFixed(1) : 0;
         const femalePercent = p.total_count > 0 ? ((p.female_count / p.total_count) * 100).toFixed(1) : 0;
-        const unknownPercent = p.total_count > 0 ? ((p.unknown_gender_count / p.total_count) * 100).toFixed(1) : 0;
         
         return `
             <tr style="cursor: pointer;" onclick="showProductDetail('${p.category}')" title="点击查看详情">
                 <td><strong>${p.category}</strong></td>
                 <td>${p.total_count} 单</td>
                 <td class="text-primary"><strong>${formatMoney(p.total_amount)}</strong></td>
+                <td style="color: #17a2b8;"><strong>${formatMoney(p.valid_amount || 0)}</strong></td>
                 <td>${p.signed_count} 单</td>
                 <td class="text-success">${formatMoney(p.signed_amount)}</td>
                 <td>
@@ -868,60 +906,60 @@ function showProductDetail(categoryName) {
     }
     
     // 更新模态框标题
-    document.getElementById('productModalTitle').textContent = categoryName + ' - 详情';
+    document.getElementById('productModalTitle').textContent = '产品详情 - ' + categoryName + ' - 订单列表';
     
     // 更新概览数据
-    document.getElementById('productDetailTotalCount').textContent = productData.total_count + ' 单';
+    document.getElementById('productDetailTotalCount').textContent = productData.total_count;
     document.getElementById('productDetailTotalAmount').textContent = formatMoney(productData.total_amount);
-    document.getElementById('productDetailSignedCount').textContent = productData.signed_count + ' 单';
+    document.getElementById('productDetailValidAmount').textContent = formatMoney(productData.valid_amount || 0);
+    document.getElementById('productDetailSignedCount').textContent = productData.signed_count;
     document.getElementById('productDetailSignedAmount').textContent = formatMoney(productData.signed_amount);
     const signRate = productData.total_count > 0 ? Math.round(productData.signed_count / productData.total_count * 100) : 0;
     document.getElementById('productDetailSignRate').textContent = signRate + '%';
-    document.getElementById('productDetailSignRate').className = 'badge ' + (signRate >= 80 ? 'bg-success' : signRate >= 50 ? 'bg-warning' : 'bg-danger');
     
-    // 渲染性别饼图
-    const genderChart = echarts.init(document.getElementById('productGenderChart'));
-    const genderData = [
-        { value: productData.male_count, name: '男' },
-        { value: productData.female_count, name: '女' },
-        { value: productData.unknown_gender_count, name: '未知' }
-    ].filter(item => item.value > 0);
+    // 显示加载中
+    const tbody = document.getElementById('productOrderList');
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span>加载订单数据...</td></tr>';
     
-    genderChart.setOption({
-        tooltip: {
-            trigger: 'item',
-            formatter: '{b}: {c} ({d}%)'
-        },
-        legend: {
-            orient: 'vertical',
-            left: 'left',
-            data: ['男', '女', '未知']
-        },
-        series: [{
-            name: '性别分布',
-            type: 'pie',
-            radius: ['40%', '70%'],
-            avoidLabelOverlap: false,
-            itemStyle: {
-                borderRadius: 10,
-                borderColor: '#fff',
-                borderWidth: 2
-            },
-            label: {
-                show: true,
-                formatter: '{b}: {c} ({d}%)'
-            },
-            emphasis: {
-                label: {
-                    show: true,
-                    fontSize: 16,
-                    fontWeight: 'bold'
-                }
-            },
-            data: genderData,
-            color: ['#0d6efd', '#e83e8c', '#6c757d']
-        }]
-    });
+    // 从服务器加载订单列表
+    fetch(`/admin/team_performance/api/product_orders?category=${encodeURIComponent(categoryName)}&year=${currentYear}&month=${currentMonth}&group=${currentGroup}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.orders && data.orders.length > 0) {
+                tbody.innerHTML = data.orders.map(order => {
+                    // 计算显示的状态文本
+                    let statusText;
+                    if (order.status === 'draft' || order.status === 'submitted') {
+                        statusText = '待发货';
+                    } else {
+                        statusText = order.logistics_status || '已发货';
+                    }
+                    
+                    const signStatusClass = statusText === '已签收' ? 'bg-success' : 
+                                           statusText === '退回已签收' || statusText === '拒签' ? 'bg-danger' : 
+                                           'bg-secondary';
+                    return `
+                        <tr>
+                            <td><small>${order.group_name || '-'}</small></td>
+                            <td><small>${order.salesman_name || '-'}</small></td>
+                            <td><strong>${order.customer_name || '-'}</strong></td>
+                            <td><small>${order.phone || '-'}</small></td>
+                            <td><small>${order.tracking_number || '-'}</small></td>
+                            <td><strong class="text-primary">${order.amount > 0 ? '¥' + order.amount : '-'}</strong></td>
+                            <td><small>${order.create_time ? new Date(order.create_time).toLocaleDateString() : '-'}</small></td>
+                            <td><span class="badge ${signStatusClass}">${statusText || '-'}</span></td>
+                            <td><small>${order.signed_time || '-'}</small></td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无订单数据</td></tr>';
+            }
+        })
+        .catch(error => {
+            console.error('加载订单列表失败:', error);
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">加载失败，请重试</td></tr>';
+        });
     
     // 打开模态框
     const modal = new bootstrap.Modal(document.getElementById('productDetailModal'));

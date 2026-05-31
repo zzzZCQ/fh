@@ -279,11 +279,18 @@
                             <td onclick="event.stopPropagation()">
                             <div class="d-flex gap-1 align-items-center">
                                 <!-- 导出标记 -->
-                                {% if can_export and order.status == 'submitted' %}
-                                <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline">
-                                    <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}" style="transform: scale(1.2); cursor: pointer;">
-                                    <span class="text-muted small ms-1">导出</span>
-                                </form>
+                                {% if can_see_export_mark and order.status == 'submitted' %}
+                                    {% if can_export %}
+                                        <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline">
+                                            <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}" style="transform: scale(1.2); cursor: pointer;">
+                                        </form>
+                                    {% else %}
+                                        {% if order.export_marked %}
+                                            <span class="text-success fs-5" title="已导出">✅</span>
+                                        {% else %}
+                                            <span class="text-muted fs-5" title="未导出">⭕</span>
+                                        {% endif %}
+                                    {% endif %}
                                 {% endif %}
                                 <!-- 提交按钮（草稿状态，仅自己的订单） -->
                                 {% if order.status == 'draft' and order.salesman_id == current_user.id %}
@@ -530,9 +537,9 @@ function clearStatusFilters() {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>选择需要补发的产品类别，将自动创建一条发货单草稿。</p>
+                <p>选择需要补发的赠品，将自动创建一条发货单草稿。</p>
                 <div class="mb-3">
-                    <label class="form-label">产品类别</label>
+                    <label class="form-label">赠品</label>
                     <select class="form-select" id="reissueCategory" onchange="updateReissueExample()"></select>
                 </div>
                 <div class="mb-3" id="reissueExampleArea" style="display:none;">
@@ -856,7 +863,7 @@ function showReissueGiftModal() {
         return;
     }
     
-    fetch('/api/categories')
+    fetch('/api/categories?order_id=' + currentOrderId)
         .then(r => r.json())
         .then(categories => {
             reissueCategoriesData = categories;

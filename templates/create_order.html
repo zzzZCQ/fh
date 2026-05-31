@@ -21,6 +21,23 @@
     </div>
     {% endif %}
     
+    {% if duplicate_orders %}
+    <div class="alert alert-warning" role="alert">
+        <h5 class="alert-heading">检测到重复订单！</h5>
+        <p>以下订单信息已存在：</p>
+        <ul>
+            {% for order in duplicate_orders %}
+            <li>
+                <strong>{{ order.customer_name }}</strong> - {{ order.phone }} - {{ order.category }} - {{ order.create_time.strftime('%Y-%m-%d %H:%M') }}
+            </li>
+            {% endfor %}
+        </ul>
+        <hr>
+        <p class="mb-0">确认要继续提交吗？</p>
+        <button type="button" class="btn btn-warning mt-2" onclick="confirmDuplicate()">确认提交</button>
+    </div>
+    {% endif %}
+    
     <!-- 标签页切换 -->
     <div class="row mt-4">
         <div class="col-12">
@@ -61,6 +78,7 @@
                                     <!-- 组别、业务员（隐藏，通过后端自动带入） -->
                                     <input type="hidden" name="group_name" value="{{ form_data.group_name if form_data else (current_user.group.name if current_user.group else '') }}">
                                     <input type="hidden" name="salesman" value="{{ current_user.name }}">
+                                    <input type="hidden" name="confirm_duplicate" id="confirm_duplicate" value="0">
                                     
                                     <!-- 第二行：客户名、收货电话、已付金额、代付金额 -->
                                     <div class="row mb-3">
@@ -159,7 +177,7 @@
                                         <div class="col-12">
                                             <div class="d-flex gap-3 justify-content-center">
                                                 <button type="button" class="btn btn-secondary px-5" id="saveDraftBtn">保存草稿</button>
-                                                <button type="submit" name="action" value="submit" class="btn btn-primary px-5">提交订单</button>
+                                                <button type="button" name="action" value="submit" class="btn btn-primary px-5" onclick="checkAndSubmitOrder()">提交订单</button>
                                             </div>
                                         </div>
                                     </div>
@@ -307,6 +325,63 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('batch_category').addEventListener('change', updateBatchCategoryExample);
 });
 
+// 保存草稿
+document.getElementById('saveDraftBtn').addEventListener('click', function() {
+    const form = document.getElementById('createOrderForm');
+    const tempBtn = document.createElement('input');
+    tempBtn.type = 'hidden';
+    tempBtn.name = 'action';
+    tempBtn.value = 'draft';
+    form.appendChild(tempBtn);
+    form.submit();
+});
+
+// 确认重复订单后提交
+function confirmDuplicate() {
+    document.getElementById('confirm_duplicate').value = '1';
+    const form = document.getElementById('createOrderForm');
+    const tempBtn = document.createElement('input');
+    tempBtn.type = 'hidden';
+    tempBtn.name = 'action';
+    tempBtn.value = 'submit';
+    form.appendChild(tempBtn);
+    form.submit();
+}
+
+// 检查并提交订单
+function checkAndSubmitOrder() {
+    const form = document.getElementById('createOrderForm');
+    const phone = document.getElementById('single_phone').value.trim();
+    
+    // 先检查手机号格式
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+        alert('请输入正确的11位手机号！');
+        document.getElementById('single_phone').focus();
+        return;
+    }
+    
+    // 检查是否已确认重复
+    const confirmDuplicate = document.getElementById('confirm_duplicate');
+    if (confirmDuplicate.value === '1') {
+        // 已确认，直接提交
+        const tempBtn = document.createElement('input');
+        tempBtn.type = 'hidden';
+        tempBtn.name = 'action';
+        tempBtn.value = 'submit';
+        form.appendChild(tempBtn);
+        form.submit();
+        return;
+    }
+    
+    // 没有确认，先提交让后端检查重复
+    const tempBtn = document.createElement('input');
+    tempBtn.type = 'hidden';
+    tempBtn.name = 'action';
+    tempBtn.value = 'submit';
+    form.appendChild(tempBtn);
+    form.submit();
+}
+
 // 单个订单智能粘贴
 function smartParse() {
     const input = document.getElementById('smartPasteInput').value.trim();
@@ -370,13 +445,19 @@ function parseSingleCustomer(text) {
     let phone = '';
     let address = '';
     
+    console.log('智能识别 - 原始输入:', text);
+    
     const SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁宣贲邓郁单杭洪包诸左石崔吉钮龚程嵇邢滑裴陆荣翁荀羊於惠甄曲家封芮羿储靳汲邴糜松井段富巫乌焦巴弓牧隗山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴郁胥能苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍却璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾母沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公'.split('');
     const surnameSet = new Set(SURNAMES);
+    const addrKeywords = ['省','市','区','县','镇','村','乡','街道','路','巷','弄','号','栋','楼','室','单元','小区','花园','公寓','大厦','广场','中心','城','苑','庭','居','庄','园'];
     
     function isName(s) {
         if (!s || s.length < 2 || s.length > 4) return false;
         const EXCLUDE = new Set(['收货','地址','电话','姓名','备注','产品','赠品','快递','代收','已付','山东省','山西省','河南省','河北省','湖南省','湖北省','江苏省','江西省','浙江省','福建省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','北京','天津','上海','重庆','自治区']);
         if (EXCLUDE.has(s)) return false;
+        for (const kw of addrKeywords) {
+            if (s.includes(kw)) return false;
+        }
         const TITLE_RE = /^([\u4e00-\u9fff]{1})(先生|女士|小姐|经理|总|老板|哥|姐)$/;
         const tm = s.match(TITLE_RE);
         if (tm) return surnameSet.has(tm[1]);
@@ -385,70 +466,66 @@ function parseSingleCustomer(text) {
     
     function isPhone(s) { return /^1[3-9]\d{9}$/.test(s); }
     
-    // 提取电话
-    const phoneMatch = text.match(/(?<!\d)1[3-9]\d{9}(?!\d)/);
-    if (phoneMatch) phone = phoneMatch[0];
+    // 1. 先按空格分割，分别提取
+    const parts = text.split(/\s+/).filter(s => s.trim());
+    let remainingParts = [...parts];
     
-    // 提取标签格式
-    const nameLabelMatch = text.match(/(?:姓名|名)\s*[：:]*\s*([^\s电话收货地址:：,，\d]{2,4})/);
-    if (nameLabelMatch) name = nameLabelMatch[1].trim();
-    
-    const phoneLabelMatch = text.match(/(?:电话|手机|联系方式)\s*[：:]*\s*(1[3-9]\d{9})/);
-    if (phoneLabelMatch && !phone) phone = phoneLabelMatch[1].trim();
-    
-    const addrLabelMatch = text.match(/(?:收货)?地址\s*[：:]*\s*(.+)/);
-    if (addrLabelMatch) address = addrLabelMatch[1].trim();
-    
-    // 用电话分割文本
-    if (phone && (!name || !address)) {
-        const parts = text.split(phone);
-        const segBefore = (parts[0] || '').replace(/\d{4}年/g, '');
-        const segAfter = (parts[1] || '');
-        
-        // 电话后面找姓名
-        if (!name && segAfter) {
-            const m = segAfter.match(/^\s*([^\s,，.、:：\d]{2,4})\s*$/);
-            if (m && isName(m[1])) name = m[1];
-        }
-        
-        // 电话前面末尾找姓名
-        if (!name && segBefore) {
-            const trimmed = segBefore.replace(/[，。.,、:：~～\s]+$/, '');
-            const m = trimmed.match(/([^\s,，.、:：\d]{2,4})$/);
-            if (m && isName(m[1])) name = m[1];
-        }
-        
-        // 地址 = 电话前面的部分
-        if (!address && segBefore) {
-            address = segBefore.replace(name, '')
-                .replace(/姓名|名|电话|手机|收货|地址|\d{4}年/g, '')
-                .replace(/^[,，.、:：~～\s]+|[,，.、:：~～\s]+$/g, '')
-                .trim();
+    // 2. 先找电话（只支持11位）
+    for (let i = 0; i < remainingParts.length; i++) {
+        if (isPhone(remainingParts[i])) {
+            phone = remainingParts[i];
+            remainingParts.splice(i, 1);
+            break;
         }
     }
     
-    // 如果还没找到，直接找姓名
+    // 如果没找到，用正则再找
+    if (!phone) {
+        const phoneMatch = text.match(/(?<!\d)1[3-9]\d{9}(?!\d)/);
+        if (phoneMatch) phone = phoneMatch[0];
+    }
+    
+    // 3. 找名字
+    for (let i = 0; i < remainingParts.length; i++) {
+        if (isName(remainingParts[i])) {
+            name = remainingParts[i];
+            remainingParts.splice(i, 1);
+            break;
+        }
+    }
+    
+    // 如果没找到，用标签格式
     if (!name) {
-        const chineseOnly = text.replace(/[^\u4e00-\u9fff]/g, '');
-        const nameParts = chineseOnly.match(/([\u4e00-\u9fff]{2,4})/g) || [];
-        for (const part of nameParts) {
-            if (isName(part)) {
-                name = part;
-                break;
-            }
-        }
+        const nameLabelMatch = text.match(/(?:姓名|名)\s*[：:]*\s*([^\s电话收货地址:：,，\d]{2,4})/);
+        if (nameLabelMatch) name = nameLabelMatch[1].trim();
     }
     
-    // 如果还没找到地址，假设电话后面的是地址
+    // 4. 剩下的作为地址
+    if (remainingParts.length > 0) {
+        address = remainingParts.join(' ');
+    }
+    
+    // 5. 如果还是没有地址，用电话分割的方法
     if (!address && phone) {
-        const parts = text.split(phone);
-        if (parts[1]) {
-            address = parts[1].replace(/姓名|名|电话|手机|收货|地址/g, '')
-                .replace(/^[,，.、:：~～\s]+|[,，.、:：~～\s]+$/g, '')
+        const splitParts = text.split(phone);
+        if (splitParts[0]) {
+            address = splitParts[0].replace(/姓名|名|电话|手机|收货|地址/g, '')
+                .replace(/^[，。.,、:：~～\s]+|[，。.,、:：~～\s]+$/g, '')
+                .trim();
+        } else if (splitParts[1]) {
+            address = splitParts[1].replace(/姓名|名|电话|手机|收货|地址/g, '')
+                .replace(/^[，。.,、:：~～\s]+|[，。.,、:：~～\s]+$/g, '')
                 .trim();
         }
     }
     
+    // 6. 标签格式兜底
+    if (!address) {
+        const addrLabelMatch = text.match(/(?:收货)?地址\s*[：:]*\s*(.+)/);
+        if (addrLabelMatch) address = addrLabelMatch[1].trim();
+    }
+    
+    console.log('智能识别 - 结果:', { name, phone, address });
     return { name, phone, address };
 }
 

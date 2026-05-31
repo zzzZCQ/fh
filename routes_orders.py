@@ -6,7 +6,7 @@ from datetime import datetime
 import re
 
 from models import db, User, Order, Group, Category, OrderReminder
-from helpers import role_required, get_unread_count, get_active_categories, get_active_gifts, notify_users, notify_user_upward_admin
+from helpers import role_required, get_unread_count, get_active_categories, get_all_categories, get_active_gifts, notify_users, notify_user_upward_admin
 
 bp = Blueprint('orders', __name__)
 
@@ -236,6 +236,7 @@ def dashboard():
                            can_see_draft=not is_shipper,
                            can_filter_salesman=not is_salesman,
                            can_export=is_admin or is_shipper,
+                           can_see_export_mark=True,  # 所有人都能看到导出标记
                            can_create_order=is_salesman,
                            can_ship=is_admin or is_shipper,
                            can_edit_order=is_salesman or is_admin,
@@ -244,7 +245,7 @@ def dashboard():
                            can_approve_delete=is_admin,
                            auto_refresh=is_salesman,
                            unread_count=get_unread_count(current_user.id),
-                           categories=get_active_categories(),
+                           categories=get_all_categories(),
                            filter_groups=filter_groups if is_admin else [],
                            month_filter=month_filter,
                            total_paid=total_paid,
@@ -369,6 +370,7 @@ def create_order():
     remark = request.form.get('remark', '')
     action = request.form.get('action')
     expected_shipping_time_str = request.form.get('expected_shipping_time')
+    confirm_duplicate = request.form.get('confirm_duplicate', '')
     # 赠品字段
     has_gift = request.form.get('has_gift') == 'on'
     gift_list = request.form.getlist('gift_info') if has_gift else []
@@ -441,6 +443,60 @@ def create_order():
                                      'gender': gender if 'gender' in dir() else ''
                                  },
                                  error=error_msg)
+    
+    # 检查重复订单（只在提交订单时检查，保存草稿不检查）
+    if action == 'submit' and confirm_duplicate != '1':
+        existing_orders = Order.query.filter(
+            Order.customer_name == customer_name,
+            Order.phone == phone,
+            Order.category == category
+        ).order_by(Order.create_time.desc()).limit(5).all()
+        
+        if existing_orders:
+            # 构建错误信息，显示现有订单
+            error_msg = "发现以下相似订单：\n\n"
+            for i, order in enumerate(existing_orders):
+                status_text = {
+                    'draft': '草稿',
+                    'submitted': '待发货',
+                    'shipped': order.logistics_status or '已发货'
+                }.get(order.status, order.status)
+                
+                create_time = order.create_time.strftime('%Y-%m-%d %H:%M') if order.create_time else ''
+                product_short = order.product_info[:50] + '...' if len(order.product_info) > 50 else order.product_info
+                
+                error_msg += f"{i+1}. [{status_text}] {create_time}\n   {product_short}\n\n"
+            
+            # 生成提示信息的HTML
+            if is_ajax:
+                return jsonify({
+                    'success': False, 
+                    'error': error_msg,
+                    'has_duplicate': True
+                })
+            
+            # 渲染页面，保留表单数据并显示重复订单警告
+            return render_template('create_order.html',
+                                 unread_count=get_unread_count(current_user.id),
+                                 categories=get_active_categories(),
+                                 gifts=get_active_gifts(),
+                                 form_data={
+                                     'group_name': group_name,
+                                     'customer_name': customer_name or '',
+                                     'customer_wechat': customer_wechat or '',
+                                     'paid_amount': paid_amount or '',
+                                     'pay_date': pay_date or '',
+                                     'collect_amount': collect_amount or '',
+                                     'product_info': product_info,
+                                     'category': category,
+                                     'phone': phone,
+                                     'address': address,
+                                     'remark': remark or '',
+                                     'has_gift': has_gift,
+                                     'gift_info': gift_list,
+                                     'gender': gender if 'gender' in locals() else ''
+                                 },
+                                 duplicate_orders=existing_orders)
 
     paid = paid_amount.strip() if paid_amount else None
     pay_d = datetime.strptime(pay_date, '%Y-%m-%d').date() if pay_date else None
@@ -732,8 +788,28 @@ def api_order_detail(order_id):
 @bp.route('/api/categories')
 @login_required
 def api_categories():
-    """获取所有非主品产品类别（用于补发赠品）"""
-    categories = Category.query.filter_by(is_active=True, is_main_product=False).order_by(Category.sort_order.asc(), Category.id.asc()).all()
+    """获取赠品类别（用于补发赠品），可根据订单ID筛选相关赠品"""
+    order_id = request.args.get('order_id', type=int)
+    
+    if order_id:
+        # 如果有订单ID，根据订单的主品筛选赠品
+        order = Order.query.get_or_404(order_id)
+        # 查找订单类别对应的主品ID
+        main_product = Category.query.filter_by(name=order.category, is_active=True, is_main_product=True).first()
+        
+        if main_product:
+            # 查询：通用赠品 + 关联该主品的赠品
+            categories = Category.query.filter_by(is_active=True, is_gift=True).filter(
+                (Category.related_main_product_id.is_(None)) | 
+                (Category.related_main_product_id == main_product.id)
+            ).order_by(Category.sort_order.asc(), Category.id.asc()).all()
+        else:
+            # 找不到对应的主品，返回所有赠品
+            categories = Category.query.filter_by(is_active=True, is_gift=True).order_by(Category.sort_order.asc(), Category.id.asc()).all()
+    else:
+        # 没有订单ID，返回所有赠品
+        categories = Category.query.filter_by(is_active=True, is_gift=True).order_by(Category.sort_order.asc(), Category.id.asc()).all()
+    
     return jsonify([{'id': c.id, 'name': c.name, 'example': c.example or ''} for c in categories])
 
 @bp.route('/api/category/<int:category_id>/gifts')

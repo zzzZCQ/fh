@@ -10,6 +10,7 @@ from io import BytesIO
 from PIL import Image
 import threading
 import time
+from packaging import version as version_parser
 from wework_partition import (
     save_record_to_partition, 
     get_records_by_date, 
@@ -17,6 +18,13 @@ from wework_partition import (
     get_available_dates,
     get_partition_model
 )
+
+try:
+    from config import APP_VERSION, MIN_SUPPORTED_VERSION, VERSION_RELEASE_DATE
+except ImportError:
+    APP_VERSION = "1.0.0"
+    MIN_SUPPORTED_VERSION = "1.0.0"
+    VERSION_RELEASE_DATE = "2026-05-31"
 
 # 客户端连接状态管理
 _client_connections = {}
@@ -87,13 +95,20 @@ def init_ocr_async():
             
             print('[OCR] 正在后台初始化cnocr...')
             
-            # 初始化cnocr
+            # 初始化cnocr - 使用更好的模型
             try:
-                reader = CnOcr()
+                # 使用 densenet_lite_136-fc 模型，识别效果更好
+                reader = CnOcr(det_model_name='naive_det', rec_model_name='densenet_lite_136-fc')
                 OCR_AVAILABLE = True
-                print('[OCR] cnocr初始化成功！')
+                print('[OCR] cnocr初始化成功！使用 densenet_lite_136-fc 模型')
             except Exception as e:
-                print(f'[OCR] cnocr初始化失败: {e}')
+                try:
+                    # 如果失败，尝试默认模型
+                    reader = CnOcr()
+                    OCR_AVAILABLE = True
+                    print('[OCR] cnocr初始化成功！使用默认模型')
+                except Exception as e2:
+                    print(f'[OCR] cnocr初始化失败: {e2}')
                 
         except ImportError:
             print('[OCR] cnocr未安装，请运行: pip install cnocr')
@@ -179,6 +194,17 @@ def dashboard():
     )
 
 
+@bp.route('/api/version', methods=['GET'])
+def get_version():
+    """获取版本信息API"""
+    return jsonify({
+        'success': True,
+        'server_version': APP_VERSION,
+        'min_supported_version': MIN_SUPPORTED_VERSION,
+        'release_date': VERSION_RELEASE_DATE
+    })
+
+
 @bp.route('/api/heartbeat', methods=['POST'])
 def client_heartbeat():
     """客户端心跳API - 客户端定期发送心跳表明在线"""
@@ -191,9 +217,25 @@ def client_heartbeat():
         user_id = data.get('user_id')
         user_name = data.get('user_name', '')
         computer_name = data.get('computer_name', '')
+        client_version = data.get('client_version', '0.0.0')
         
         if not client_id:
             return jsonify({'success': False, 'error': '缺少client_id'}), 400
+        
+        # 检查客户端版本
+        try:
+            client_ver = version_parser.parse(client_version)
+            min_ver = version_parser.parse(MIN_SUPPORTED_VERSION)
+            if client_ver < min_ver:
+                return jsonify({
+                    'success': False, 
+                    'error': f'客户端版本过旧，最低支持版本: {MIN_SUPPORTED_VERSION}，请更新！',
+                    'server_version': APP_VERSION,
+                    'min_supported_version': MIN_SUPPORTED_VERSION,
+                    'release_date': VERSION_RELEASE_DATE
+                }), 403
+        except Exception as e:
+            print(f'[版本检查] 版本解析失败: {e}')
         
         # 清理过期连接（客户端每30分钟发送一次心跳，超时设置为35分钟）
         cleanup_stale_connections(timeout_seconds=2100)
@@ -216,6 +258,7 @@ def client_heartbeat():
                 'user_id': user_id,
                 'user_name': user_name,
                 'computer_name': computer_name,
+                'client_version': client_version,
                 'last_heartbeat': time.time(),
                 'ip_address': request.remote_addr
             }
@@ -224,7 +267,10 @@ def client_heartbeat():
             'success': True, 
             'online_count': len(_client_connections),
             'call_recording_enabled': CALL_RECORDING_ENABLED,
-            'config_change_time': _config_change_time
+            'config_change_time': _config_change_time,
+            'server_version': APP_VERSION,
+            'min_supported_version': MIN_SUPPORTED_VERSION,
+            'release_date': VERSION_RELEASE_DATE
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -653,29 +699,33 @@ def ocr_image():
             print(f'[OCR] 图片解码失败: {str(e)}')
             return jsonify({'success': False, 'error': f'图片解码失败: {str(e)}'}), 400
         
-        # 保存截图到服务器（方便调试）
-        screenshot_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'screenshots')
-        print(f'[OCR] 截图目录: {screenshot_dir}')
-        os.makedirs(screenshot_dir, exist_ok=True)
-        
-        # 生成唯一文件名
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        screenshot_path = os.path.join(screenshot_dir, f'screenshot_{timestamp}.png')
-        print(f'[OCR] 准备保存截图到: {screenshot_path}')
-        img.save(screenshot_path)
-        print(f'[OCR] 截图保存成功，大小: {len(img_bytes)} bytes')
-        
-        # 生成可访问的URL
-        screenshot_url = f'/wework/screenshot/{timestamp}.png'
-        print(f'[OCR] 截图已保存: {screenshot_path}')
+        # 跳过保存截图，提高效率
+        screenshot_url = None
         
         text = ''
         contact_name = None
         if OCR_AVAILABLE and reader:
             try:
-                # cnocr识别
-                result = reader.ocr(img)
-                print(f'[OCR] 原始识别结果: {result}')
+                # 图片预处理 - 改进识别效果
+                from PIL import ImageEnhance, ImageOps
+                
+                # 转为灰度图提高识别率
+                if img.mode != 'L':
+                    img = img.convert('L')
+                
+                # 增强对比度
+                enhancer = ImageEnhance.Contrast(img)
+                img = enhancer.enhance(1.5)
+                
+                # 增强锐度
+                enhancer = ImageEnhance.Sharpness(img)
+                img = enhancer.enhance(1.3)
+                
+                # 使用锁保护OCR识别，确保线程安全
+                with _ocr_lock:
+                    # cnocr识别
+                    result = reader.ocr(img)
+                    # print(f'[OCR] 原始识别结果: {result}')
                 
                 # 合并结果 - cnocr返回的是字典列表，每个字典包含text字段
                 if result:
@@ -696,26 +746,11 @@ def ocr_image():
                     print(f'[OCR] 最终提取联系人: {contact_name}')
             except Exception as e:
                 print(f'[OCR] 识别失败: {str(e)}')
+                import traceback
+                print(f'[OCR] 错误详情: {traceback.format_exc()}')
                 pass
         else:
             print('[OCR] OCR未就绪，跳过识别')
-        
-        # 异步删除截图文件
-        def delete_screenshot_async(path):
-            try:
-                import time
-                time.sleep(5)  # 延迟5秒后删除，确保客户端已获取结果
-                if os.path.exists(path):
-                    os.remove(path)
-                    print(f'[OCR] 截图已异步删除: {path}')
-            except Exception as e:
-                print(f'[OCR] 删除截图失败: {e}')
-
-        # 启动异步删除线程
-        import threading
-        delete_thread = threading.Thread(target=delete_screenshot_async, args=(screenshot_path,))
-        delete_thread.daemon = True
-        delete_thread.start()
         
         return jsonify({
             'success': True, 
@@ -726,6 +761,8 @@ def ocr_image():
     
     except Exception as e:
         print(f'[OCR] 接口异常: {str(e)}')
+        import traceback
+        print(f'[OCR] 错误详情: {traceback.format_exc()}')
         return jsonify({'success': True, 'text': ''})  # 出错也返回空，不中断流程
 
 
@@ -746,49 +783,43 @@ def extract_contact_name(text):
     if not text:
         return None
     
-    # 清理文本：移除常见的前缀字符（如X、数字等）
-    # 匹配模式：数字+完、字母+数字+完等前缀 + 联系人名称@微信
-    # 例如：0522完清酒@微信 -> 清酒, SB0211完苗先生@微信 -> 苗先生
+    print(f'[OCR] 原始识别文本: {repr(text[:500])}')
     
-    # 首先尝试匹配带前缀的格式：任意字符+完+联系人@微信
-    prefix_pattern = r'(?:[A-Za-z]*\d+[A-Za-z]*完)?([^\s@]{2,10})@(?:微信|企业微信)'
-    match = re.search(prefix_pattern, text)
+    # 方案1：如果有"完"字，只提取"完"后面的中文名
+    # 格式：0530完心想事成 -> 心想事成
+    match = re.search(r'完([\u4e00-\u9fa5]{2,20})', text)
     if match:
         name = match.group(1).strip()
-        # 清理可能残留的"完"字
-        name = name.replace('完', '')
         if name and len(name) >= 2:
-            print(f'[OCR] 提取联系人（带前缀格式）: {name}')
+            print(f'[OCR] 提取联系人: {name}')
             return name
     
-    # 标准格式：联系人@微信
+    # 方案2：匹配@微信之前的完整内容
     patterns = [
-        (r'([^\s@]{2,10})@(?:微信|企业微信)', 1),
-        (r'(?:正在)?呼叫\s*([^\s，。,，]{2,10})', 1),
-        (r'(?:正在)?拨打\s*([^\s，。,，]{2,10})', 1),
-        (r'(?:与|和)\s*([^\s，。,，]{2,10}?)(?:的)?(?:通话|视频)', 1),
+        r'([\s\S]*?)@微信',
+        r'([\s\S]*?)@企业微信',
     ]
     
-    for pattern, group in patterns:
+    for pattern in patterns:
         match = re.search(pattern, text)
         if match:
-            name = match.group(group).strip()
-            exclude_words = ['语音通话', '视频通话', '正在呼叫', '企业微信', '微信', '通话', '接通', '等待', '结束', '取消', '的', '和', '与']
-            for word in exclude_words:
-                name = name.replace(word, '')
+            name = match.group(1).strip()
+            print(f'[OCR] 初步提取: {repr(name)}')
+            
+            # 清理掉"完"字
+            name = name.replace('完', '')
+            # 只保留中文、字母、数字
             name = re.sub(r'[^\w\u4e00-\u9fa5]', '', name)
+            
+            # 如果包含数字前缀（如0530、A-OX等），去掉数字部分
+            # 保留后面的中文名
+            name = re.sub(r'^[\dA-Za-z\-]+', '', name)
+            
             if name and len(name) >= 2:
                 print(f'[OCR] 提取联系人: {name}')
                 return name
     
-    # 尝试提取中文名称
-    matches = re.findall(r'[\u4e00-\u9fa5]{2,10}', text)
-    exclude_list = ['语音通话', '视频通话', '正在呼叫', '企业微信', '微信', '通话', '正在']
-    for m in matches:
-        if m not in exclude_list:
-            print(f'[OCR] 提取联系人（中文匹配）: {m}')
-            return m
-    
+    print(f'[OCR] 未找到联系人')
     return None
 
 

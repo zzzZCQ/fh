@@ -17,9 +17,14 @@ import base64
 import socket
 import uuid
 import ctypes
+from io import BytesIO
+from packaging import version as version_parser
 
 from PIL import Image, ImageEnhance, ImageGrab
 from settings import Settings
+
+# 版本号
+CLIENT_VERSION = "1.0.1"
 
 
 class WeworkCallMonitor:
@@ -64,11 +69,44 @@ class WeworkCallMonitor:
                 'client_id': self.client_id,
                 'user_id': self.user_id,
                 'user_name': self.user_name,
-                'computer_name': self.computer_name
+                'computer_name': self.computer_name,
+                'client_version': CLIENT_VERSION
             }
             
             self._log(f'发送心跳到 {heartbeat_url}')
             response = requests.post(heartbeat_url, json=data, timeout=5)
+            
+            # 检查版本是否过旧（403状态码）
+            if response.status_code == 403:
+                result = response.json()
+                error_msg = result.get('error', '')
+                if '版本过旧' in error_msg:
+                    server_version = result.get('server_version', '1.0.0')
+                    min_version = result.get('min_supported_version', '1.0.0')
+                    release_date = result.get('release_date', '')
+                    
+                    # 显示错误并退出
+                    from PyQt5.QtWidgets import QMessageBox, QApplication
+                    import sys
+                    import os
+                    
+                    app = QApplication.instance()
+                    if not app:
+                        app = QApplication(sys.argv)
+                    
+                    QMessageBox.critical(
+                        None, 
+                        "版本过旧", 
+                        f"客户端版本 v{CLIENT_VERSION} 过旧！\n"
+                        f"最低支持版本: v{min_version}\n"
+                        f"服务器版本: v{server_version}\n"
+                        f"发布日期: {release_date}\n\n"
+                        f"请联系管理员获取新版本！"
+                    )
+                    
+                    # 强制退出
+                    os._exit(1)
+            
             if response.status_code == 200:
                 result = response.json()
                 if result.get('success'):
@@ -308,23 +346,25 @@ class WeworkCallMonitor:
                 self._log('所有截图方法都失败', 'ERROR')
                 return None
             
-            # 保存原始截图
-            original_path = 'call_screenshot_original.png'
-            img.save(original_path)
-            print(f'📸 原始截图: {img.width}x{img.height}')
+            # 不再裁剪，保留完整窗口内容，确保能截取到用户名
+            print(f'📐 保留完整截图: {img.width}x{img.height}')
             
-            # 截取整个窗口（不裁剪，保留完整内容）
-            print(f'📸 使用完整窗口截图: {img.width}x{img.height}')
+            # 适度放大，提高识别率
+            scale_factor = 2.0
+            new_width = int(img.width * scale_factor)
+            new_height = int(img.height * scale_factor)
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             
-            # 放大并增强对比度
-            scale_factor = 3
-            img = img.resize((img.width * scale_factor, img.height * scale_factor), Image.Resampling.LANCZOS)
+            # 适度增强对比度
             enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(2.0)
+            img = enhancer.enhance(1.5)
             
-            img.save('call_screenshot.png')
-            print(f'📸 处理后截图: {img.width}x{img.height}')
-            return 'call_screenshot.png'
+            # 增强锐度
+            enhancer = ImageEnhance.Sharpness(img)
+            img = enhancer.enhance(1.3)
+            
+            # 不保存到磁盘，直接返回图片对象
+            return img
             
         except Exception as e:
             print(f'截图失败: {e}')
@@ -333,19 +373,20 @@ class WeworkCallMonitor:
             self._log(f'截图失败: {e}', 'ERROR')
             return None
     
-    def windows_ocr(self, image_path):
+    def windows_ocr(self, img):
         """上传图片到服务器进行OCR识别，返回提取的联系人名称"""
         try:
-            if not os.path.exists(image_path):
-                self._log(f'OCR失败: 图片不存在 {image_path}', 'ERROR')
+            if img is None:
+                self._log(f'OCR失败: 图片为空', 'ERROR')
                 return None
             
             server_url = self.settings.get('server_url', 'http://192.168.100.22:5000')
             ocr_url = f"{server_url}/wework/api/ocr"
             
-            # 读取图片并转为base64
-            with open(image_path, 'rb') as f:
-                img_data = base64.b64encode(f.read()).decode('utf-8')
+            # 将PIL Image直接转为base64，不保存到磁盘
+            buffered = BytesIO()
+            img.save(buffered, format="JPEG", quality=80)
+            img_data = base64.b64encode(buffered.getvalue()).decode('utf-8')
             
             self._log(f'发送OCR请求到 {ocr_url}')
             # 发送请求
@@ -473,36 +514,8 @@ class WeworkCallMonitor:
                     break
             
             if call_window:
-                contact_name = f'{self.local_user}的通话'
-                
-                # 尝试从窗口标题提取联系人
-                window_text = call_window['text']
-                print(f'📋 通话窗口标题: {repr(window_text)}')
-                self._log(f'通话窗口标题: {repr(window_text)}')
-                
-                # 多种模式尝试提取联系人
-                patterns = [
-                    r'(.+?)[与-]?(?:语音|视频)通话',
-                    r'(.+?)(?:语音|视频)通话',
-                    r'与(.+?)(?:语音|视频)通话',
-                    r'和(.+?)(?:语音|视频)通话',
-                ]
-                
-                for pattern in patterns:
-                    name_match = re.search(pattern, window_text)
-                    if name_match:
-                        name = name_match.group(1).strip()
-                        exclude_words = ['语音通话', '视频通话', '正在呼叫', '企业微信', '微信', '通话', '接通', '等待', '结束', '取消', '的', '和', '与']
-                        for word in exclude_words:
-                            name = name.replace(word, '')
-                        name = name.strip()
-                        
-                        if name and len(name) >= 2:
-                            contact_name = name
-                            print(f'🎯 从窗口标题找到联系人: {contact_name}')
-                            break
-                
-                return {'has_call': True, 'contact_name': contact_name}
+                # 不尝试从窗口标题提取，只返回检测到有通话
+                return {'has_call': True, 'contact_name': None}
             
         except Exception as e:
             print(f'检测通话失败: {e}')
@@ -599,7 +612,7 @@ class WeworkCallMonitor:
                 if has_call:
                     if self.current_call is None:
                         # 新通话开始，截图OCR识别并保存信息（不上传）
-                        final_contact_name = contact_name
+                        final_contact_name = None
                         try:
                             # 获取通话窗口进行截图
                             windows = self.get_all_windows()
@@ -622,11 +635,11 @@ class WeworkCallMonitor:
                             if call_window:
                                 print(f'📸 检测到新通话窗口: {repr(call_window["text"])}')
                                 print('📸 正在截图...')
-                                image_path = self.capture_window(call_window['hwnd'])
+                                img = self.capture_window(call_window['hwnd'])
                                 
-                                if image_path:
+                                if img:
                                     print('🔍 正在发送OCR请求到服务器...')
-                                    ocr_contact_name = self.windows_ocr(image_path)
+                                    ocr_contact_name = self.windows_ocr(img)
                                     if ocr_contact_name:
                                         final_contact_name = ocr_contact_name
                                         print(f'🎯 从OCR识别到联系人: {final_contact_name}')
@@ -638,6 +651,10 @@ class WeworkCallMonitor:
                             print(f'⚠️ 截图OCR时出错: {e}')
                             import traceback
                             print(f'⚠️ 错误详情: {traceback.format_exc()}')
+                        
+                        # 如果OCR没有识别到联系人，使用一个友好的默认值
+                        if not final_contact_name:
+                            final_contact_name = '未知联系人'
                         
                         # 保存通话信息（不上传）
                         self.current_call = {
