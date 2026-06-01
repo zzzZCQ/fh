@@ -307,7 +307,7 @@ def batch_create_order():
         phone = customer.get('phone', '').strip()
         address = customer.get('address', '').strip()
         
-        if not phone or not address:
+        if not phone or not address or len(address) < 10:
             failed_count += 1
             continue
         

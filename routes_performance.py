@@ -509,7 +509,7 @@ def team_performance_overview():
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status.in_(['draft', 'submitted', 'shipped']),
-        Order.logistics_status != '退回已签收',
+        (Order.logistics_status != '退回已签收') | (Order.logistics_status.is_(None)),
         Order.create_time >= start_date,
         Order.create_time <= end_date
     ).all()
@@ -1324,6 +1324,7 @@ def product_overview():
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status.in_(['draft', 'submitted', 'shipped']),
+        (Order.logistics_status != '退回已签收') | (Order.logistics_status.is_(None)),
         Order.create_time >= start_date,
         Order.create_time <= end_date
     ).all()
