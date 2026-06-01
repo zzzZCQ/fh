@@ -535,7 +535,7 @@ def process_behavior_tracking_data(user_id):
 
 
 def clean_nickname(name):
-    """昵称清洗 - 与企业微信通话记录保持一致的规则（去掉@微信相关处理）"""
+    """昵称清洗 - 与企业微信通话记录保持一致的规则（优化@微信等处理）"""
     if not name:
         return ''
     if not isinstance(name, str):
@@ -543,7 +543,27 @@ def clean_nickname(name):
     
     text = name.strip()
     
-    # 与通话记录一致的清理规则：处理"完"前缀
+    # 第一步：处理换行符，只保留第一行有效内容
+    # 例如："秋天\n@微信" -> "秋天"
+    if '\n' in text:
+        lines = text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and '@' not in line and '微信' not in line:
+                text = line
+                break
+    
+    # 第二步：处理@微信相关后缀
+    # 例如："秋天@微信" -> "秋天", "秋天@" -> "秋天"
+    if '@' in text:
+        text = text.split('@')[0].strip()
+    
+    # 第三步：移除排除词
+    exclude_words = ['语音通话', '视频通话', '正在呼叫', '企业微信', '微信', '通话', '接通', '等待', '结束', '取消', '的', '和', '与', '正在']
+    for word in exclude_words:
+        text = text.replace(word, '')
+    
+    # 第四步：处理"完"前缀
     # 例如：0522完清酒 -> 清酒, SB0211完苗先生 -> 苗先生
     prefix_pattern = r'(?:[A-Za-z]*\d+[A-Za-z]*完)?(.*)'
     match = re.search(prefix_pattern, text)
@@ -554,26 +574,23 @@ def clean_nickname(name):
         if result_name and len(result_name) >= 2:
             text = result_name
     
-    # 与通话记录一致的清理规则：移除排除词
-    exclude_words = ['语音通话', '视频通话', '正在呼叫', '企业微信', '微信', '通话', '接通', '等待', '结束', '取消', '的', '和', '与']
-    for word in exclude_words:
-        text = text.replace(word, '')
-    
-    # 与通话记录一致的清理规则：只保留中文/数字/字母
+    # 第五步：清理特殊字符，只保留中文/数字/字母
     text = re.sub(r'[^\w\u4e00-\u9fa5]', '', text)
     
-    # 保留原有行为轨迹的清理逻辑（作为补充）
-    # 移除日期格式
+    # 第六步：移除日期格式
     text = re.sub(r'[0-9]{1,2}[./-月]?[0-9]{1,2}', '', text)
-    # 移除前缀
+    
+    # 第七步：移除前缀
     prefixes = ['新-', '白-', 'SW-', 'AA-', '不要-', '白嫖-', 'SW', 'AA', '不要', '白嫖', '新', '白']
     for p in prefixes:
         if text.startswith(p):
             text = text[len(p):]
-    # 再次移除完字前缀（以防万一）
+    
+    # 第八步：再次移除完字前缀（以防万一）
     if '完' in text:
         text = text[text.index('完')+1:]
-    # 移除括号内容
+    
+    # 第九步：移除括号内容
     text = re.sub(r'\(.*?\)', '', text)
     text = re.sub(r'（.*?）', '', text)
     

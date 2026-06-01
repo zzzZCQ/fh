@@ -331,8 +331,11 @@ def api_export_performance():
         return jsonify({'success': False, 'message': '没有找到激活的业绩报表模板，请联系管理员配置！'}), 400
 
     # 获取模板配置
-    allowed_categories = json.loads(template.categories) if template.categories else []
     field_mapping = json.loads(template.field_mapping) if template.field_mapping else {}
+
+    # 直接查询所有主产品
+    main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
+    allowed_categories = [c.name for c in main_categories]
 
     # 计算月份范围
     start_date = datetime(year, month, 1)
@@ -1158,8 +1161,11 @@ def export_team_performance():
         return jsonify({'success': False, 'message': '模板文件不存在，请联系管理员重新上传模板！'}), 400
 
     # 获取模板配置
-    allowed_categories = json.loads(template.categories) if template.categories else []
     field_mapping = json.loads(template.field_mapping) if template.field_mapping else {}
+
+    # 直接查询所有主产品
+    main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
+    allowed_categories = [c.name for c in main_categories]
 
     # 计算月份范围
     start_date = datetime(year, month, 1)

@@ -187,10 +187,8 @@ def api_import_template_mapping(category_id):
 def admin_performance_templates():
     """业绩报表模板管理页面"""
     templates = PerformanceReportTemplate.query.filter_by(is_active=True).all()
-    categories = Category.query.filter_by(is_active=True).all()
     return render_template('admin_performance_templates.html',
                            templates=templates,
-                           categories=categories,
                            unread_count=get_unread_count(current_user.id))
 
 
@@ -200,7 +198,6 @@ def save_performance_template():
     """保存业绩报表模板配置"""
     template_id = request.form.get('template_id', type=int)
     name = request.form.get('name', '').strip()
-    categories = request.form.getlist('categories')
     template_file = request.files.get('template_file')
 
     # 字段映射
@@ -222,7 +219,6 @@ def save_performance_template():
     if template_id:
         template = PerformanceReportTemplate.query.get_or_404(template_id)
         template.name = name
-        template.categories = json.dumps(categories)
         template.field_mapping = json.dumps(field_mapping, ensure_ascii=False)
         if filepath:
             template.filepath = filepath
@@ -232,7 +228,6 @@ def save_performance_template():
             return redirect(url_for('import_routes.admin_performance_templates'))
         template = PerformanceReportTemplate(
             name=name,
-            categories=json.dumps(categories),
             field_mapping=json.dumps(field_mapping, ensure_ascii=False),
             filepath=filepath
         )

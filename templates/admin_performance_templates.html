@@ -22,7 +22,6 @@
                         <a href="#" class="list-group-item list-group-item-action {% if loop.first %}active{% endif %}" 
                            data-id="{{ t.id }}" 
                            data-name="{{ t.name }}" 
-                           data-categories="{{ t.categories }}" 
                            data-field-mapping="{{ t.field_mapping }}"
                            onclick="loadTemplateFromElement(this); return false;"
                            id="template_{{ t.id }}">
@@ -35,7 +34,7 @@
                                     </form>
                                 </div>
                             </div>
-                            <small class="text-muted">{{ t.categories|from_json|join(', ') if t.categories else '未配置类别' }}</small>
+                            <small class="text-muted">已自动关联所有主产品</small>
                         </a>
                         {% endfor %}
                     </div>
@@ -70,17 +69,8 @@
                             <div id="current_file" class="form-text text-success mt-1" style="display:none;"></div>
                         </div>
                         
-                        <div class="mb-3">
-                            <label class="form-label">可导出的产品类别 <span class="text-danger">*</span></label>
-                            <div class="form-check">
-                                {% for cat in categories %}
-                                <div class="form-check">
-                                    <input class="form-check-input category-checkbox" type="checkbox" name="categories" value="{{ cat.name }}" id="cat_{{ cat.id }}">
-                                    <label class="form-check-label" for="cat_{{ cat.id }}">{{ cat.name }}</label>
-                                </div>
-                                {% endfor %}
-                            </div>
-                            <div class="form-text">业务员只能导出选中类别的订单</div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> 已自动关联所有主产品
                         </div>
                         
                         <hr>
@@ -162,14 +152,7 @@ function addMappingRow(excelField = '', orderField = '') {
 function loadTemplateFromElement(element) {
     const id = parseInt(element.dataset.id);
     const name = element.dataset.name;
-    let categories = [];
     let fieldMapping = {};
-    
-    try {
-        categories = JSON.parse(element.dataset.categories || '[]');
-    } catch (e) {
-        categories = [];
-    }
     
     try {
         fieldMapping = JSON.parse(element.dataset.fieldMapping || '{}');
@@ -177,22 +160,17 @@ function loadTemplateFromElement(element) {
         fieldMapping = {};
     }
     
-    loadTemplate(id, name, categories, fieldMapping);
+    loadTemplate(id, name, fieldMapping);
 }
 
 // 加载模板
-function loadTemplate(id, name, categories, fieldMapping) {
+function loadTemplate(id, name, fieldMapping) {
     document.getElementById('template_id').value = id;
     document.getElementById('template_name').value = name;
     
     // 显示正在编辑模板
     document.getElementById('current_file').innerHTML = '当前模板文件已存在，如需更换请重新上传';
     document.getElementById('current_file').style.display = 'block';
-    
-    // 重置类别选择
-    document.querySelectorAll('.category-checkbox').forEach(cb => {
-        cb.checked = categories.includes(cb.value);
-    });
     
     // 清空并重新加载字段映射
     document.getElementById('mappingRows').innerHTML = '';
