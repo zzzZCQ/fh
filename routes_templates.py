@@ -28,8 +28,8 @@ def admin_templates():
     export_page = request.args.get('export_page', 1, type=int)
     import_page = request.args.get('import_page', 1, type=int)
 
-    # 获取所有类别
-    categories = Category.query.filter_by(is_active=True).order_by(Category.sort_order.asc()).all()
+    # 获取所有类别，按创建时间倒序排列
+    categories = Category.query.filter_by(is_active=True).order_by(Category.create_time.desc()).all()
 
     # 获取所有导出模板
     all_export_templates = ExcelTemplate.query.all()
@@ -427,22 +427,34 @@ def edit_template():
 @bp.route('/admin/template/batch_copy', methods=['POST'])
 @role_required('admin')
 def batch_copy_export_template():
-    """批量复制导出模板和导入模板到多个类别"""
+    """批量复制模板到多个类别，支持单独复制导出/导入模板"""
     source_template_id = request.form.get('source_template_id', type=int)
+    source_import_template_id = request.form.get('source_import_template_id', type=int)
+    copy_type = request.form.get('copy_type', 'both')  # export, import, both
     target_category_ids = request.form.getlist('target_category_ids')
     
-    if not source_template_id:
+    if not source_template_id and not source_import_template_id:
         return {'success': False, 'message': '请选择源模板！'}
     
     if not target_category_ids:
         return {'success': False, 'message': '请选择至少一个目标类别！'}
     
-    source_template = ExcelTemplate.query.get(source_template_id)
-    if not source_template:
-        return {'success': False, 'message': '源模板不存在！'}
+    # 获取源模板
+    source_template = ExcelTemplate.query.get(source_template_id) if source_template_id else None
+    source_import_template = ImportTemplate.query.get(source_import_template_id) if source_import_template_id else None
     
-    # 查找源模板对应的导入模板
-    source_import_template = ImportTemplate.query.filter_by(category_id=source_template.category_id).first()
+    # 如果是both模式，需要获取对应类别的模板
+    if copy_type == 'both':
+        if source_template_id and not source_template:
+            return {'success': False, 'message': '源导出模板不存在！'}
+        if source_import_template_id and not source_import_template:
+            return {'success': False, 'message': '源导入模板不存在！'}
+        # 如果只选了导出模板但想复制两者，查找对应的导入模板
+        if source_template and not source_import_template:
+            source_import_template = ImportTemplate.query.filter_by(category_id=source_template.category_id).first()
+        # 如果只选了导入模板但想复制两者，查找对应的导出模板
+        if source_import_template and not source_template:
+            source_template = ExcelTemplate.query.filter_by(category_id=source_import_template.category_id).first()
     
     success_count = 0
     failed_count = 0
@@ -454,43 +466,44 @@ def batch_copy_export_template():
             target_category_id = int(target_category_id)
             
             # ========== 复制导出模板 ==========
-            existing_export = ExcelTemplate.query.filter_by(category_id=target_category_id).first()
+            if copy_type in ['export', 'both'] and source_template:
+                existing_export = ExcelTemplate.query.filter_by(category_id=target_category_id).first()
             
-            if existing_export:
-                existing_export.field_mapping = source_template.field_mapping
-                if source_template.filepath and os.path.exists(source_template.filepath):
-                    import shutil
-                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                if existing_export:
+                    existing_export.field_mapping = source_template.field_mapping
+                    if source_template.filepath and os.path.exists(source_template.filepath):
+                        import shutil
+                        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                        filename = source_template.filename
+                        saved_name = f"{target_category_id}_{timestamp}_{filename}"
+                        filepath = os.path.join(UPLOAD_FOLDER, saved_name)
+                        shutil.copy2(source_template.filepath, filepath)
+                        if os.path.exists(existing_export.filepath):
+                            os.remove(existing_export.filepath)
+                        existing_export.filename = filename
+                        existing_export.filepath = filepath
+                    existing_export.create_time = _now_bj()
+                else:
                     filename = source_template.filename
-                    saved_name = f"{target_category_id}_{timestamp}_{filename}"
-                    filepath = os.path.join(UPLOAD_FOLDER, saved_name)
-                    shutil.copy2(source_template.filepath, filepath)
-                    if os.path.exists(existing_export.filepath):
-                        os.remove(existing_export.filepath)
-                    existing_export.filename = filename
-                    existing_export.filepath = filepath
-                existing_export.create_time = _now_bj()
-            else:
-                filename = source_template.filename
-                filepath = None
-                
-                if source_template.filepath and os.path.exists(source_template.filepath):
-                    import shutil
-                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                    saved_name = f"{target_category_id}_{timestamp}_{filename}"
-                    filepath = os.path.join(UPLOAD_FOLDER, saved_name)
-                    shutil.copy2(source_template.filepath, filepath)
-                
-                new_export = ExcelTemplate(
-                    category_id=target_category_id,
-                    filename=filename or '',
-                    filepath=filepath or '',
-                    field_mapping=source_template.field_mapping
-                )
-                db.session.add(new_export)
+                    filepath = None
+                    
+                    if source_template.filepath and os.path.exists(source_template.filepath):
+                        import shutil
+                        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                        saved_name = f"{target_category_id}_{timestamp}_{filename}"
+                        filepath = os.path.join(UPLOAD_FOLDER, saved_name)
+                        shutil.copy2(source_template.filepath, filepath)
+                    
+                    new_export = ExcelTemplate(
+                        category_id=target_category_id,
+                        filename=filename or '',
+                        filepath=filepath or '',
+                        field_mapping=source_template.field_mapping
+                    )
+                    db.session.add(new_export)
             
             # ========== 复制导入模板 ==========
-            if source_import_template:
+            if copy_type in ['import', 'both'] and source_import_template:
                 existing_import = ImportTemplate.query.filter_by(category_id=target_category_id).first()
                 
                 if existing_import:
@@ -543,9 +556,18 @@ def batch_copy_export_template():
 @bp.route('/api/template/target_categories')
 @role_required('admin')
 def get_target_categories():
-    """获取可以复制模板的目标类别（没有模板的类别）"""
+    """获取可以复制模板的目标类别（没有对应模板的类别）"""
+    copy_type = request.args.get('type', 'export')  # export 或 import
+    
     categories = Category.query.filter_by(is_active=True).order_by(Category.sort_order.asc()).all()
-    existing_template_category_ids = [t.category_id for t in ExcelTemplate.query.all()]
-    no_template_categories = [c for c in categories if c.id not in existing_template_category_ids]
+    
+    if copy_type == 'import':
+        # 导入模板：返回没有导入模板的类别
+        existing_category_ids = [t.category_id for t in ImportTemplate.query.all()]
+    else:
+        # 导出模板：返回没有导出模板的类别
+        existing_category_ids = [t.category_id for t in ExcelTemplate.query.all()]
+    
+    no_template_categories = [c for c in categories if c.id not in existing_category_ids]
     
     return jsonify([{'id': c.id, 'name': c.name} for c in no_template_categories])
