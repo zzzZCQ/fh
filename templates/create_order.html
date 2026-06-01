@@ -313,7 +313,7 @@ function validatePaidAmount(input, statusId) {
         input.classList.remove('is-invalid');
         input.classList.add('is-valid');
     } else {
-        statusDiv.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> 格式错误！</span>';
+        statusDiv.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> 格式错误！正确格式：金额企微日期，如 100企微0501 或 0</span>';
         input.classList.remove('is-valid');
         input.classList.add('is-invalid');
     }
@@ -350,6 +350,13 @@ document.addEventListener('DOMContentLoaded', function() {
         {% endfor %}
     };
     
+    // 单个订单的类别单价数据
+    const categoryPrices = {
+        {% for cat in categories %}
+        '{{ cat.name }}': {{ cat.unit_price if cat.unit_price else 0 }},
+        {% endfor %}
+    };
+    
     // 页面加载时自动校验已有的已付金额
     const singlePaidAmount = document.getElementById('single_paid_amount');
     if (singlePaidAmount && singlePaidAmount.value.trim()) {
@@ -362,18 +369,28 @@ document.addEventListener('DOMContentLoaded', function() {
         validatePhone(singlePhone, 'single_phone_status');
     }
 
-    // 单个订单类别示例
+    // 单个订单类别示例和单价
     function updateSingleCategoryExample() {
         var sel = document.getElementById('single_category');
         var exampleDiv = document.getElementById('single_category_example');
         var exampleText = document.getElementById('single_category_example_text');
         var example = categoryExamples[sel.value];
+        var priceDiv = document.getElementById('single_category_price_info');
+        var priceText = document.getElementById('single_category_price_text');
+        var price = categoryPrices[sel.value];
         
         if (example && example.trim()) {
             exampleText.textContent = example;
             exampleDiv.style.display = 'block';
         } else {
             exampleDiv.style.display = 'none';
+        }
+        
+        if (price && price > 0) {
+            priceText.textContent = '单价参考：' + price.toFixed(2) + ' 元';
+            priceDiv.style.display = 'block';
+        } else {
+            priceDiv.style.display = 'none';
         }
     }
 
@@ -444,7 +461,7 @@ function checkAndSubmitOrder() {
     if (paidAmount !== '0' && paidAmount !== '0.00' && paidAmount !== '0.0') {
         const pattern = /^(\d+(\.\d+)?)企微(\d{4})$/;
         if (!pattern.test(paidAmount)) {
-            alert('已付金额格式错误！');
+            alert('已付金额格式错误！正确格式：金额企微日期，如 100企微0501 或 0');
             document.getElementById('single_paid_amount').focus();
             return;
         }
@@ -765,7 +782,7 @@ function submitBatchOrder() {
     if (paidAmount !== '0' && paidAmount !== '0.00' && paidAmount !== '0.0') {
         const pattern = /^(\d+(\.\d+)?)企微(\d{4})$/;
         if (!pattern.test(paidAmount)) {
-            alert('已付金额格式错误！');
+            alert('已付金额格式错误！正确格式：金额企微日期，如 100企微0501 或 0');
             document.getElementById('batch_paid_amount').focus();
             return;
         }

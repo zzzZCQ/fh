@@ -43,19 +43,51 @@ def extract_product_qty(product_info):
 def _get_order_field_value(order, order_field, default_zero=False):
     """根据字段名获取订单对应值
 
-    支持正则表达式提取：
-    - 格式1: /regex/ 或 /regex/group_index  -> 默认从 product_info 提取
-    - 格式2: /源字段/regex/ 或 /源字段/regex/group_index  -> 从指定字段提取
-    - 示例: /康欣胶囊\*(\d+)/  -> 从产品信息提取数量
-    - 示例: /product_info/康欣胶囊\*(\d+)/  -> 同上，显式指定源字段
-    - 示例: /address/省(.+?)市/  -> 从地址提取省份
-    - 示例: /remark/备注[：:](.+)/1  -> 从备注提取，取第1组
+    支持多种格式：
+    1. 简单字段名: customer_name, phone 等
+    2. 正则表达式: /regex/ 或 /field_name/regex/
+    3. 固定文本: {"type": "fixed", "value": "文本内容"}
+    4. 条件匹配: {"type": "condition", "field": "字段名", "conditions": [{"match": "值1", "result": "结果1"}, ...], "default": "默认值"}
 
     参数:
         default_zero: 正则未匹配时是否返回'0'（导出Excel时使用）
     """
+    import json as _json
+
+    # 处理JSON对象格式（固定文本、条件匹配）
+    if isinstance(order_field, dict) or (isinstance(order_field, str) and order_field.startswith('{')):
+        try:
+            config = _json.loads(order_field) if isinstance(order_field, str) else order_field
+            config_type = config.get('type', '')
+
+            # 固定文本
+            if config_type == 'fixed':
+                return config.get('value', '')
+
+            # 条件匹配
+            elif config_type == 'condition':
+                source_field = config.get('field', 'product_info')
+                source_value = getattr(order, source_field, '') or ''
+                if not isinstance(source_value, str):
+                    source_value = str(source_value)
+
+                conditions = config.get('conditions', [])
+                for cond in conditions:
+                    match = cond.get('match', '')
+                    result = cond.get('result', '')
+                    # * 表示匹配所有
+                    if match == '*' or match == '':
+                        return result
+                    # 支持包含匹配
+                    if match in source_value:
+                        return result
+
+                return config.get('default', '')
+        except _json.JSONDecodeError:
+            pass
+
     # 正则表达式提取
-    if order_field.startswith('/') and order_field.endswith('/'):
+    if isinstance(order_field, str) and order_field.startswith('/') and order_field.endswith('/'):
         import re as _re
         expr = order_field[1:-1]
 
@@ -106,33 +138,36 @@ def _get_order_field_value(order, order_field, default_zero=False):
             print(f"[WARN] 正则表达式错误: {order_field}, 错误: {e}")
         return ''
 
-    if order_field == 'customer_name':
+    # 处理字符串格式的字段名
+    order_field_str = str(order_field) if order_field else ''
+
+    if order_field_str == 'customer_name':
         return order.customer_name or ''
-    elif order_field == 'phone':
+    elif order_field_str == 'phone':
         return order.phone or ''
-    elif order_field == 'address':
+    elif order_field_str == 'address':
         return order.address or ''
-    elif order_field == 'product_info':
+    elif order_field_str == 'product_info':
         return order.product_info or ''
-    elif order_field == 'has_gift':
+    elif order_field_str == 'has_gift':
         return 1 if order.has_gift else 0
-    elif order_field == 'gift_info':
+    elif order_field_str == 'gift_info':
         return order.gift_info or ''
-    elif order_field == 'remark':
+    elif order_field_str == 'remark':
         return order.remark or ''
-    elif order_field == 'paid_amount':
+    elif order_field_str == 'paid_amount':
         return order.paid_amount or ''
-    elif order_field == 'collect_amount':
+    elif order_field_str == 'collect_amount':
         return order.collect_amount if order.collect_amount else 0
-    elif order_field == '__extract_qty__':
+    elif order_field_str == '__extract_qty__':
         return extract_product_qty(order.product_info)
-    elif order_field == 'group_name':
+    elif order_field_str == 'group_name':
         return order.group_name or ''
-    elif order_field == 'salesman_name':
+    elif order_field_str == 'salesman_name':
         return order.salesman.name if order.salesman else ''
-    elif order_field == '__date__':
+    elif order_field_str == '__date__':
         return datetime.now().strftime('%Y-%m-%d')
-    elif order_field == '__seq__':
+    elif order_field_str == '__seq__':
         return ''
     return ''
 
@@ -366,7 +401,8 @@ def export_orders():
                 for excel_col_name, order_field in mapping.items():
                     col_idx = resolve_col_index(excel_col_name, header_map)
                     print(f"[DEBUG]   列 '{excel_col_name}' -> 索引 {col_idx}, 字段 {order_field}")
-                    if col_idx is None:
+                    if col_idx is None or col_idx > 1000:
+                        print(f"[WARN]   无效的列索引 {col_idx}，跳过此列")
                         continue
                     # 序号自动递增
                     if order_field == '__seq__':
@@ -448,6 +484,7 @@ def export_orders():
 
             print(f"[DEBUG] 类别 {cat_name} 表头映射: {header_map}")
             print(f"[DEBUG] 配置映射: {mapping}")
+            print(f"[DEBUG] 配置映射的键: {list(mapping.keys())}")
 
             # 从第二行开始填充数据
             data_row = 2
@@ -457,7 +494,8 @@ def export_orders():
                 for excel_col_name, order_field in mapping.items():
                     col_idx = resolve_col_index(excel_col_name, header_map)
                     print(f"[DEBUG]   列 '{excel_col_name}' -> 索引 {col_idx}, 字段 {order_field}")
-                    if not col_idx:
+                    if not col_idx or col_idx > 1000:
+                        print(f"[WARN]   无效的列索引 {col_idx}，跳过此列")
                         continue
                     if order_field == '__seq__':
                         value = seq

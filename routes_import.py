@@ -276,9 +276,16 @@ def resolve_col_index(excel_col, header_map):
     # 先尝试列名匹配
     if excel_col in header_map:
         return header_map[excel_col]
+    # 检查是否是有效的列字母格式（只包含A-Z，不超过3个字符）
+    excel_col_clean = str(excel_col).strip().upper()
+    if len(excel_col_clean) > 3:
+        return None
+    if not all(c.isalpha() for c in excel_col_clean):
+        return None
     # 再尝试列号匹配（A->1, B->2...）
     col_idx = col_letter_to_index(excel_col)
-    if col_idx > 0:
+    # 检查是否在合理的列索引范围内（1-1000）
+    if 0 < col_idx <= 1000:
         return col_idx
     return None
 

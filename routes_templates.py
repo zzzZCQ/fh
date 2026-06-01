@@ -286,20 +286,19 @@ def upload_template():
         flash('请选择产品类别！', 'danger')
         return redirect(url_for('templates.admin_templates'))
 
-    # 收集字段映射（支持正则表达式）
+    # 收集字段映射（支持正则表达式、固定文本、条件匹配）
     field_mapping = {}
     idx = 0
     while True:
         excel_col = request.form.get(f'excel_col_{idx}', '').strip()
         order_field = request.form.get(f'order_field_{idx}', '').strip()
-        regex_field = request.form.get(f'regex_field_{idx}', '').strip()
-        if not excel_col and not order_field and not regex_field:
+        if not excel_col and not order_field:
             break
-        # 优先使用正则表达式
-        actual_field = regex_field if regex_field else order_field
-        if excel_col and actual_field:
-            field_mapping[excel_col] = actual_field
+        if excel_col and order_field:
+            field_mapping[excel_col] = order_field
         idx += 1
+    
+    print(f"[DEBUG] 保存模板字段映射: {field_mapping}")
 
     # 确保上传目录存在
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -386,19 +385,19 @@ def edit_template():
     template_id = request.form.get('template_id', type=int)
     template = ExcelTemplate.query.get_or_404(template_id)
 
-    # 收集字段映射（支持正则表达式）
+    # 收集字段映射（支持正则表达式、固定文本、条件匹配）
     field_mapping = {}
     idx = 0
     while True:
         excel_col = request.form.get(f'excel_col_{idx}', '').strip()
         order_field = request.form.get(f'order_field_{idx}', '').strip()
-        regex_field = request.form.get(f'regex_field_{idx}', '').strip()
-        if not excel_col and not order_field and not regex_field:
+        if not excel_col and not order_field:
             break
-        actual_field = regex_field if regex_field else order_field
-        if excel_col and actual_field:
-            field_mapping[excel_col] = actual_field
+        if excel_col and order_field:
+            field_mapping[excel_col] = order_field
         idx += 1
+    
+    print(f"[DEBUG] 编辑保存模板字段映射: {field_mapping}")
 
     if not field_mapping:
         flash('至少需要配置一个字段映射！', 'danger')

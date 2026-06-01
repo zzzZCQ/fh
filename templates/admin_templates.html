@@ -458,41 +458,397 @@ const exportPresetMappings = [
     { excel: '备注', field: 'remark' },
 ];
 
+// 获取填充类型
+function getFillType(orderField) {
+    if (!orderField) return 'field';
+    if (orderField.startsWith('/') && orderField.endsWith('/')) return 'regex';
+    if (orderField.startsWith('{')) {
+        try {
+            const config = JSON.parse(orderField);
+            if (config.type === 'fixed') return 'fixed';
+            if (config.type === 'condition') return 'condition';
+        } catch (e) {}
+    }
+    return 'field';
+}
+
+// 添加导出映射行
 function addExportMappingRow(excelCol = '', orderField = '') {
     const container = document.getElementById('exportMappingRows');
-    const isRegex = orderField.startsWith('/') && orderField.endsWith('/');
+    const fillType = getFillType(orderField);
+    let configData = {};
+    
+    if (fillType === 'fixed' && orderField.startsWith('{')) {
+        try { configData = JSON.parse(orderField); } catch (e) {}
+    } else if (fillType === 'condition' && orderField.startsWith('{')) {
+        try { configData = JSON.parse(orderField); } catch (e) {}
+    }
+    
     const row = document.createElement('div');
-    row.className = 'row mb-2 align-items-center';
+    row.className = 'card mb-2 export-mapping-row';
     row.innerHTML = `
-        <div class="col-4"><input type="text" class="form-control" placeholder="Excel列名" name="excel_col_${exportMappingIndex}" value="${excelCol}"></div>
-        <div class="col-1 text-center">→</div>
-        <div class="col-6">
-            <div class="input-group">
-                <select class="form-select" name="order_field_${exportMappingIndex}" style="max-width:180px;" onchange="toggleRegexInput(this)">
-                    <option value="">选择字段</option>
-                    <option value="__date__" ${orderField === '__date__' ? 'selected' : ''}>日期（自动）</option>
-                    <option value="__seq__" ${orderField === '__seq__' ? 'selected' : ''}>序号（自动递增）</option>
-                    <option value="group_name" ${orderField === 'group_name' ? 'selected' : ''}>组名</option>
-                    <option value="salesman_name" ${orderField === 'salesman_name' ? 'selected' : ''}>业务员姓名</option>
-                    <option value="customer_name" ${orderField === 'customer_name' ? 'selected' : ''}>客户名</option>
-                    <option value="phone" ${orderField === 'phone' ? 'selected' : ''}>电话</option>
-                    <option value="address" ${orderField === 'address' ? 'selected' : ''}>地址</option>
-                    <option value="product_info" ${orderField === 'product_info' ? 'selected' : ''}>产品信息</option>
-                    <option value="has_gift" ${orderField === 'has_gift' ? 'selected' : ''}>是否有赠品(0/1)</option>
-                    <option value="gift_info" ${orderField === 'gift_info' ? 'selected' : ''}>赠品内容</option>
-                    <option value="remark" ${orderField === 'remark' ? 'selected' : ''}>备注</option>
-                    <option value="paid_amount" ${orderField === 'paid_amount' ? 'selected' : ''}>已付定金</option>
-                    <option value="collect_amount" ${orderField === 'collect_amount' ? 'selected' : ''}>代收金额</option>
-                    <option value="__extract_qty__" ${orderField === '__extract_qty__' ? 'selected' : ''}>提取产品数量</option>
-                    <option value="__regex__" ${isRegex ? 'selected' : ''}>正则提取...</option>
-                </select>
-                <input type="text" class="form-control regex-input" placeholder="如: /康欣胶囊\*(\d+)/" name="regex_field_${exportMappingIndex}" value="${isRegex ? orderField : ''}" style="display:${isRegex ? 'block' : 'none'};">
+        <div class="card-body py-2">
+            <div class="row align-items-center">
+                <div class="col-3">
+                    <input type="text" class="form-control form-control-sm" placeholder="Excel列名" name="excel_col_${exportMappingIndex}" value="${excelCol}">
+                </div>
+                <div class="col-1 text-center">
+                    <span class="badge bg-secondary">→</span>
+                </div>
+                <div class="col-3">
+                    <select class="form-select form-select-sm fill-type-select" onchange="handleExportFillTypeChange(this)">
+                        <option value="field" ${fillType === 'field' ? 'selected' : ''}>直接字段</option>
+                        <option value="regex" ${fillType === 'regex' ? 'selected' : ''}>正则提取</option>
+                        <option value="fixed" ${fillType === 'fixed' ? 'selected' : ''}>固定文本</option>
+                        <option value="condition" ${fillType === 'condition' ? 'selected' : ''}>条件匹配</option>
+                    </select>
+                </div>
+                <div class="col-4">
+                    <div class="field-config" data-type="field">
+                        <select class="form-select form-select-sm" onchange="updateExportFinalInput(this)">
+                            <option value="">选择字段</option>
+                            <option value="__date__">日期（自动）</option>
+                            <option value="__seq__">序号（自动递增）</option>
+                            <option value="group_name">组名</option>
+                            <option value="salesman_name">业务员姓名</option>
+                            <option value="customer_name">客户名</option>
+                            <option value="phone">电话</option>
+                            <option value="address">地址</option>
+                            <option value="product_info">产品信息</option>
+                            <option value="has_gift">是否有赠品(0/1)</option>
+                            <option value="gift_info">赠品内容</option>
+                            <option value="remark">备注</option>
+                            <option value="paid_amount">已付定金</option>
+                            <option value="collect_amount">代收金额</option>
+                        </select>
+                    </div>
+                    <div class="field-config" data-type="regex" style="display:none;">
+                        <input type="text" class="form-control form-control-sm" placeholder='/product_info/固本回元\*(\d+)/' oninput="updateExportFinalInput(this)">
+                    </div>
+                    <div class="field-config" data-type="fixed" style="display:none;">
+                        <input type="text" class="form-control form-control-sm" placeholder='填入的固定文本内容' oninput="updateExportFinalInput(this)">
+                    </div>
+                    <div class="field-config" data-type="condition" style="display:none;">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" onclick="openExportConditionEditor(this)">
+                            <i class="bi bi-gear"></i> 配置条件
+                        </button>
+                    </div>
+                </div>
+                <div class="col-1">
+                    <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.export-mapping-row').remove()">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
             </div>
+            <input type="hidden" class="order-field-final" name="order_field_${exportMappingIndex}" value="">
+            <input type="hidden" class="condition-config" data-config='${JSON.stringify(configData)}'>
         </div>
-        <div class="col-1"><button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.row').remove()"><i class="bi bi-x"></i></button></div>
     `;
     container.appendChild(row);
+    
+    // 设置初始值
+    const select = row.querySelector('.fill-type-select');
+    handleExportFillTypeChange(select);
+    
+    // 设置直接字段的选中值
+    if (fillType === 'field' && orderField && !orderField.startsWith('/') && !orderField.startsWith('{')) {
+        row.querySelector('[data-type="field"] select').value = orderField;
+        row.querySelector('.order-field-final').value = orderField;
+    }
+    // 设置正则表达式的值
+    if (fillType === 'regex' && orderField.startsWith('/')) {
+        row.querySelector('[data-type="regex"] input').value = orderField;
+        row.querySelector('.order-field-final').value = orderField;
+    }
+    // 设置固定文本的值
+    if (fillType === 'fixed' && configData.value) {
+        row.querySelector('[data-type="fixed"] input').value = configData.value;
+        row.querySelector('.order-field-final').value = orderField;
+    }
+    // 设置条件匹配按钮状态
+    if (fillType === 'condition') {
+        const btn = row.querySelector('[data-type="condition"] button');
+        if (configData.conditions && configData.conditions.length > 0) {
+            btn.innerHTML = `<i class="bi bi-gear"></i> 已配置${configData.conditions.length}个条件`;
+            btn.classList.remove('btn-outline-primary');
+            btn.classList.add('btn-success');
+        }
+        // 无论条件是否为空，都设置 order-field-final
+        row.querySelector('.order-field-final').value = orderField;
+    }
+    
     exportMappingIndex++;
+}
+
+// 处理导出填充类型变化
+function handleExportFillTypeChange(select) {
+    const card = select.closest('.card-body');
+    const selectedType = select.value;
+    
+    card.querySelectorAll('.field-config').forEach(el => {
+        el.style.display = 'none';
+    });
+    
+    const targetConfig = card.querySelector(`.field-config[data-type="${selectedType}"]`);
+    if (targetConfig) {
+        targetConfig.style.display = '';
+    }
+    
+    // 清空或初始化 order-field-final
+    const finalInput = card.querySelector('.order-field-final');
+    if (finalInput) {
+        if (selectedType === 'field') {
+            // 直接字段：从 select 获取值
+            const fieldSelect = targetConfig.querySelector('select');
+            if (fieldSelect && fieldSelect.value) {
+                finalInput.value = fieldSelect.value;
+            } else {
+                finalInput.value = '';
+            }
+        } else if (selectedType === 'regex') {
+            // 正则：从输入框获取值
+            const regexInput = targetConfig.querySelector('input');
+            if (regexInput && regexInput.value) {
+                finalInput.value = regexInput.value;
+            } else {
+                finalInput.value = '';
+            }
+        } else if (selectedType === 'fixed') {
+            // 固定文本：从输入框获取值，包装成 JSON
+            const fixedInput = targetConfig.querySelector('input');
+            if (fixedInput && fixedInput.value) {
+                finalInput.value = JSON.stringify({type: 'fixed', value: fixedInput.value});
+            } else {
+                finalInput.value = JSON.stringify({type: 'fixed', value: ''});
+            }
+        } else if (selectedType === 'condition') {
+            // 条件：使用已有的配置或默认配置
+            const configField = card.querySelector('.condition-config');
+            if (configField && configField.dataset.config) {
+                finalInput.value = configField.dataset.config;
+            } else {
+                finalInput.value = JSON.stringify({type: 'condition', field: 'product_info', conditions: [], default: ''});
+            }
+        }
+    }
+}
+
+// 更新导出最终输入
+function updateExportFinalInput(element) {
+    const card = element.closest('.card-body');
+    const finalInput = card.querySelector('.order-field-final');
+    const fillTypeSelect = card.querySelector('.fill-type-select');
+    
+    if (!finalInput || !fillTypeSelect) return;
+    
+    const fillType = fillTypeSelect.value;
+    
+    if (fillType === 'field') {
+        // 直接字段
+        finalInput.value = element.value;
+    } else if (fillType === 'regex') {
+        // 正则
+        finalInput.value = element.value;
+    } else if (fillType === 'fixed') {
+        // 固定文本
+        finalInput.value = JSON.stringify({type: 'fixed', value: element.value});
+    }
+}
+
+// 保存当前正在编辑的映射行
+let currentExportMappingRow = null;
+
+// 打开导出条件编辑器
+function openExportConditionEditor(btn) {
+    const card = btn.closest('.card-body');
+    const existingConfig = card.querySelector('.condition-config');
+    let config = {field: 'product_info', conditions: [{match: '', result: ''}], default: ''};
+    
+    if (existingConfig && existingConfig.dataset.config) {
+        try {
+            config = JSON.parse(existingConfig.dataset.config);
+            // 确保配置对象有正确的结构
+            if (!config.field) config.field = 'product_info';
+            if (!Array.isArray(config.conditions)) config.conditions = [{match: '', result: ''}];
+            if (config.default === undefined) config.default = '';
+        } catch (e) {
+            config = {field: 'product_info', conditions: [{match: '', result: ''}], default: ''};
+        }
+    }
+    
+    // 保存当前映射行引用
+    currentExportMappingRow = btn.closest('.export-mapping-row');
+    
+    const conditionFields = [
+        {value: 'group_name', label: '组别名称'},
+        {value: 'salesman_name', label: '业务员姓名'},
+        {value: 'product_info', label: '产品信息'},
+        {value: 'category', label: '产品类别'},
+        {value: 'customer_name', label: '客户姓名'},
+        {value: 'customer_wechat', label: '客户微信名'},
+        {value: 'phone', label: '联系电话'},
+        {value: 'address', label: '收货地址'},
+        {value: 'remark', label: '备注'},
+        {value: 'paid_amount', label: '已付定金'},
+        {value: 'collect_amount', label: '代收金额'},
+        {value: 'gender', label: '性别'},
+        {value: 'gift_info', label: '赠品内容'},
+        {value: 'tracking_number', label: '快递单号'},
+        {value: 'express_type', label: '快递类型'},
+        {value: 'logistics_status', label: '物流状态'}
+    ];
+    
+    let fieldOptions = '<option value="">选择源字段</option>';
+    conditionFields.forEach(f => {
+        fieldOptions += `<option value="${f.value}" ${config.field === f.value ? 'selected' : ''}>${f.label}</option>`;
+    });
+    
+    let conditionsHtml = '';
+    if (config.conditions.length === 0) {
+        config.conditions = [{match: '', result: ''}];
+    }
+    config.conditions.forEach((cond) => {
+        conditionsHtml += `
+            <div class="row mb-1 condition-item">
+                <div class="col-5">
+                    <input type="text" class="form-control form-control-sm" placeholder="匹配值（如：固本回元）" value="${cond.match}">
+                </div>
+                <div class="col-1 text-center">→</div>
+                <div class="col-5">
+                    <input type="text" class="form-control form-control-sm" placeholder="填充结果" value="${cond.result}">
+                </div>
+                <div class="col-1">
+                    <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.condition-item').remove()">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    const modalHtml = `
+    <div class="modal fade" id="exportConditionEditorModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">条件匹配配置</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">源字段</label>
+                        <select class="form-select" id="exportConditionSourceField">
+                            ${fieldOptions}
+                        </select>
+                        <div class="form-text">根据此字段的值进行匹配</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">匹配条件</label>
+                        <div class="form-text mb-2">当源字段包含"匹配值"时，填充对应"结果"。留空或填 * 表示匹配所有（作为默认值）</div>
+                        <div id="exportConditionItems">
+                            ${conditionsHtml}
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="addExportConditionItem()">
+                            <i class="bi bi-plus"></i> 添加条件
+                        </button>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">默认结果</label>
+                        <input type="text" class="form-control" id="exportConditionDefault" placeholder="当所有条件都不匹配时使用" value="${config.default || ''}">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveExportConditionConfig(this)">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+    
+    const existingModal = document.getElementById('exportConditionEditorModal');
+    if (existingModal) existingModal.remove();
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    const modal = new bootstrap.Modal(document.getElementById('exportConditionEditorModal'));
+    modal.show();
+    
+    document.getElementById('exportConditionEditorModal').addEventListener('hidden.bs.modal', function() {
+        this.remove();
+    });
+}
+
+// 添加导出条件项
+function addExportConditionItem() {
+    const container = document.getElementById('exportConditionItems');
+    const itemHtml = `
+        <div class="row mb-1 condition-item">
+            <div class="col-5">
+                <input type="text" class="form-control form-control-sm" placeholder="匹配值（如：固本回元）">
+            </div>
+            <div class="col-1 text-center">→</div>
+            <div class="col-5">
+                <input type="text" class="form-control form-control-sm" placeholder="填充结果">
+            </div>
+            <div class="col-1">
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.condition-item').remove()">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', itemHtml);
+}
+
+// 保存导出条件配置
+function saveExportConditionConfig(btn) {
+    const modal = btn.closest('.modal');
+    
+    const config = {
+        type: 'condition',
+        field: document.getElementById('exportConditionSourceField').value || 'product_info',
+        conditions: [],
+        default: document.getElementById('exportConditionDefault').value || ''
+    };
+    
+    modal.querySelectorAll('.condition-item').forEach(item => {
+        const inputs = item.querySelectorAll('input');
+        const match = inputs[0].value.trim();
+        const result = inputs[1].value.trim();
+        if (match || result) {
+            config.conditions.push({match: match, result: result});
+        }
+    });
+    
+    // 更新映射行的配置
+    const mappingRow = currentExportMappingRow;
+    if (!mappingRow) return;
+    const cardBody = mappingRow.querySelector('.card-body');
+    
+    let configField = cardBody.querySelector('.condition-config');
+    if (!configField) {
+        configField = document.createElement('input');
+        configField.type = 'hidden';
+        configField.className = 'condition-config';
+        cardBody.appendChild(configField);
+    }
+    configField.dataset.config = JSON.stringify(config);
+    
+    // 同时更新 order-field-final
+    const finalInput = cardBody.querySelector('.order-field-final');
+    finalInput.value = JSON.stringify(config);
+    
+    const configBtn = cardBody.querySelector('.field-config[data-type="condition"] button');
+    if (config.conditions.length > 0) {
+        configBtn.innerHTML = `<i class="bi bi-gear"></i> 已配置${config.conditions.length}个条件`;
+        configBtn.classList.remove('btn-outline-primary');
+        configBtn.classList.add('btn-success');
+    }
+    
+    bootstrap.Modal.getInstance(modal).hide();
 }
 
 function toggleRegexInput(sel) {
@@ -527,6 +883,41 @@ function onExportCategoryChange() {
                 for (const [k, v] of Object.entries(data)) addExportMappingRow(k, v);
             }
         });
+}
+
+// 表单提交前处理（新增导出模板）
+document.querySelector('#addExportTemplateModal form').addEventListener('submit', function(e) {
+    processExportMappingForm(this);
+});
+
+function processExportMappingForm(form) {
+    const rows = form.querySelectorAll('.export-mapping-row');
+    
+    rows.forEach(row => {
+        const cardBody = row.querySelector('.card-body');
+        const fillType = cardBody.querySelector('.fill-type-select').value;
+        
+        let orderFieldValue = '';
+        
+        if (fillType === 'field') {
+            orderFieldValue = cardBody.querySelector('[data-type="field"] select').value;
+        } else if (fillType === 'regex') {
+            orderFieldValue = cardBody.querySelector('[data-type="regex"] input').value;
+        } else if (fillType === 'fixed') {
+            const fixedText = cardBody.querySelector('[data-type="fixed"] input').value;
+            if (fixedText) {
+                orderFieldValue = JSON.stringify({type: 'fixed', value: fixedText});
+            }
+        } else if (fillType === 'condition') {
+            const configField = cardBody.querySelector('.condition-config');
+            if (configField && configField.dataset.config) {
+                orderFieldValue = configField.dataset.config;
+            }
+        }
+        
+        const finalInput = cardBody.querySelector('.order-field-final');
+        finalInput.value = orderFieldValue;
+    });
 }
 
 // ========== 导入模板 ==========
@@ -805,39 +1196,379 @@ document.addEventListener('click', function(e) {
 
 function addEditExportMappingRow(excelCol = '', orderField = '') {
     const container = document.getElementById('editExportMappingRows');
-    const isRegex = orderField.startsWith('/') && orderField.endsWith('/');
+    const fillType = getFillType(orderField);
+    let configData = {};
+    
+    if (fillType === 'fixed' && orderField.startsWith('{')) {
+        try { configData = JSON.parse(orderField); } catch (e) {}
+    } else if (fillType === 'condition' && orderField.startsWith('{')) {
+        try { configData = JSON.parse(orderField); } catch (e) {}
+    }
+    
     const row = document.createElement('div');
-    row.className = 'row mb-2 align-items-center';
+    row.className = 'card mb-2 edit-export-mapping-row';
     row.innerHTML = `
-        <div class="col-4"><input type="text" class="form-control" placeholder="Excel列名" name="excel_col_${editExportMappingIndex}" value="${excelCol}"></div>
-        <div class="col-1 text-center">→</div>
-        <div class="col-6">
-            <div class="input-group">
-                <select class="form-select" name="order_field_${editExportMappingIndex}" style="max-width:180px;" onchange="toggleEditRegexInput(this)">
-                    <option value="">选择字段</option>
-                    <option value="__date__" ${orderField === '__date__' ? 'selected' : ''}>日期（自动）</option>
-                    <option value="__seq__" ${orderField === '__seq__' ? 'selected' : ''}>序号（自动递增）</option>
-                    <option value="group_name" ${orderField === 'group_name' ? 'selected' : ''}>组名</option>
-                    <option value="salesman_name" ${orderField === 'salesman_name' ? 'selected' : ''}>业务员姓名</option>
-                    <option value="customer_name" ${orderField === 'customer_name' ? 'selected' : ''}>客户名</option>
-                    <option value="phone" ${orderField === 'phone' ? 'selected' : ''}>电话</option>
-                    <option value="address" ${orderField === 'address' ? 'selected' : ''}>地址</option>
-                    <option value="product_info" ${orderField === 'product_info' ? 'selected' : ''}>产品信息</option>
-                    <option value="has_gift" ${orderField === 'has_gift' ? 'selected' : ''}>是否有赠品(0/1)</option>
-                    <option value="gift_info" ${orderField === 'gift_info' ? 'selected' : ''}>赠品内容</option>
-                    <option value="remark" ${orderField === 'remark' ? 'selected' : ''}>备注</option>
-                    <option value="paid_amount" ${orderField === 'paid_amount' ? 'selected' : ''}>已付定金</option>
-                    <option value="collect_amount" ${orderField === 'collect_amount' ? 'selected' : ''}>代收金额</option>
-                    <option value="__extract_qty__" ${orderField === '__extract_qty__' ? 'selected' : ''}>提取产品数量</option>
-                    <option value="__regex__" ${isRegex ? 'selected' : ''}>正则提取...</option>
-                </select>
-                <input type="text" class="form-control regex-input" placeholder="如: /数量[：:]([\\d]+)/" name="regex_field_${editExportMappingIndex}" value="${isRegex ? orderField : ''}" style="display:${isRegex ? 'block' : 'none'};">
+        <div class="card-body py-2">
+            <div class="row align-items-center">
+                <div class="col-3">
+                    <input type="text" class="form-control form-control-sm" placeholder="Excel列名" name="excel_col_${editExportMappingIndex}" value="${excelCol}">
+                </div>
+                <div class="col-1 text-center">
+                    <span class="badge bg-secondary">→</span>
+                </div>
+                <div class="col-3">
+                    <select class="form-select form-select-sm edit-fill-type-select" onchange="handleEditExportFillTypeChange(this)">
+                        <option value="field" ${fillType === 'field' ? 'selected' : ''}>直接字段</option>
+                        <option value="regex" ${fillType === 'regex' ? 'selected' : ''}>正则提取</option>
+                        <option value="fixed" ${fillType === 'fixed' ? 'selected' : ''}>固定文本</option>
+                        <option value="condition" ${fillType === 'condition' ? 'selected' : ''}>条件匹配</option>
+                    </select>
+                </div>
+                <div class="col-4">
+                    <div class="field-config" data-type="field">
+                        <select class="form-select form-select-sm" onchange="updateEditExportFinalInput(this)">
+                            <option value="">选择字段</option>
+                            <option value="__date__">日期（自动）</option>
+                            <option value="__seq__">序号（自动递增）</option>
+                            <option value="group_name">组名</option>
+                            <option value="salesman_name">业务员姓名</option>
+                            <option value="customer_name">客户名</option>
+                            <option value="phone">电话</option>
+                            <option value="address">地址</option>
+                            <option value="product_info">产品信息</option>
+                            <option value="has_gift">是否有赠品(0/1)</option>
+                            <option value="gift_info">赠品内容</option>
+                            <option value="remark">备注</option>
+                            <option value="paid_amount">已付定金</option>
+                            <option value="collect_amount">代收金额</option>
+                        </select>
+                    </div>
+                    <div class="field-config" data-type="regex" style="display:none;">
+                        <input type="text" class="form-control form-control-sm" placeholder='/product_info/固本回元\*(\d+)/' oninput="updateEditExportFinalInput(this)">
+                    </div>
+                    <div class="field-config" data-type="fixed" style="display:none;">
+                        <input type="text" class="form-control form-control-sm" placeholder='填入的固定文本内容' oninput="updateEditExportFinalInput(this)">
+                    </div>
+                    <div class="field-config" data-type="condition" style="display:none;">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" onclick="openEditExportConditionEditor(this)">
+                            <i class="bi bi-gear"></i> 配置条件
+                        </button>
+                    </div>
+                </div>
+                <div class="col-1">
+                    <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.edit-export-mapping-row').remove()">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
             </div>
+            <input type="hidden" class="order-field-final" name="order_field_${editExportMappingIndex}" value="">
+            <input type="hidden" class="condition-config" data-config='${JSON.stringify(configData)}'>
         </div>
-        <div class="col-1"><button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.row').remove()"><i class="bi bi-x"></i></button></div>
     `;
     container.appendChild(row);
+    
+    // 设置初始值
+    const select = row.querySelector('.edit-fill-type-select');
+    handleEditExportFillTypeChange(select);
+    
+    // 设置直接字段的选中值
+    if (fillType === 'field' && orderField && !orderField.startsWith('/') && !orderField.startsWith('{')) {
+        row.querySelector('[data-type="field"] select').value = orderField;
+        row.querySelector('.order-field-final').value = orderField;
+    }
+    // 设置正则表达式的值
+    if (fillType === 'regex' && orderField.startsWith('/')) {
+        row.querySelector('[data-type="regex"] input').value = orderField;
+        row.querySelector('.order-field-final').value = orderField;
+    }
+    // 设置固定文本的值
+    if (fillType === 'fixed' && configData.value) {
+        row.querySelector('[data-type="fixed"] input').value = configData.value;
+        row.querySelector('.order-field-final').value = orderField;
+    }
+    // 设置条件匹配按钮状态
+    if (fillType === 'condition') {
+        const btn = row.querySelector('[data-type="condition"] button');
+        if (configData.conditions && configData.conditions.length > 0) {
+            btn.innerHTML = `<i class="bi bi-gear"></i> 已配置${configData.conditions.length}个条件`;
+            btn.classList.remove('btn-outline-primary');
+            btn.classList.add('btn-success');
+        }
+        // 无论条件是否为空，都设置 order-field-final
+        row.querySelector('.order-field-final').value = orderField;
+    }
+    
     editExportMappingIndex++;
+}
+
+// 处理编辑导出填充类型变化
+function handleEditExportFillTypeChange(select) {
+    const card = select.closest('.card-body');
+    const selectedType = select.value;
+    
+    card.querySelectorAll('.field-config').forEach(el => {
+        el.style.display = 'none';
+    });
+    
+    const targetConfig = card.querySelector(`.field-config[data-type="${selectedType}"]`);
+    if (targetConfig) {
+        targetConfig.style.display = '';
+    }
+    
+    // 清空或初始化 order-field-final
+    const finalInput = card.querySelector('.order-field-final');
+    if (finalInput) {
+        if (selectedType === 'field') {
+            // 直接字段：从 select 获取值
+            const fieldSelect = targetConfig.querySelector('select');
+            if (fieldSelect && fieldSelect.value) {
+                finalInput.value = fieldSelect.value;
+            } else {
+                finalInput.value = '';
+            }
+        } else if (selectedType === 'regex') {
+            // 正则：从输入框获取值
+            const regexInput = targetConfig.querySelector('input');
+            if (regexInput && regexInput.value) {
+                finalInput.value = regexInput.value;
+            } else {
+                finalInput.value = '';
+            }
+        } else if (selectedType === 'fixed') {
+            // 固定文本：从输入框获取值，包装成 JSON
+            const fixedInput = targetConfig.querySelector('input');
+            if (fixedInput && fixedInput.value) {
+                finalInput.value = JSON.stringify({type: 'fixed', value: fixedInput.value});
+            } else {
+                finalInput.value = JSON.stringify({type: 'fixed', value: ''});
+            }
+        } else if (selectedType === 'condition') {
+            // 条件：使用已有的配置或默认配置
+            const configField = card.querySelector('.condition-config');
+            if (configField && configField.dataset.config) {
+                finalInput.value = configField.dataset.config;
+            } else {
+                finalInput.value = JSON.stringify({type: 'condition', field: 'product_info', conditions: [], default: ''});
+            }
+        }
+    }
+}
+
+// 更新编辑导出最终输入
+function updateEditExportFinalInput(element) {
+    const card = element.closest('.card-body');
+    const finalInput = card.querySelector('.order-field-final');
+    const fillTypeSelect = card.querySelector('.edit-fill-type-select');
+    
+    if (!finalInput || !fillTypeSelect) return;
+    
+    const fillType = fillTypeSelect.value;
+    
+    if (fillType === 'field') {
+        // 直接字段
+        finalInput.value = element.value;
+    } else if (fillType === 'regex') {
+        // 正则
+        finalInput.value = element.value;
+    } else if (fillType === 'fixed') {
+        // 固定文本
+        finalInput.value = JSON.stringify({type: 'fixed', value: element.value});
+    }
+}
+
+// 保存当前正在编辑的映射行（编辑模式）
+let currentEditExportMappingRow = null;
+
+// 打开编辑导出条件编辑器
+function openEditExportConditionEditor(btn) {
+    const card = btn.closest('.card-body');
+    const existingConfig = card.querySelector('.condition-config');
+    let config = {field: 'product_info', conditions: [{match: '', result: ''}], default: ''};
+    
+    if (existingConfig && existingConfig.dataset.config) {
+        try {
+            config = JSON.parse(existingConfig.dataset.config);
+            // 确保配置对象有正确的结构
+            if (!config.field) config.field = 'product_info';
+            if (!Array.isArray(config.conditions)) config.conditions = [{match: '', result: ''}];
+            if (config.default === undefined) config.default = '';
+        } catch (e) {
+            config = {field: 'product_info', conditions: [{match: '', result: ''}], default: ''};
+        }
+    }
+    
+    // 保存当前映射行引用
+    currentEditExportMappingRow = btn.closest('.edit-export-mapping-row');
+    
+    const conditionFields = [
+        {value: 'group_name', label: '组别名称'},
+        {value: 'salesman_name', label: '业务员姓名'},
+        {value: 'product_info', label: '产品信息'},
+        {value: 'category', label: '产品类别'},
+        {value: 'customer_name', label: '客户姓名'},
+        {value: 'customer_wechat', label: '客户微信名'},
+        {value: 'phone', label: '联系电话'},
+        {value: 'address', label: '收货地址'},
+        {value: 'remark', label: '备注'},
+        {value: 'paid_amount', label: '已付定金'},
+        {value: 'collect_amount', label: '代收金额'},
+        {value: 'gender', label: '性别'},
+        {value: 'gift_info', label: '赠品内容'},
+        {value: 'tracking_number', label: '快递单号'},
+        {value: 'express_type', label: '快递类型'},
+        {value: 'logistics_status', label: '物流状态'}
+    ];
+    
+    let fieldOptions = '<option value="">选择源字段</option>';
+    conditionFields.forEach(f => {
+        fieldOptions += `<option value="${f.value}" ${config.field === f.value ? 'selected' : ''}>${f.label}</option>`;
+    });
+    
+    let conditionsHtml = '';
+    if (config.conditions.length === 0) {
+        config.conditions = [{match: '', result: ''}];
+    }
+    config.conditions.forEach((cond) => {
+        conditionsHtml += `
+            <div class="row mb-1 condition-item">
+                <div class="col-5">
+                    <input type="text" class="form-control form-control-sm" placeholder="匹配值（如：固本回元）" value="${cond.match}">
+                </div>
+                <div class="col-1 text-center">→</div>
+                <div class="col-5">
+                    <input type="text" class="form-control form-control-sm" placeholder="填充结果" value="${cond.result}">
+                </div>
+                <div class="col-1">
+                    <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.condition-item').remove()">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    const modalHtml = `
+    <div class="modal fade" id="editExportConditionEditorModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">条件匹配配置</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">源字段</label>
+                        <select class="form-select" id="editExportConditionSourceField">
+                            ${fieldOptions}
+                        </select>
+                        <div class="form-text">根据此字段的值进行匹配</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">匹配条件</label>
+                        <div class="form-text mb-2">当源字段包含"匹配值"时，填充对应"结果"。留空或填 * 表示匹配所有（作为默认值）</div>
+                        <div id="editExportConditionItems">
+                            ${conditionsHtml}
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="addEditExportConditionItem()">
+                            <i class="bi bi-plus"></i> 添加条件
+                        </button>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">默认结果</label>
+                        <input type="text" class="form-control" id="editExportConditionDefault" placeholder="当所有条件都不匹配时使用" value="${config.default || ''}">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveEditExportConditionConfig(this)">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+    
+    const existingModal = document.getElementById('editExportConditionEditorModal');
+    if (existingModal) existingModal.remove();
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    const modal = new bootstrap.Modal(document.getElementById('editExportConditionEditorModal'));
+    modal.show();
+    
+    document.getElementById('editExportConditionEditorModal').addEventListener('hidden.bs.modal', function() {
+        this.remove();
+    });
+}
+
+// 添加编辑导出条件项
+function addEditExportConditionItem() {
+    const container = document.getElementById('editExportConditionItems');
+    const itemHtml = `
+        <div class="row mb-1 condition-item">
+            <div class="col-5">
+                <input type="text" class="form-control form-control-sm" placeholder="匹配值（如：固本回元）">
+            </div>
+            <div class="col-1 text-center">→</div>
+            <div class="col-5">
+                <input type="text" class="form-control form-control-sm" placeholder="填充结果">
+            </div>
+            <div class="col-1">
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.condition-item').remove()">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', itemHtml);
+}
+
+// 保存编辑导出条件配置
+function saveEditExportConditionConfig(btn) {
+    const modal = btn.closest('.modal');
+    
+    const config = {
+        type: 'condition',
+        field: document.getElementById('editExportConditionSourceField').value || 'product_info',
+        conditions: [],
+        default: document.getElementById('editExportConditionDefault').value || ''
+    };
+    
+    modal.querySelectorAll('.condition-item').forEach(item => {
+        const inputs = item.querySelectorAll('input');
+        const match = inputs[0].value.trim();
+        const result = inputs[1].value.trim();
+        if (match || result) {
+            config.conditions.push({match: match, result: result});
+        }
+    });
+    
+    const mappingRow = currentEditExportMappingRow;
+    if (!mappingRow) return;
+    const cardBody = mappingRow.querySelector('.card-body');
+    
+    let configField = cardBody.querySelector('.condition-config');
+    if (!configField) {
+        configField = document.createElement('input');
+        configField.type = 'hidden';
+        configField.className = 'condition-config';
+        cardBody.appendChild(configField);
+    }
+    configField.dataset.config = JSON.stringify(config);
+    
+    // 同时更新 order-field-final
+    const finalInput = cardBody.querySelector('.order-field-final');
+    finalInput.value = JSON.stringify(config);
+    
+    const configBtn = cardBody.querySelector('.field-config[data-type="condition"] button');
+    if (config.conditions.length > 0) {
+        configBtn.innerHTML = `<i class="bi bi-gear"></i> 已配置${config.conditions.length}个条件`;
+        configBtn.classList.remove('btn-outline-primary');
+        configBtn.classList.add('btn-success');
+    }
+    
+    bootstrap.Modal.getInstance(modal).hide();
 }
 
 function toggleEditRegexInput(sel) {
@@ -852,6 +1583,41 @@ function toggleEditRegexInput(sel) {
         regexInput.name = '';
         sel.name = sel.name || `order_field_${sel.closest('.row').parentElement.children.length - 1}`;
     }
+}
+
+// 编辑导出模板表单提交处理
+document.querySelector('#editExportModal form').addEventListener('submit', function(e) {
+    processEditExportMappingForm(this);
+});
+
+function processEditExportMappingForm(form) {
+    const rows = form.querySelectorAll('.edit-export-mapping-row');
+    
+    rows.forEach(row => {
+        const cardBody = row.querySelector('.card-body');
+        const fillType = cardBody.querySelector('.edit-fill-type-select').value;
+        
+        let orderFieldValue = '';
+        
+        if (fillType === 'field') {
+            orderFieldValue = cardBody.querySelector('[data-type="field"] select').value;
+        } else if (fillType === 'regex') {
+            orderFieldValue = cardBody.querySelector('[data-type="regex"] input').value;
+        } else if (fillType === 'fixed') {
+            const fixedText = cardBody.querySelector('[data-type="fixed"] input').value;
+            if (fixedText) {
+                orderFieldValue = JSON.stringify({type: 'fixed', value: fixedText});
+            }
+        } else if (fillType === 'condition') {
+            const configField = cardBody.querySelector('.condition-config');
+            if (configField && configField.dataset.config) {
+                orderFieldValue = configField.dataset.config;
+            }
+        }
+        
+        const finalInput = cardBody.querySelector('.order-field-final');
+        finalInput.value = orderFieldValue;
+    });
 }
 
 // ========== 编辑导入模板 ==========

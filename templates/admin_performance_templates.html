@@ -77,7 +77,15 @@
                         
                         <div class="mb-3">
                             <label class="form-label">字段映射配置</label>
-                            <p class="small text-muted">配置Excel表头与订单字段的对应关系</p>
+                            <p class="small text-muted">配置Excel表头与订单字段的对应关系，支持直接字段、正则提取、固定文本、条件匹配</p>
+                            
+                            <div class="alert alert-secondary py-2 small mb-2">
+                                <strong>填充方式说明：</strong><br>
+                                • <strong>直接字段</strong>：选择字段，下拉选择即可<br>
+                                • <strong>正则提取</strong>：填写格式如 <code>/product_info/固本回元口服液\*(\d+)/</code><br>
+                                • <strong>固定文本</strong>：无论订单内容如何，都填入相同的固定文字<br>
+                                • <strong>条件匹配</strong>：根据字段值匹配，填充不同结果
+                            </div>
                             
                             <div id="mappingRows">
                                 <!-- 动态添加映射行 -->
@@ -122,30 +130,317 @@ const orderFields = [
 function addMappingRow(excelField = '', orderField = '') {
     const container = document.getElementById('mappingRows');
     const row = document.createElement('div');
-    row.className = 'row mb-2 align-items-center';
+    row.className = 'row mb-2 align-items-center mapping-row';
     
     let optionsHtml = '<option value="">选择字段</option>';
     orderFields.forEach(f => {
-        optionsHtml += `<option value="${f.value}" ${f.value === orderField ? 'selected' : ''}>${f.label}</option>`;
+        optionsHtml += `<option value="${f.value}">${f.label}</option>`;
     });
     
+    // 判断填充类型
+    let fillType = 'field';
+    let fillValue = orderField;
+    let fixedValue = '';
+    let conditionConfig = null;
+    
+    if (orderField && orderField.startsWith('{')) {
+        try {
+            const config = JSON.parse(orderField);
+            if (config.type === 'fixed') {
+                fillType = 'fixed';
+                fixedValue = config.value || '';
+            } else if (config.type === 'condition') {
+                fillType = 'condition';
+                conditionConfig = config;
+            }
+        } catch (e) {}
+    }
+    
     row.innerHTML = `
-        <div class="col-5">
-            <input type="text" class="form-control form-control-sm" name="excel_field[]" placeholder="Excel表头" value="${excelField}">
-        </div>
-        <div class="col-1 text-center">→</div>
-        <div class="col-5">
-            <select class="form-select form-select-sm" name="order_field[]">
-                ${optionsHtml}
-            </select>
-        </div>
-        <div class="col-1">
-            <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.row').remove()">
-                <i class="bi bi-x"></i>
-            </button>
+        <div class="col-12">
+            <div class="card mb-2">
+                <div class="card-body py-2">
+                    <div class="row align-items-center">
+                        <div class="col-3">
+                            <input type="text" class="form-control form-control-sm" name="excel_field[]" placeholder="Excel表头" value="${excelField}">
+                        </div>
+                        <div class="col-1 text-center">
+                            <span class="badge bg-secondary">→</span>
+                        </div>
+                        <div class="col-3">
+                            <select class="form-select form-select-sm fill-type-select" onchange="handleFillTypeChange(this)">
+                                <option value="field" ${fillType === 'field' ? 'selected' : ''}>直接字段</option>
+                                <option value="regex" ${fillType === 'regex' ? 'selected' : ''}>正则提取</option>
+                                <option value="fixed" ${fillType === 'fixed' ? 'selected' : ''}>固定文本</option>
+                                <option value="condition" ${fillType === 'condition' ? 'selected' : ''}>条件匹配</option>
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <div class="field-config" data-type="field">
+                                <select class="form-select form-select-sm" name="order_field[]">
+                                    ${optionsHtml}
+                                </select>
+                            </div>
+                            <div class="field-config" data-type="regex" style="display:none;">
+                                <input type="text" class="form-control form-control-sm" name="order_field[]" placeholder='/product_info/固本回元口服液\*(\d+)/'>
+                            </div>
+                            <div class="field-config" data-type="fixed" style="display:none;">
+                                <input type="text" class="form-control form-control-sm" name="order_field[]" placeholder='填入的固定文本内容'>
+                            </div>
+                            <div class="field-config" data-type="condition" style="display:none;">
+                                <button type="button" class="btn btn-outline-primary btn-sm w-100" onclick="openConditionEditor(this)">
+                                    <i class="bi bi-gear"></i> 配置条件
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-1">
+                            <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="removeMappingRow(this)">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+                    ${fillType === 'field' ? `
+                    <div class="field-config" data-type="field" style="display:none;">
+                        <select class="form-select form-select-sm" name="order_field[]">
+                            ${optionsHtml}
+                        </select>
+                    </div>` : ''}
+                    ${fillType === 'fixed' ? `<input type="hidden" class="fixed-config" data-value="${fixedValue}">` : ''}
+                    ${fillType === 'condition' ? `<input type="hidden" class="condition-config" data-config='${JSON.stringify(conditionConfig || {})}'>` : ''}
+                </div>
+            </div>
         </div>
     `;
+    
     container.appendChild(row);
+    
+    // 设置初始值
+    const rowSelect = row.querySelector('.fill-type-select');
+    handleFillTypeChange(rowSelect);
+    
+    // 设置直接字段的选中值
+    if (fillType === 'field' && orderField) {
+        row.querySelector('[data-type="field"] select').value = orderField;
+    }
+    // 设置正则表达式的值
+    if (fillType === 'regex' && orderField && orderField.startsWith('/')) {
+        row.querySelector('[data-type="regex"] input').value = orderField;
+    }
+    // 设置固定文本的值
+    if (fillType === 'fixed' && fixedValue) {
+        row.querySelector('[data-type="fixed"] input').value = fixedValue;
+    }
+}
+
+// 处理填充类型变化
+function handleFillTypeChange(select) {
+    const card = select.closest('.card-body');
+    const selectedType = select.value;
+    
+    // 隐藏所有配置
+    card.querySelectorAll('.field-config').forEach(el => {
+        el.style.display = 'none';
+    });
+    
+    // 显示选中的配置
+    const targetConfig = card.querySelector(`.field-config[data-type="${selectedType}"]`);
+    if (targetConfig) {
+        targetConfig.style.display = '';
+    }
+    
+    // 清空其他配置的值（保留用户输入）
+    card.querySelectorAll('.field-config[data-type]').forEach(el => {
+        const type = el.dataset.type;
+        if (type !== selectedType) {
+            const input = el.querySelector('input, select');
+            if (input && input.name === 'order_field[]') {
+                input.value = '';
+            }
+        }
+    });
+}
+
+// 移除映射行
+function removeMappingRow(btn) {
+    btn.closest('.mapping-row').remove();
+}
+
+// 打开条件编辑器
+function openConditionEditor(btn) {
+    const card = btn.closest('.card-body');
+    const existingConfig = card.querySelector('.condition-config');
+    let config = {field: 'product_info', conditions: [{match: '', result: ''}], default: ''};
+    
+    if (existingConfig && existingConfig.dataset.config) {
+        try {
+            config = JSON.parse(existingConfig.dataset.config);
+        } catch (e) {}
+    }
+    
+    const conditionFields = [
+        {value: 'product_info', label: '产品名称'},
+        {value: 'address', label: '地址'},
+        {value: 'customer_name', label: '客户姓名'},
+        {value: 'phone', label: '电话'},
+        {value: 'remark', label: '备注'},
+        {value: 'logistics_status', label: '物流状态'}
+    ];
+    
+    let fieldOptions = '<option value="">选择源字段</option>';
+    conditionFields.forEach(f => {
+        fieldOptions += `<option value="${f.value}" ${config.field === f.value ? 'selected' : ''}>${f.label}</option>`;
+    });
+    
+    let conditionsHtml = '';
+    config.conditions.forEach((cond, idx) => {
+        conditionsHtml += `
+            <div class="row mb-1 condition-item">
+                <div class="col-5">
+                    <input type="text" class="form-control form-control-sm" placeholder="匹配值（如：固本回元）" value="${cond.match}">
+                </div>
+                <div class="col-1 text-center">→</div>
+                <div class="col-5">
+                    <input type="text" class="form-control form-control-sm" placeholder="填充结果" value="${cond.result}">
+                </div>
+                <div class="col-1">
+                    <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.condition-item').remove()">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    const modalHtml = `
+    <div class="modal fade" id="conditionEditorModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">条件匹配配置</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">源字段</label>
+                        <select class="form-select" id="conditionSourceField">
+                            ${fieldOptions}
+                        </select>
+                        <div class="form-text">根据此字段的值进行匹配</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">匹配条件</label>
+                        <div class="form-text mb-2">当源字段包含"匹配值"时，填充对应"结果"。留空或填 * 表示匹配所有（作为默认值）</div>
+                        <div id="conditionItems">
+                            ${conditionsHtml}
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="addConditionItem()">
+                            <i class="bi bi-plus"></i> 添加条件
+                        </button>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">默认结果</label>
+                        <input type="text" class="form-control" id="conditionDefault" placeholder="当所有条件都不匹配时使用" value="${config.default || ''}">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveConditionConfig(this)">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+    
+    // 移除已存在的模态框
+    const existingModal = document.getElementById('conditionEditorModal');
+    if (existingModal) existingModal.remove();
+    
+    // 添加新模态框
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // 保存当前编辑的行引用
+    document.getElementById('conditionEditorModal').dataset.editRow = card.closest('.mapping-row').outerHTML;
+    
+    // 显示模态框
+    const modal = new bootstrap.Modal(document.getElementById('conditionEditorModal'));
+    modal.show();
+    
+    // 模态框关闭后清理
+    document.getElementById('conditionEditorModal').addEventListener('hidden.bs.modal', function() {
+        this.remove();
+    });
+}
+
+// 添加条件项
+function addConditionItem() {
+    const container = document.getElementById('conditionItems');
+    const itemHtml = `
+        <div class="row mb-1 condition-item">
+            <div class="col-5">
+                <input type="text" class="form-control form-control-sm" placeholder="匹配值（如：固本回元）">
+            </div>
+            <div class="col-1 text-center">→</div>
+            <div class="col-5">
+                <input type="text" class="form-control form-control-sm" placeholder="填充结果">
+            </div>
+            <div class="col-1">
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('.condition-item').remove()">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', itemHtml);
+}
+
+// 保存条件配置
+function saveConditionConfig(btn) {
+    const modal = btn.closest('.modal');
+    
+    // 收集配置
+    const config = {
+        type: 'condition',
+        field: document.getElementById('conditionSourceField').value || 'product_info',
+        conditions: [],
+        default: document.getElementById('conditionDefault').value || ''
+    };
+    
+    // 收集条件
+    modal.querySelectorAll('.condition-item').forEach(item => {
+        const inputs = item.querySelectorAll('input');
+        const match = inputs[0].value.trim();
+        const result = inputs[1].value.trim();
+        if (match || result) {
+            config.conditions.push({match: match, result: result});
+        }
+    });
+    
+    // 更新映射行的配置
+    const mappingRow = document.querySelector('.mapping-row');
+    const cardBody = mappingRow.querySelector('.card-body');
+    
+    // 更新隐藏字段
+    let configField = cardBody.querySelector('.condition-config');
+    if (!configField) {
+        configField = document.createElement('input');
+        configField.type = 'hidden';
+        configField.className = 'condition-config';
+        cardBody.appendChild(configField);
+    }
+    configField.dataset.config = JSON.stringify(config);
+    
+    // 更新按钮文字
+    const configBtn = cardBody.querySelector('.field-config[data-type="condition"] button');
+    if (config.conditions.length > 0) {
+        configBtn.innerHTML = `<i class="bi bi-gear"></i> 已配置${config.conditions.length}个条件`;
+        configBtn.classList.remove('btn-outline-primary');
+        configBtn.classList.add('btn-success');
+    }
+    
+    // 关闭模态框
+    bootstrap.Modal.getInstance(modal).hide();
 }
 
 // 从元素加载模板
@@ -217,5 +512,54 @@ window.onload = function() {
         resetForm();
     }
 };
+
+// 表单提交前处理
+document.getElementById('templateForm').addEventListener('submit', function(e) {
+    const rows = document.querySelectorAll('.mapping-row');
+    let hasError = false;
+    
+    rows.forEach(row => {
+        const cardBody = row.querySelector('.card-body');
+        const fillType = cardBody.querySelector('.fill-type-select').value;
+        const excelField = cardBody.querySelector('input[name="excel_field[]"]').value.trim();
+        
+        if (!excelField) {
+            hasError = true;
+            cardBody.querySelector('input[name="excel_field[]"]').classList.add('is-invalid');
+        } else {
+            cardBody.querySelector('input[name="excel_field[]"]').classList.remove('is-invalid');
+        }
+        
+        let orderFieldValue = '';
+        
+        if (fillType === 'field') {
+            orderFieldValue = cardBody.querySelector('[data-type="field"] select').value;
+        } else if (fillType === 'regex') {
+            orderFieldValue = cardBody.querySelector('[data-type="regex"] input').value;
+        } else if (fillType === 'fixed') {
+            const fixedText = cardBody.querySelector('[data-type="fixed"] input').value;
+            if (fixedText) {
+                orderFieldValue = JSON.stringify({type: 'fixed', value: fixedText});
+            }
+        } else if (fillType === 'condition') {
+            const configField = cardBody.querySelector('.condition-config');
+            if (configField && configField.dataset.config) {
+                orderFieldValue = configField.dataset.config;
+            }
+        }
+        
+        // 设置最终值到第一个order_field输入框
+        const orderFieldInputs = cardBody.querySelectorAll('input[name="order_field[]"]');
+        orderFieldInputs.forEach(input => input.value = '');
+        if (orderFieldValue) {
+            orderFieldInputs[0].value = orderFieldValue;
+        }
+    });
+    
+    if (hasError) {
+        e.preventDefault();
+        alert('请填写所有Excel表头！');
+    }
+});
 </script>
 {% endblock %}
