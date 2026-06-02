@@ -154,22 +154,48 @@ def dashboard():
     from models import Category
     
     # 使用简单直接的SQL CASE排序（SQLAlchemy 2.0正确语法）
+    # 统一优先级规则：
+    # 0: 待发货 主品（无论物流状态如何）
+    # 1: 待发货 非主品 + 未导出（无论物流状态如何）
+    # 2: 派送中
+    # 3: 待派送
+    # 4: 已揽收/已揽件（非待发货状态）
+    # 5: 运送中
+    # 6: 已发货（非待发货状态）
+    # 7: 待发货 非主品 + 已导出（无论物流状态如何）
+    # 8: 已签收 主品
+    # 9: 已签收 非主品
+    # 10: 退回已签收
+    # 11: 其他
     orders = query.outerjoin(Category, Category.name == Order.category).order_by(
-        # 第一优先级：待发货订单
-        case((Order.status == 'submitted', 0), else_=1),
-        # 第二优先级：物流状态（按用户要求的优先级：运送中 > 待派送 > 派送中 > 已签收 > 退回已签收）
         case(
-            (Order.logistics_status == '运送中', 3),
-            (Order.logistics_status == '已发货', 4),  # 兼容"已发货"也当作运送中
-            (Order.logistics_status == '待派送', 2),
-            (Order.logistics_status == '派送中', 1),
-            (Order.logistics_status == '已签收', 5),
-            (Order.logistics_status == '退回已签收', 6),
-            else_=6
+            # 0: 待发货 主品（无论物流状态如何）
+            ((Order.status == 'submitted') & (Category.is_main_product == True), 0),
+            # 1: 待发货 非主品 + 未导出（无论物流状态如何）
+            ((Order.status == 'submitted') & ((Category.is_main_product == False) | (Category.is_main_product == None)) & (Order.export_marked == False), 1),
+            # 2: 派送中
+            (Order.logistics_status == '派送中', 2),
+            # 3: 待派送
+            (Order.logistics_status == '待派送', 3),
+            # 4: 已揽收/已揽件（非待发货状态）
+            ((Order.logistics_status == '已揽收') & (Order.status != 'submitted'), 4),
+            ((Order.logistics_status == '已揽件') & (Order.status != 'submitted'), 4),
+            # 5: 运送中
+            (Order.logistics_status == '运送中', 5),
+            # 6: 已发货（非待发货状态）
+            ((Order.logistics_status == '已发货') & (Order.status != 'submitted'), 6),
+            # 7: 待发货 非主品 + 已导出（无论物流状态如何）
+            ((Order.status == 'submitted') & ((Category.is_main_product == False) | (Category.is_main_product == None)) & (Order.export_marked == True), 7),
+            # 8: 已签收 主品
+            ((Order.logistics_status == '已签收') & (Category.is_main_product == True), 8),
+            # 9: 已签收 非主品
+            ((Order.logistics_status == '已签收') & ((Category.is_main_product == False) | (Category.is_main_product == None)), 9),
+            # 10: 退回已签收
+            (Order.logistics_status == '退回已签收', 10),
+            # 11: 其他
+            else_=11
         ),
-        # 第三优先级：是否主品
-        case((Category.is_main_product == True, 0), else_=1),
-        # 第四优先级：创建时间降序
+        # 创建时间降序
         Order.create_time.desc()
     ).paginate(page=page, per_page=per_page, error_out=False)
     
@@ -881,7 +907,12 @@ def api_order_logistics(order_id):
     # 非顺丰或未发货，返回空
     if order.express_type != '顺丰' or order.status != 'shipped' or not order.tracking_number:
         return jsonify({'routes': [], 'tracking_number': order.tracking_number or '', 'express_type': order.express_type or ''})
-
+    
+    # 非主品不调用顺丰API，返回空
+    cat = Category.query.filter_by(name=order.category, is_active=True).first()
+    if not cat or not cat.is_main_product:
+        return jsonify({'routes': [], 'tracking_number': order.tracking_number or '', 'express_type': order.express_type or '', 'logistics_status': order.logistics_status or ''})
+    
     # 使用缓存获取物流信息
     from services import get_logistics_with_cache
     result = get_logistics_with_cache(order, force_refresh=False)
@@ -914,6 +945,11 @@ def api_order_logistics_refresh(order_id):
     # 非顺丰或未发货
     if order.express_type != '顺丰' or order.status != 'shipped' or not order.tracking_number:
         return jsonify({'error': '非顺丰订单或未发货'}), 400
+    
+    # 非主品不调用顺丰API
+    cat = Category.query.filter_by(name=order.category, is_active=True).first()
+    if not cat or not cat.is_main_product:
+        return jsonify({'error': '非主品订单不支持刷新物流'}), 400
 
     # 强制刷新物流信息
     from services import get_logistics_with_cache

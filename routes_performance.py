@@ -38,31 +38,25 @@ def performance_overview():
         year, month = now.year, now.month
     
     # 本月
-    current_month_start = datetime(year, month, 1)
-    current_month_end = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
     # 总业绩（所有已发货）
-    current_total_amount = calculate_total_performance(current_user.id, current_month_start, current_month_end)
-    current_total_count = count_total_orders(current_user.id, current_month_start, current_month_end)
+    current_total_amount = calculate_total_performance(current_user.id, year, month)
+    current_total_count = count_total_orders(current_user.id, year, month)
     # 已签收业绩
-    current_signed_amount = calculate_performance(current_user.id, current_month_start, current_month_end)
-    current_signed_count = count_orders(current_user.id, current_month_start, current_month_end)
+    current_signed_amount = calculate_performance(current_user.id, year, month)
+    current_signed_count = count_orders(current_user.id, year, month)
     
     # 上月
     if month == 1:
         prev_year, prev_month = year - 1, 12
     else:
         prev_year, prev_month = year, month - 1
-    prev_month_start = datetime(prev_year, prev_month, 1)
-    prev_month_end = datetime(prev_year, prev_month, monthrange(prev_year, prev_month)[1], 23, 59, 59)
-    prev_total_amount = calculate_total_performance(current_user.id, prev_month_start, prev_month_end)
-    prev_signed_amount = calculate_performance(current_user.id, prev_month_start, prev_month_end)
+    prev_total_amount = calculate_total_performance(current_user.id, prev_year, prev_month)
+    prev_signed_amount = calculate_performance(current_user.id, prev_year, prev_month)
     
     # 同比（去年同期）
     yoy_year = year - 1
-    yoy_start = datetime(yoy_year, month, 1)
-    yoy_end = datetime(yoy_year, month, monthrange(yoy_year, month)[1], 23, 59, 59)
-    yoy_total_amount = calculate_total_performance(current_user.id, yoy_start, yoy_end)
-    yoy_signed_amount = calculate_performance(current_user.id, yoy_start, yoy_end)
+    yoy_total_amount = calculate_total_performance(current_user.id, yoy_year, month)
+    yoy_signed_amount = calculate_performance(current_user.id, yoy_year, month)
     
     # 计算环比和同比变化率（基于已签收业绩）
     mom_rate = ((current_signed_amount - prev_signed_amount) / prev_signed_amount * 100) if prev_signed_amount > 0 else 0
@@ -109,11 +103,8 @@ def monthly_trend():
             m -= 12
             y += 1
         
-        start = datetime(y, m, 1)
-        end = datetime(y, m, monthrange(y, m)[1], 23, 59, 59)
-        
-        amount = calculate_performance(current_user.id, start, end)
-        count = count_orders(current_user.id, start, end)
+        amount = calculate_performance(current_user.id, y, m)
+        count = count_orders(current_user.id, y, m)
         
         months.append(f'{y}-{m:02d}')
         amounts.append(amount)
@@ -133,20 +124,16 @@ def category_distribution():
         now = _now_bj()
         year, month = now.year, now.month
     
-    start = datetime(year, month, 1)
-    end = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
-    
     # 获取主产品类别
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
+    # 不按时间筛选，后面再判断归属月份
     # 按类别统计（统计submitted和shipped状态的订单，排除退回已签收）
     orders = Order.query.filter(
         Order.salesman_id == current_user.id,
         Order.status.in_(['submitted', 'shipped']),
-        Order.logistics_status != '退回已签收',
-        Order.create_time >= start,
-        Order.create_time <= end
+        Order.logistics_status != '退回已签收'
     ).all()
 
     category_data = {}
@@ -158,6 +145,21 @@ def category_distribution():
         amount = get_order_amount(order)
         if amount <= 0:
             continue
+        
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        order_year = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计当前查询月份的订单
+        if order_month != month or order_year != year:
+            continue
+        
         if cat not in category_data:
             category_data[cat] = {'amount': 0, 'count': 0}
         category_data[cat]['amount'] += amount
@@ -177,113 +179,144 @@ def order_list():
         now = _now_bj()
         year, month = now.year, now.month
 
-    start = datetime(year, month, 1)
-    end = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
-
+    # 不按时间筛选，后面再判断归属月份
     orders = Order.query.filter(
         Order.salesman_id == current_user.id,
         Order.status == 'shipped',
-        Order.logistics_status == '已签收',
-        Order.sign_time >= start,
-        Order.sign_time <= end
+        Order.logistics_status == '已签收'
     ).order_by(Order.sign_time.desc()).all()
 
     data = []
     for order in orders:
-        total_amount = get_order_amount(order)
-        if total_amount > 0:  # 只展示金额>0的
-            data.append({
-                'id': order.id,
-                'customer_name': order.customer_name or '',
-                'category': order.category or '',
-                'paid_amount': order.paid_amount or '',
-                'collect_amount': order.collect_amount or 0,
-                'total_amount': total_amount,
-                'sign_time': order.sign_time.strftime('%Y-%m-%d %H:%M') if order.sign_time else '',
-                'tracking_number': order.tracking_number or ''
-            })
+        # 判断订单归属月份（已签收订单按签收时间）
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+            if order_month == month and order_year == year:
+                total_amount = get_order_amount(order)
+                if total_amount > 0:  # 只展示金额>0的
+                    data.append({
+                        'id': order.id,
+                        'customer_name': order.customer_name or '',
+                        'category': order.category or '',
+                        'paid_amount': order.paid_amount or '',
+                        'collect_amount': order.collect_amount or 0,
+                        'total_amount': total_amount,
+                        'sign_time': order.sign_time.strftime('%Y-%m-%d %H:%M') if order.sign_time else '',
+                        'tracking_number': order.tracking_number or ''
+                    })
 
     return jsonify({'orders': data})
 
 
 # ============ 辅助函数 ============
-def calculate_performance(salesman_id, start_date, end_date):
-    """计算指定时间段的已签收业绩金额（只统计金额>0的）"""
+def calculate_performance(salesman_id, year, month):
+    """计算指定月份的已签收业绩金额（只统计金额>0的）"""
+    # 获取所有已签收订单，不按时间筛选
     orders = Order.query.filter(
         Order.salesman_id == salesman_id,
         Order.status == 'shipped',
-        Order.logistics_status == '已签收',
-        Order.sign_time >= start_date,
-        Order.sign_time <= end_date
+        Order.logistics_status == '已签收'
     ).all()
 
     total = 0
     for order in orders:
-        amt = get_order_amount(order)
-        if amt > 0:
-            total += amt
+        # 判断订单归属月份（已签收订单按签收时间）
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+            if order_month == month and order_year == year:
+                amt = get_order_amount(order)
+                if amt > 0:
+                    total += amt
     return total
 
 
-def count_orders(salesman_id, start_date, end_date):
-    """统计指定时间段的已签收订单数（只统计金额>0的）"""
+def count_orders(salesman_id, year, month):
+    """统计指定月份的已签收订单数（只统计金额>0的）"""
+    # 获取所有已签收订单，不按时间筛选
     orders = Order.query.filter(
         Order.salesman_id == salesman_id,
         Order.status == 'shipped',
-        Order.logistics_status == '已签收',
-        Order.sign_time >= start_date,
-        Order.sign_time <= end_date
+        Order.logistics_status == '已签收'
     ).all()
 
     count = 0
     for order in orders:
-        if get_order_amount(order) > 0:
-            count += 1
+        # 判断订单归属月份（已签收订单按签收时间）
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+            if order_month == month and order_year == year:
+                if get_order_amount(order) > 0:
+                    count += 1
     return count
 
 
-def calculate_total_performance(salesman_id, start_date, end_date):
-    """计算指定时间段的总业绩金额（只统计主产品且金额>0）"""
+def calculate_total_performance(salesman_id, year, month):
+    """计算指定月份的总业绩金额（只统计主产品且金额>0）"""
     # 获取主产品类别
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
     
+    # 获取所有订单，不按时间筛选
     orders = Order.query.filter(
         Order.salesman_id == salesman_id,
         Order.status.in_(['submitted', 'shipped']),
-        Order.logistics_status != '退回已签收',
-        Order.create_time >= start_date,
-        Order.create_time <= end_date
+        Order.logistics_status != '退回已签收'
     ).all()
     
     total = 0
     for order in orders:
         if (order.category or '未分类') in main_cat_names:
-            amt = get_order_amount(order)
-            if amt > 0:
-                total += amt
+            # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+            order_month = None
+            order_year = None
+            if order.sign_time:
+                order_month = order.sign_time.month
+                order_year = order.sign_time.year
+            elif order.create_time:
+                order_month = order.create_time.month
+                order_year = order.create_time.year
+            
+            # 只统计当前查询月份的订单
+            if order_month == month and order_year == year:
+                amt = get_order_amount(order)
+                if amt > 0:
+                    total += amt
     return total
 
 
-def count_total_orders(salesman_id, start_date, end_date):
-    """统计指定时间段的总订单数（只统计主产品且金额>0）"""
+def count_total_orders(salesman_id, year, month):
+    """统计指定月份的总订单数（只统计主产品且金额>0）"""
     # 获取主产品类别
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
     
+    # 获取所有订单，不按时间筛选
     orders = Order.query.filter(
         Order.salesman_id == salesman_id,
         Order.status.in_(['draft', 'submitted', 'shipped']),
-        Order.logistics_status != '退回已签收',
-        Order.create_time >= start_date,
-        Order.create_time <= end_date
+        Order.logistics_status != '退回已签收'
     ).all()
 
     count = 0
     for order in orders:
         if (order.category or '未分类') in main_cat_names:
-            if get_order_amount(order) > 0:
-                count += 1
+            # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+            order_month = None
+            order_year = None
+            if order.sign_time:
+                order_month = order.sign_time.month
+                order_year = order.sign_time.year
+            elif order.create_time:
+                order_month = order.create_time.month
+                order_year = order.create_time.year
+            
+            # 只统计当前查询月份的订单
+            if order_month == month and order_year == year:
+                if get_order_amount(order) > 0:
+                    count += 1
     return count
 
 
@@ -337,35 +370,35 @@ def api_export_performance():
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     allowed_categories = [c.name for c in main_categories]
 
-    # 计算月份范围
-    start_date = datetime(year, month, 1)
-    end_date = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
-
+    # 不按时间筛选，后面再判断归属月份
     # 查询订单：当前业务员、已发货状态、已签收、有订金或代收金额
     # 时间筛选：以签收时间为准，只有已签收的订单才计入业绩
     query = Order.query.filter(
         Order.salesman_id == current_user.id,
         Order.status == 'shipped',
-        Order.logistics_status == '已签收',
-        Order.sign_time >= start_date,
-        Order.sign_time <= end_date
+        Order.logistics_status == '已签收'
     )
 
     if allowed_categories:
         query = query.filter(Order.category.in_(allowed_categories))
 
-    # 过滤：只有有订金或代收金额的订单才导出（金额>0）
+    # 过滤：只有有订金或代收金额的订单才导出（金额>0），并且按归属月份筛选
     orders_to_export = []
     for order in query.all():
-        paid_num = 0
-        if order.paid_amount:
-            paid_str = str(order.paid_amount)
-            match = re.match(r'[\d.]+', paid_str)
-            if match:
-                paid_num = float(match.group())
-        collect_num = float(order.collect_amount or 0)
-        if paid_num > 0 or collect_num > 0:
-            orders_to_export.append(order)
+        # 判断订单归属月份（已签收订单按签收时间）
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+            if order_month == month and order_year == year:
+                paid_num = 0
+                if order.paid_amount:
+                    paid_str = str(order.paid_amount)
+                    match = re.match(r'[\d.]+', paid_str)
+                    if match:
+                        paid_num = float(match.group())
+                collect_num = float(order.collect_amount or 0)
+                if paid_num > 0 or collect_num > 0:
+                    orders_to_export.append(order)
 
     orders = orders_to_export
 
@@ -508,60 +541,88 @@ def team_performance_overview():
     main_cat_names = {c.name for c in main_categories}
     
     # ========== 当月数据 ==========
-    # 当月所有订单（待发货、已提交和已发货都统计，只统计主产品，排除退回已签收）
+    # 获取所有订单（不按时间筛选，后面再判断归属月份）
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
-        Order.status.in_(['draft', 'submitted', 'shipped']),
-        (Order.logistics_status != '退回已签收') | (Order.logistics_status.is_(None)),
-        Order.create_time >= start_date,
-        Order.create_time <= end_date
+        Order.status.in_(['draft', 'submitted', 'shipped'])
     ).all()
     
-    # 当月已签收且有签收时间的订单
+    # 获取已签收订单（不按时间筛选，后面再判断归属月份）
     signed_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status == 'shipped',
-        Order.logistics_status == '已签收',
-        Order.sign_time >= start_date,
-        Order.sign_time <= end_date
+        Order.logistics_status == '已签收'
     ).all()
     
     # ========== 上月数据 ==========
     # 上月所有订单
     prev_all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
-        Order.status.in_(['draft', 'submitted', 'shipped']),
-        Order.logistics_status != '退回已签收',
-        Order.create_time >= prev_start,
-        Order.create_time <= prev_end
+        Order.status.in_(['draft', 'submitted', 'shipped'])
     ).all()
     
     # 上月已签收订单
     prev_signed_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status == 'shipped',
-        Order.logistics_status == '已签收',
-        Order.sign_time >= prev_start,
-        Order.sign_time <= prev_end
+        Order.logistics_status == '已签收'
     ).all()
     
     # ========== 统计当月总业绩 ==========
-    # 总业绩：当月所有订单（只统计主产品且金额>0）
+    # 总业绩：当月所有订单（只统计主产品且金额>0，归属月份判断
     total_amount = 0
     total_count = 0
-    for o in all_orders:
-        if (o.category or '未分类') in main_cat_names:
-            amt = get_order_amount(o)
+    for order in all_orders:
+        # 只统计主产品
+        if (order.category or '未分类') in main_cat_names:
+            # 判断是否是退回已签收（两种情况：1. logistics_status 是退回已签收；2. logistics_warning_remark 包含退回关键词且是已签收状态）
+            is_returned = False
+            if order.logistics_status == '退回已签收':
+                is_returned = True
+            elif order.logistics_status == '已签收' and order.logistics_warning_remark:
+                return_keywords = ['退回', '拒收', '退件']
+                is_returned = any(keyword in order.logistics_warning_remark for keyword in return_keywords)
+            
+            # 排除退回已签收和拒签
+            if is_returned or order.logistics_status == '拒签':
+                continue
+            
+            # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+            order_month = None
+            order_year = None
+            if order.sign_time:
+                order_month = order.sign_time.month
+                order_year = order.sign_time.year
+            elif order.create_time:
+                order_month = order.create_time.month
+                order_year = order.create_time.year
+            
+            # 只统计当前查询月份的订单
+            if order_month != month or order_year != year:
+                continue
+            
+            # 金额>0的订单统计
+            amt = get_order_amount(order)
             if amt > 0:
                 total_amount += amt
                 total_count += 1
     
-    # 已签收业绩（只统计主产品且金额>0）
+    # 已签收业绩（只统计主产品且金额>0，归属月份判断
     signed_amount = 0
     signed_count = 0
-    for o in signed_orders:
-        if (o.category or '未分类') in main_cat_names:
-            amt = get_order_amount(o)
+    for order in signed_orders:
+        if (order.category or '未分类') in main_cat_names:
+            # 判断订单归属月份：以签收时间为主
+            order_month = None
+            order_year = None
+            if order.sign_time:
+                order_month = order.sign_time.month
+                order_year = order.sign_time.year
+            
+            if order_month != month or order_year != year:
+                continue
+            
+            amt = get_order_amount(order)
             if amt > 0:
                 signed_amount += amt
                 signed_count += 1
@@ -569,18 +630,55 @@ def team_performance_overview():
     # ========== 统计上月总业绩 ==========
     prev_total_amount = 0
     prev_total_count = 0
-    for o in prev_all_orders:
-        if (o.category or '未分类') in main_cat_names:
-            amt = get_order_amount(o)
+    for order in prev_all_orders:
+        # 只统计主产品
+        if (order.category or '未分类') in main_cat_names:
+            # 判断是否是退回已签收
+            is_returned = False
+            if order.logistics_status == '退回已签收':
+                is_returned = True
+            elif order.logistics_status == '已签收' and order.logistics_warning_remark:
+                return_keywords = ['退回', '拒收', '退件']
+                is_returned = any(keyword in order.logistics_warning_remark for keyword in return_keywords)
+            
+            # 排除退回已签收和拒签
+            if is_returned or order.logistics_status == '拒签':
+                continue
+            
+            # 判断订单归属月份（上月）
+            order_month = None
+            order_year = None
+            if order.sign_time:
+                order_month = order.sign_time.month
+                order_year = order.sign_time.year
+            elif order.create_time:
+                order_month = order.create_time.month
+                order_year = order.create_time.year
+            
+            # 只统计上月的订单
+            if order_month != prev_month or order_year != prev_year:
+                continue
+            
+            amt = get_order_amount(order)
             if amt > 0:
                 prev_total_amount += amt
                 prev_total_count += 1
     
     prev_signed_amount = 0
     prev_signed_count = 0
-    for o in prev_signed_orders:
-        if (o.category or '未分类') in main_cat_names:
-            amt = get_order_amount(o)
+    for order in prev_signed_orders:
+        if (order.category or '未分类') in main_cat_names:
+            # 判断归属月份
+            order_month = None
+            order_year = None
+            if order.sign_time:
+                order_month = order.sign_time.month
+                order_year = order.sign_time.year
+            
+            if order_month != prev_month or order_year != prev_year:
+                continue
+            
+            amt = get_order_amount(order)
             if amt > 0:
                 prev_signed_amount += amt
                 prev_signed_count += 1
@@ -589,16 +687,16 @@ def team_performance_overview():
     salesman_stats = {}
     
     # 第一步：先获取所有权限可见的业务员并初始化
-    # 获取管理的所有用户
+    # 获取管理的所有用户（排除level=1的用户，不参与排行）
     managed_users = []
     if current_user.username == 'admin':
         if group_id:
             group = Group.query.get(group_id)
             if group:
                 group_ids = [group.id] + group.get_all_children_ids()
-                managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman')).all()
+                managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman'), User.level != 1).all()
         else:
-            managed_users = User.query.filter(User.roles.contains('salesman')).all()
+            managed_users = User.query.filter(User.roles.contains('salesman'), User.level != 1).all()
     elif current_user.group_id:
         managed_ids = current_user.get_managed_group_ids()
         if group_id:
@@ -606,9 +704,9 @@ def team_performance_overview():
                 group = Group.query.get(group_id)
                 if group:
                     group_ids = [group.id] + group.get_all_children_ids()
-                    managed_users = User.query.filter(User.group_id.in_(group_ids)).all()
+                    managed_users = User.query.filter(User.group_id.in_(group_ids), User.level != 1).all()
         else:
-            managed_users = User.query.filter(User.group_id.in_(managed_ids)).all()
+            managed_users = User.query.filter(User.group_id.in_(managed_ids), User.level != 1).all()
     
     # 初始化所有可见业务员（即使没有业绩）
     for user in managed_users:
@@ -631,6 +729,21 @@ def team_performance_overview():
         amt = get_order_amount(order)
         if amt <= 0:
             continue  # 跳过金额为0的
+        
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        order_year = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计当前查询月份的订单
+        if order_month != month or order_year != year:
+            continue
+        
         sid = order.salesman_id
         if sid in salesman_stats:  # 只统计可见用户
             salesman_stats[sid]['total_amount'] += amt
@@ -647,6 +760,17 @@ def team_performance_overview():
             amt = get_order_amount(order)
             if amt <= 0:
                 continue
+            
+            # 判断归属月份（已签收订单按签收时间）
+            if order.sign_time:
+                order_month = order.sign_time.month
+                order_year = order.sign_time.year
+            else:
+                continue  # 没有签收时间的已签收订单不统计
+            
+            if order_month != month or order_year != year:
+                continue
+            
             salesman_stats[sid]['signed_amount'] += amt
             salesman_stats[sid]['signed_count'] += 1
     
@@ -658,6 +782,21 @@ def team_performance_overview():
         amt = get_order_amount(order)
         if amt <= 0:
             continue  # 跳过金额为0的
+        
+        # 判断订单归属月份（上月）：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        order_year = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计上月的订单
+        if order_month != prev_month or order_year != prev_year:
+            continue
+        
         sid = order.salesman_id
         if sid in salesman_stats:  # 只统计可见用户
             salesman_stats[sid]['prev_total_amount'] += amt
@@ -673,6 +812,17 @@ def team_performance_overview():
             amt = get_order_amount(order)
             if amt <= 0:
                 continue
+            
+            # 判断归属月份（上月，已签收订单按签收时间）
+            if order.sign_time:
+                order_month = order.sign_time.month
+                order_year = order.sign_time.year
+            else:
+                continue  # 没有签收时间的已签收订单不统计
+            
+            if order_month != prev_month or order_year != prev_year:
+                continue
+            
             salesman_stats[sid]['prev_signed_amount'] += amt
     
     # 第六步：计算每个业务员的环比
@@ -804,20 +954,15 @@ def team_category_distribution():
     
     user_ids = get_managed_user_ids(group_id)
     
-    start = datetime(year, month, 1)
-    end = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
-    
     # 获取主产品类别
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 统计submitted和shipped状态的订单（和团队业绩概览保持一致，排除退回已签收）
+    # 不按时间筛选，后面再判断归属月份
     orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status.in_(['submitted', 'shipped']),
-        Order.logistics_status != '退回已签收',
-        Order.create_time >= start,
-        Order.create_time <= end
+        Order.logistics_status != '退回已签收'
     ).all()
 
     category_data = {}
@@ -829,6 +974,21 @@ def team_category_distribution():
         amount = get_order_amount(order)
         if amount <= 0:
             continue
+        
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        order_year = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计当前查询月份的订单
+        if order_month != month or order_year != year:
+            continue
+        
         if cat not in category_data:
             category_data[cat] = {'amount': 0, 'count': 0, 'max_amount': 0, 'amounts': []}
         category_data[cat]['amount'] += amount
@@ -898,34 +1058,29 @@ def sign_rate_by_person():
 
     user_ids = get_managed_user_ids(group_id)
 
-    start_date = datetime(year, month, 1)
-    end_date = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
-
     # 获取主产品类别列表
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 查询所有已提交和已发货订单（只统计主产品，包含退回已签收）
+    # 查询所有已提交和已发货订单（不按时间筛选，后面再判断归属月份）
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
-        Order.status.in_(['submitted', 'shipped']),
-        Order.create_time >= start_date,
-        Order.create_time <= end_date
+        Order.status.in_(['submitted', 'shipped'])
     ).all()
 
     # 按业务员统计（只统计主产品且金额>0）
     person_stats = {}
     
-    # 第一步：先获取所有权限可见的业务员并初始化
+    # 第一步：先获取所有权限可见的业务员并初始化（排除level=1的用户，不参与排行）
     managed_users = []
     if current_user.username == 'admin':
         if group_id:
             group = Group.query.get(group_id)
             if group:
                 group_ids = [group.id] + group.get_all_children_ids()
-                managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman')).all()
+                managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman'), User.level != 1).all()
         else:
-            managed_users = User.query.filter(User.roles.contains('salesman')).all()
+            managed_users = User.query.filter(User.roles.contains('salesman'), User.level != 1).all()
     elif current_user.group_id:
         managed_ids = current_user.get_managed_group_ids()
         if group_id:
@@ -933,9 +1088,9 @@ def sign_rate_by_person():
                 group = Group.query.get(group_id)
                 if group:
                     group_ids = [group.id] + group.get_all_children_ids()
-                    managed_users = User.query.filter(User.group_id.in_(group_ids)).all()
+                    managed_users = User.query.filter(User.group_id.in_(group_ids), User.level != 1).all()
         else:
-            managed_users = User.query.filter(User.group_id.in_(managed_ids)).all()
+            managed_users = User.query.filter(User.group_id.in_(managed_ids), User.level != 1).all()
     
     # 初始化所有可见业务员（即使没有订单）
     for user in managed_users:
@@ -953,6 +1108,21 @@ def sign_rate_by_person():
         # 跳过金额为0的
         if get_order_amount(order) <= 0:
             continue
+        
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        order_year = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计当前查询月份的订单
+        if order_month != month or order_year != year:
+            continue
+        
         sid = order.salesman_id
         if sid in person_stats:  # 只统计可见用户
             person_stats[sid]['total'] += 1
@@ -990,19 +1160,14 @@ def sign_rate_by_category():
 
     user_ids = get_managed_user_ids(group_id)
 
-    start_date = datetime(year, month, 1)
-    end_date = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
-
     # 获取主产品类别列表
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 查询所有已提交和已发货订单（展示主产品，包含退回已签收）
+    # 查询所有已提交和已发货订单（不按时间筛选，后面再判断归属月份）
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
-        Order.status.in_(['submitted', 'shipped']),
-        Order.create_time >= start_date,
-        Order.create_time <= end_date
+        Order.status.in_(['submitted', 'shipped'])
     ).all()
 
     # 按产品类别统计（只统计主产品且金额>0，包含退回已签收但不算签收）
@@ -1014,6 +1179,21 @@ def sign_rate_by_category():
         # 跳过金额为0的
         if get_order_amount(order) <= 0:
             continue
+        
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        order_year = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计当前查询月份的订单
+        if order_month != month or order_year != year:
+            continue
+        
         if cat not in cat_stats:
             cat_stats[cat] = {'total': 0, 'signed': 0}
         cat_stats[cat]['total'] += 1
@@ -1040,7 +1220,7 @@ def sign_rate_by_category():
 @role_required('admin')
 def salesman_order_detail():
     """获取业务员订单详情API"""
-    salesman_name = request.args.get('salesman_name', type=str)
+    salesman_name = request.args.get('salesman_name', '')
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
     group_id = request.args.get('group_id', type=int)
@@ -1058,21 +1238,15 @@ def salesman_order_detail():
     if salesman.id not in managed_user_ids:
         return jsonify({'error': '无权限查看该业务员数据'}), 403
 
-    # 计算月份范围
-    start_date = datetime(year, month, 1)
-    end_date = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
-
     # 获取主产品类别列表
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 查询该业务员的所有订单（只统计主产品且金额>0，排除退回已签收）
+    # 查询该业务员的所有订单（不按时间筛选，后面再判断归属月份）
     orders = Order.query.filter(
         Order.salesman_id == salesman.id,
         Order.status.in_(['draft', 'submitted', 'shipped']),
-        Order.logistics_status != '退回已签收',
-        Order.create_time >= start_date,
-        Order.create_time <= end_date
+        Order.logistics_status != '退回已签收'
     ).order_by(Order.create_time.desc()).all()
 
     order_list = []
@@ -1083,6 +1257,20 @@ def salesman_order_detail():
         amt = get_order_amount(order)
         if amt <= 0:
             continue  # 跳过金额为0的
+        
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        order_year = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计当前查询月份的订单
+        if order_month != month or order_year != year:
+            continue
         
         # 合并状态：和发货单列表保持一致的逻辑
         if order.status == 'shipped':
@@ -1167,40 +1355,39 @@ def export_team_performance():
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     allowed_categories = [c.name for c in main_categories]
 
-    # 计算月份范围
-    start_date = datetime(year, month, 1)
-    end_date = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
-
     # 获取管理的用户ID列表
     user_ids = get_managed_user_ids(group_id)
     if not user_ids:
         return jsonify({'success': False, 'message': '没有找到可导出的业务员！'}), 400
 
-    # 查询所有已发货、已签收的订单
+    # 查询所有已发货、已签收的订单（不按时间筛选，后面再判断归属月份）
     query = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status == 'shipped',
-        Order.logistics_status == '已签收',
-        Order.sign_time >= start_date,
-        Order.sign_time <= end_date
+        Order.logistics_status == '已签收'
     )
 
     if allowed_categories:
         query = query.filter(Order.category.in_(allowed_categories))
 
-    # 过滤：只有有订金或代收金额的订单才导出（金额>0）
+    # 过滤：只有有订金或代收金额的订单才导出（金额>0），并且按归属月份筛选
     orders_to_export = []
     for order in query.all():
-        paid_num = 0
-        if order.paid_amount:
-            paid_str = str(order.paid_amount)
-            match = re.match(r'[\d.]+', paid_str)
-            if match:
-                paid_num = float(match.group())
-        collect_num = float(order.collect_amount or 0)
-        # 只有金额>0才导出
-        if paid_num > 0 or collect_num > 0:
-            orders_to_export.append(order)
+        # 判断订单归属月份（已签收订单按签收时间）
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+            if order_month == month and order_year == year:
+                paid_num = 0
+                if order.paid_amount:
+                    paid_str = str(order.paid_amount)
+                    match = re.match(r'[\d.]+', paid_str)
+                    if match:
+                        paid_num = float(match.group())
+                collect_num = float(order.collect_amount or 0)
+                # 只有金额>0才导出
+                if paid_num > 0 or collect_num > 0:
+                    orders_to_export.append(order)
 
     # 按组别、业务员名字排序
     # 先获取所有相关用户信息
@@ -1326,22 +1513,17 @@ def product_overview():
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
     
-    # 当月所有订单（根据create_time判断）
+    # 获取所有订单（不按时间筛选，后面再判断归属月份）
     all_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
-        Order.status.in_(['draft', 'submitted', 'shipped']),
-        (Order.logistics_status != '退回已签收') | (Order.logistics_status.is_(None)),
-        Order.create_time >= start_date,
-        Order.create_time <= end_date
+        Order.status.in_(['draft', 'submitted', 'shipped'])
     ).all()
     
-    # 当月已签收订单（根据sign_time判断）
+    # 获取已签收订单（不按时间筛选，后面再判断归属月份）
     signed_orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
         Order.status == 'shipped',
-        Order.logistics_status == '已签收',
-        Order.sign_time >= start_date,
-        Order.sign_time <= end_date
+        Order.logistics_status == '已签收'
     ).all()
     
     # 统计产品数据
@@ -1369,11 +1551,25 @@ def product_overview():
         if amount <= 0:
             continue  # 金额为0的订单不统计
         
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计当前查询月份的订单
+        if order_month != month or order_year != year:
+            continue
+        
         if category not in product_stats:
             product_stats[category] = {
                 'category': category,
                 'total_amount': 0,
                 'total_count': 0,
+                'sign_rate_denominator': 0,  # 签收率分母：包含退回已签收
                 'valid_amount': 0,
                 'signed_amount': 0,
                 'signed_count': 0,
@@ -1382,12 +1578,27 @@ def product_overview():
                 'unknown_gender_count': 0
             }
         
+        # 判断是否是退回已签收（两种情况：1. logistics_status 是退回已签收；2. logistics_warning_remark 包含退回关键词且是已签收状态）
+        is_returned = False
+        if order.logistics_status == '退回已签收':
+            is_returned = True
+        elif order.logistics_status == '已签收' and order.logistics_warning_remark:
+            return_keywords = ['退回', '拒收', '退件']
+            is_returned = any(keyword in order.logistics_warning_remark for keyword in return_keywords)
+        
+        # 排除退回已签收和拒签的订单（跟个人维度统一）
+        if is_returned or order.logistics_status == '拒签':
+            continue
+        
+        # 签收率分母、总数统计（排除退回已签收）
+        product_stats[category]['sign_rate_denominator'] += 1
         product_stats[category]['total_amount'] += amount
         product_stats[category]['total_count'] += 1
+        product_stats[category]['valid_amount'] += amount
         
-        # 统计有效业绩（不包含退回已签收和拒签）
-        if order.logistics_status not in ['退回已签收', '拒签']:
-            product_stats[category]['valid_amount'] += amount
+        # 总体统计
+        total_amount += amount
+        total_count += 1
         
         # 统计性别
         gender = order.gender or ''
@@ -1400,10 +1611,6 @@ def product_overview():
         else:
             product_stats[category]['unknown_gender_count'] += 1
             unknown_gender_count += 1
-        
-        # 总体统计
-        total_amount += amount
-        total_count += 1
     
     # 统计已签收订单
     for order in signed_orders:
@@ -1420,13 +1627,32 @@ def product_overview():
         if amount <= 0:
             continue
         
-        if category in product_stats:
+        # 判断订单归属月份（已签收订单按签收时间）
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        else:
+            continue  # 没有签收时间的已签收订单不统计
+        
+        # 只统计当前查询月份的订单
+        if order_month != month or order_year != year:
+            continue
+        
+        # 判断是否是退回已签收（两种情况：1. logistics_status 是退回已签收；2. logistics_warning_remark 包含退回关键词）
+        is_returned = False
+        if order.logistics_status == '退回已签收':
+            is_returned = True
+        elif order.logistics_warning_remark:
+            return_keywords = ['退回', '拒收', '退件']
+            is_returned = any(keyword in order.logistics_warning_remark for keyword in return_keywords)
+        
+        if not is_returned and category in product_stats:
             product_stats[category]['signed_amount'] += amount
             product_stats[category]['signed_count'] += 1
-        
-        # 总体统计
-        signed_amount += amount
-        signed_count += 1
+            
+            # 总体统计
+            signed_amount += amount
+            signed_count += 1
     
     # 转换为列表并按总金额排序
     products_list = list(product_stats.values())
@@ -1454,15 +1680,9 @@ def get_product_orders():
         now = _now_bj()
         year, month = now.year, now.month
     
-    # 计算日期范围
-    month_start = datetime(year, month, 1)
-    month_end = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
-    
+    # 不按时间筛选，后面再判断归属月份
     # 构建查询
-    query = Order.query.filter(
-        Order.create_time >= month_start,
-        Order.create_time <= month_end
-    )
+    query = Order.query
     
     # 类别筛选
     if category:
@@ -1473,7 +1693,24 @@ def get_product_orders():
         query = query.filter(Order.group_name == group)
     
     # 获取订单
-    orders = query.order_by(Order.create_time.desc()).limit(500).all()
+    all_orders = query.order_by(Order.create_time.desc()).limit(1000).all()
+    
+    # 筛选归属月份正确的订单
+    orders = []
+    for order in all_orders:
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        order_year = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计当前查询月份的订单
+        if order_month == month and order_year == year:
+            orders.append(order)
     
     # 转换为字典列表
     orders_data = []

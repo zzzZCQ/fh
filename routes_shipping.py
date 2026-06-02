@@ -124,10 +124,15 @@ def update_logistics():
     print("====================================================")
     print(f"[update_logistics] 当前页共有 {len(page_orders)} 个订单")
     
-    # 再在当前页的订单中筛选出需要更新物流的订单
+    # 再在当前页的订单中筛选出需要更新物流的订单（非主品跳过）
     orders_to_update = []
     for order in page_orders:
-        if (order.express_type == '顺丰' and 
+        # 检查是否是主品，非主品不调用API更新
+        category = Category.query.filter_by(name=order.category).first()
+        is_main_product = category.is_main_product if category else False
+        
+        if (is_main_product and  # 只更新主品的物流
+            order.express_type == '顺丰' and 
             order.status == 'shipped' and 
             order.logistics_status not in ['已签收', '退回已签收', '拒签']):
             orders_to_update.append(order)

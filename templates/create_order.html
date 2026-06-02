@@ -28,7 +28,7 @@
         <ul>
             {% for order in duplicate_orders %}
             <li>
-                <strong>{{ order.customer_name }}</strong> - {{ order.phone }} - {{ order.category }} - {{ order.create_time.strftime('%Y-%m-%d %H:%M') }}
+                <strong>{{ order.customer_name }}</strong> - {{ order.phone }} - {{ order.category }} - {{ order.product_info }} - {{ order.create_time.strftime('%Y-%m-%d %H:%M') }}
             </li>
             {% endfor %}
         </ul>
@@ -565,7 +565,17 @@ function parseSingleCustomer(text) {
     
     function isName(s) {
         if (!s || s.length < 2 || s.length > 4) return false;
-        const EXCLUDE = new Set(['收货','地址','电话','姓名','备注','产品','赠品','快递','代收','已付','山东省','山西省','河南省','河北省','湖南省','湖北省','江苏省','江西省','浙江省','福建省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省','北京','天津','上海','重庆','自治区']);
+        const EXCLUDE = new Set(['收货','地址','电话','姓名','备注','产品','赠品','快递','代收','已付',
+            '山东省','山西省','河南省','河北省','湖南省','湖北省','江苏省','江西省','浙江省',
+            '福建省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省',
+            '北京市','天津市','上海市','重庆市',
+            '自治区','省会','市区','县城',
+            '长春','吉林','黑龙江','哈尔滨','辽宁','沈阳','大连',
+            '河北','石家庄','河南','郑州','安徽','合肥','山东','济南',
+            '浙江','杭州','江苏','南京','福建','福州','江西','南昌',
+            '广东','广州','深圳','海南','海口','三亚','广西','南宁','柳州',
+            '湖南','长沙','湖北','武汉','四川','成都','贵州','贵阳',
+            '云南','昆明','陕西','西安','甘肃','兰州','青海','西宁']);
         if (EXCLUDE.has(s)) return false;
         for (const kw of addrKeywords) {
             if (s.includes(kw)) return false;
@@ -575,10 +585,37 @@ function parseSingleCustomer(text) {
     
     function isPhone(s) { return /^1[3-9]\d{9}$/.test(s); }
     
-    // 第一步：全面清理标签和关键词
+    // 第一步：优先从标签后面提取内容（姓名、电话、地址）
     let cleanText = text;
     
-    // 清理各种标签前缀（带冒号的）
+    // 提取姓名（从"姓名："后面提取）
+    const nameMatch = text.match(/(?:姓名|名|性名)\s*[：:]\s*([^\s，,；;电话地址]+)/);
+    if (nameMatch) {
+        name = nameMatch[1];
+        console.log('智能识别 - 从姓名标签提取:', name);
+    }
+    
+    // 提取电话（从"电话："后面提取）
+    const phoneMatch = text.match(/(?:电话|手机|电话号|手机号)\s*[：:]\s*(\d{11})/);
+    if (phoneMatch) {
+        phone = phoneMatch[1];
+        console.log('智能识别 - 从电话标签提取:', phone);
+    }
+    
+    // 提取地址（从"地址："后面提取）
+    const addressMatch = text.match(/(?:地址|收货地址|详细地址)\s*[：:]\s*([^，,；;姓名电话]+)/);
+    if (addressMatch) {
+        address = addressMatch[1].trim();
+        console.log('智能识别 - 从地址标签提取:', address);
+    }
+    
+    // 如果已经提取到完整的姓名、电话、地址，直接返回
+    if (name && phone && address && name.length >= 2 && name.length <= 4) {
+        console.log('智能识别 - 从标签提取成功:', { name, phone, address });
+        return { name, phone, address };
+    }
+    
+    // 第二步：清理标签前缀（处理没有完整标签的情况）
     const prefixPatterns = [
         /^(?:收货)?详细?地址?\s*[：:]\s*/,
         /^(?:姓名|名|性名)\s*[：:]\s*/,
@@ -587,7 +624,6 @@ function parseSingleCustomer(text) {
         /^(?:备注|说明)\s*[：:]\s*/
     ];
     
-    // 先整体清理一遍文本中的标签前缀
     for (const pattern of prefixPatterns) {
         cleanText = cleanText.replace(pattern, '');
     }

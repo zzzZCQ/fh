@@ -852,7 +852,8 @@ function renderProductTable(data) {
     
     tbody.innerHTML = data.products.map(p => {
         const percent = totalAmount > 0 ? (p.total_amount / totalAmount * 100).toFixed(1) : 0;
-        const signRate = p.total_count > 0 ? Math.round(p.signed_count / p.total_count * 100) : 0;
+        const denominator = p.sign_rate_denominator || p.total_count;
+        const signRate = denominator > 0 ? Math.round(p.signed_count / denominator * 100) : 0;
         const malePercent = p.total_count > 0 ? ((p.male_count / p.total_count) * 100).toFixed(1) : 0;
         const femalePercent = p.total_count > 0 ? ((p.female_count / p.total_count) * 100).toFixed(1) : 0;
         
@@ -914,7 +915,8 @@ function showProductDetail(categoryName) {
     document.getElementById('productDetailValidAmount').textContent = formatMoney(productData.valid_amount || 0);
     document.getElementById('productDetailSignedCount').textContent = productData.signed_count;
     document.getElementById('productDetailSignedAmount').textContent = formatMoney(productData.signed_amount);
-    const signRate = productData.total_count > 0 ? Math.round(productData.signed_count / productData.total_count * 100) : 0;
+    const denominator = productData.sign_rate_denominator || productData.total_count;
+    const signRate = denominator > 0 ? Math.round(productData.signed_count / denominator * 100) : 0;
     document.getElementById('productDetailSignRate').textContent = signRate + '%';
     
     // 显示加载中

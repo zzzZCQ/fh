@@ -22,14 +22,14 @@ def admin_users():
     if per_page not in valid_per_page:
         per_page = 10
 
-    # 超级管理员看所有用户，其他管理员只看同级及下级组
+    # 超级管理员看所有用户，其他管理员只看同级及下级组（非admin用户看不到admin账号）
     if current_user.username == 'admin':
         query = User.query
     elif current_user.group_id:
         managed_group_ids = current_user.get_managed_group_ids()
-        query = User.query.filter(User.group_id.in_(managed_group_ids))
+        query = User.query.filter(User.group_id.in_(managed_group_ids), User.username != 'admin')
     else:
-        query = User.query.filter_by(group_id=None)
+        query = User.query.filter_by(group_id=None).filter(User.username != 'admin')
 
     # 关键字搜索（用户名或姓名）
     if keyword:
@@ -64,6 +64,16 @@ def user_detail(user_id):
     """用户详情页"""
     user = User.query.get_or_404(user_id)
     
+    # 检查是否有权限查看该用户
+    if user.username == 'admin' and current_user.username != 'admin':
+        flash('您没有权限查看该用户信息！', 'danger')
+        return redirect(url_for('admin_users.admin_users'))
+    
+    # 检查是否有权限查看该用户
+    if user.username == 'admin' and current_user.username != 'admin':
+        flash('您没有权限查看该用户信息！', 'danger')
+        return redirect(url_for('admin_users.admin_users'))
+    
     if current_user.username != 'admin' and current_user.group_id:
         managed_group_ids = current_user.get_managed_group_ids()
         if user.group_id not in managed_group_ids:
@@ -89,6 +99,16 @@ def user_detail(user_id):
 def update_user(user_id):
     """更新用户信息"""
     user = User.query.get_or_404(user_id)
+    
+    # 检查是否有权限修改该用户
+    if user.username == 'admin' and current_user.username != 'admin':
+        flash('您没有权限修改该用户信息！', 'danger')
+        return redirect(url_for('admin_users.admin_users'))
+    
+    # 检查是否有权限修改该用户
+    if user.username == 'admin' and current_user.username != 'admin':
+        flash('您没有权限修改该用户信息！', 'danger')
+        return redirect(url_for('admin_users.admin_users'))
     
     if current_user.username != 'admin' and current_user.group_id:
         managed_group_ids = current_user.get_managed_group_ids()
@@ -134,6 +154,11 @@ def update_user(user_id):
 def change_user_role(user_id):
     user = User.query.get_or_404(user_id)
 
+    # 检查是否有权限修改admin账号
+    if user.username == 'admin' and current_user.username != 'admin':
+        flash('您没有权限修改该用户角色！', 'danger')
+        return redirect(url_for('admin_users.admin_users'))
+    
     # 非超级管理员只能修改同组及下级组的用户
     if current_user.username != 'admin' and current_user.group_id:
         managed_group_ids = current_user.get_managed_group_ids()
@@ -166,6 +191,11 @@ def change_user_group(user_id):
     user = User.query.get_or_404(user_id)
     group_id = request.form.get('group_id', type=int)
 
+    # 检查是否有权限修改admin账号
+    if user.username == 'admin' and current_user.username != 'admin':
+        flash('您没有权限修改该用户的组别！', 'danger')
+        return redirect(url_for('admin_users.admin_users'))
+    
     # 非超级管理员只能修改同组及下级组的用户
     if current_user.username != 'admin' and current_user.group_id:
         managed_group_ids = current_user.get_managed_group_ids()
@@ -198,6 +228,10 @@ def change_user_group(user_id):
 def toggle_user_dingtalk(user_id):
     """切换用户导出时发送钉钉的权限"""
     user = User.query.get_or_404(user_id)
+    # 检查是否有权限修改admin账号
+    if user.username == 'admin' and current_user.username != 'admin':
+        flash('您没有权限修改该用户设置！', 'danger')
+        return redirect(url_for('admin_users.admin_users'))
     # 非超级管理员只能操作同组及下级组的用户
     if current_user.username != 'admin' and current_user.group_id:
         managed_group_ids = current_user.get_managed_group_ids()
@@ -216,6 +250,10 @@ def toggle_user_dingtalk(user_id):
 def toggle_user_broadcast(user_id):
     """切换用户发送广播通知的权限"""
     user = User.query.get_or_404(user_id)
+    # 检查是否有权限修改admin账号
+    if user.username == 'admin' and current_user.username != 'admin':
+        flash('您没有权限修改该用户设置！', 'danger')
+        return redirect(url_for('admin_users.admin_users'))
     # 非超级管理员只能操作同组及下级组的用户
     if current_user.username != 'admin' and current_user.group_id:
         managed_group_ids = current_user.get_managed_group_ids()
@@ -233,6 +271,10 @@ def toggle_user_broadcast(user_id):
 @role_required('admin')
 def toggle_user_active(user_id):
     user = User.query.get_or_404(user_id)
+    # 检查是否有权限修改admin账号
+    if user.username == 'admin' and current_user.username != 'admin':
+        flash('您没有权限修改该用户状态！', 'danger')
+        return redirect(url_for('admin_users.admin_users'))
     # 不允许停用自己
     if user.id == current_user.id:
         flash('不能停用自己的账号！', 'danger')
