@@ -1152,59 +1152,37 @@ def write_sheet_data(workbook_id, headers, rows, template_style=None):
     print(f"[DEBUG] 写入标题行: url={header_url}")
     resp = requests.put(header_url, json=header_payload, headers=values_headers, 
                        params={'operatorId': operator_id}, timeout=10)
-    print(f"[DEBUG] 标题行响应: status={resp.status_code}, body={resp.text[:500] if resp.text else ''}")
+    print(f"[DEBUG] 标题行响应: status={resp.status_code}")
     if resp.status_code != 200:
         print(f"[WARN] 写入标题行失败: {resp.text}")
 
-    # 2.5 设置列宽（根据内容自动估算）
-    # 钉钉API可能不支持列宽，尝试设置
-    try:
-        # 根据列名估算宽度
-        col_widths = []
-        for h in headers:
-            if '地址' in h:
-                col_widths.append(200)
-            elif '产品' in h or '备注' in h:
-                col_widths.append(150)
-            elif '电话' in h:
-                col_widths.append(100)
-            else:
-                col_widths.append(80)
+    # 3. 写入数据行（大批次写入，减少API调用次数）
+    if rows:
+        # 使用更大的批次大小，减少网络请求次数
+        batch_size = 500
+        total_rows = len(rows)
+        print(f"[DEBUG] 开始写入 {total_rows} 行数据，批次大小: {batch_size}")
         
-        # 尝试设置每列宽度
-        for idx, width in enumerate(col_widths):
-            col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
-            col_url = f'https://api.dingtalk.com/v1.0/doc/workbooks/{workbook_id}/sheets/{sheet_id}/columns/{col_letter}'
-            col_payload = {'width': width}
-            col_resp = requests.put(col_url, json=col_payload, headers=values_headers, 
-                                   params={'operatorId': operator_id}, timeout=5)
-            if col_resp.status_code == 200:
-                print(f"[DEBUG] 设置列宽 {col_letter}={width} 成功")
-    except Exception as e:
-        print(f"[DEBUG] 设置列宽失败（可能不支持）: {e}")
-
-    # 3. 写入数据行（分批）
-    batch_size = 100
-    for i in range(0, len(rows), batch_size):
-        batch = rows[i:i + batch_size]
-        start_row = i + 2
-        end_row = start_row + len(batch) - 1
-        data_range = f"A{start_row}:{last_col}{end_row}"
-        data_url = f'https://api.dingtalk.com/v1.0/doc/workbooks/{workbook_id}/sheets/{sheet_id}/ranges/{data_range}'
-        _, operator_id = _get_workspace_config()
-        data_payload = {
-            'values': batch,
-            'fontSizes': [[10] * col_count] * len(batch),  # 数据行字体10px
-            'horizontalAlignments': [['center'] + ['left'] * (col_count - 1)] * len(batch),
-            'verticalAlignments': [['middle'] * col_count] * len(batch),
-            'rowHeights': [20] * len(batch),  # 数据行高
-        }
-        resp = requests.put(data_url, json=data_payload, headers=values_headers, 
-                           params={'operatorId': operator_id}, timeout=30)
-        if resp.status_code != 200:
-            print(f"[WARN] 写入数据行 {start_row}-{end_row} 失败: {resp.text}")
-    
-    print(f"[DEBUG] 数据写入完成: {len(rows)} 行数据已写入表格")
+        for i in range(0, total_rows, batch_size):
+            batch = rows[i:i + batch_size]
+            start_row = i + 2
+            end_row = start_row + len(batch) - 1
+            data_range = f"A{start_row}:{last_col}{end_row}"
+            data_url = f'https://api.dingtalk.com/v1.0/doc/workbooks/{workbook_id}/sheets/{sheet_id}/ranges/{data_range}'
+            
+            data_payload = {
+                'values': batch,
+                'fontSizes': [[10] * col_count] * len(batch),
+                'horizontalAlignments': [['center'] + ['left'] * (col_count - 1)] * len(batch),
+                'verticalAlignments': [['middle'] * col_count] * len(batch),
+                'rowHeights': [20] * len(batch),
+            }
+            resp = requests.put(data_url, json=data_payload, headers=values_headers, 
+                               params={'operatorId': operator_id}, timeout=60)
+            if resp.status_code != 200:
+                print(f"[WARN] 写入数据行 {start_row}-{end_row} 失败: {resp.text[:200]}")
+        
+        print(f"[DEBUG] 数据写入完成: {total_rows} 行数据已写入表格")
 
 
 def send_dingtalk_sheet(title, headers, rows, order_count=0, workbook_id=None, sheet_url=None, template_style=None):
@@ -1240,19 +1218,18 @@ def send_dingtalk_sheet(title, headers, rows, order_count=0, workbook_id=None, s
         
         write_sheet_data(workbook_id, headers, rows, template_style)
         
-        # 设置文档权限：允许全员可编辑
-        if workbook_id:
+        # 权限设置改为后台异步执行，不阻塞消息发送
+        def set_permission_async():
             try:
                 from config import DINGTALK_CORP_ID
-                print(f"[DEBUG] DINGTALK_CORP_ID = {DINGTALK_CORP_ID}")
-                if DINGTALK_CORP_ID:
-                    # 使用v2.0 API设置全员可见
+                if DINGTALK_CORP_ID and workbook_id:
                     result = set_document_public_permission(workbook_id, DINGTALK_CORP_ID, 'EDITOR')
-                    print(f"[DEBUG] 设置全员权限结果: {result}")
-                else:
-                    print("[WARN] DINGTALK_CORP_ID 未配置，跳过权限设置")
+                    print(f"[DEBUG] [ASYNC] 设置全员权限结果: {result}")
             except Exception as e:
-                print(f"[ERROR] 设置文档权限失败: {e}")
+                print(f"[ERROR] [ASYNC] 设置文档权限失败: {e}")
+        
+        import threading
+        threading.Thread(target=set_permission_async, daemon=True).start()
         
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M')
         total_rows = len(rows)
