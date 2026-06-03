@@ -668,6 +668,10 @@
     }
     initNotificationSSE();
     </script>
+    <!-- html2canvas库 - 用于截图功能 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- 订单详情公共函数 -->
+    <script src="{{ url_for('static', filename='js/order_detail.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

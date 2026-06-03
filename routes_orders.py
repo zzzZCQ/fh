@@ -219,25 +219,83 @@ def dashboard():
     main_product_categories = set(c.name for c in Category.query.filter_by(is_main_product=True, is_active=True).all())
     
     for o in orders.items:
-        # 只统计主品的金额
+        # 只统计主品的金额（包含退回已签收）
         if o.category not in main_product_categories:
             continue
-        # 已付定金
-        if o.paid_amount:
-            num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
-            if num_match:
-                page_paid += float(num_match.group(1))
-        # 代收金额
-        if o.collect_amount:
-            page_collect += float(o.collect_amount)
-        # 已签收金额
-        if o.logistics_status == '已签收':
+        
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间（与团队业绩一致）
+        order_month = None
+        order_year = None
+        if o.sign_time:
+            order_month = o.sign_time.month
+            order_year = o.sign_time.year
+        elif o.create_time:
+            order_month = o.create_time.month
+            order_year = o.create_time.year
+        
+        # 如果有月份筛选，只统计归属月份在筛选范围内的订单
+        should_count = True
+        if month_filter and order_month and order_year:
+            try:
+                filter_year, filter_month = month_filter.split('-')
+                if order_year != int(filter_year) or order_month != int(filter_month):
+                    should_count = False
+            except:
+                pass
+        
+        if should_count:
+            # 计算订单总金额（与团队业绩一致，只统计金额>0的订单）
+            order_total = 0
             if o.paid_amount:
                 num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
                 if num_match:
-                    signed_amount += float(num_match.group(1))
+                    order_total += float(num_match.group(1))
             if o.collect_amount:
-                signed_amount += float(o.collect_amount)
+                order_total += float(o.collect_amount)
+            
+            # 只统计金额>0的订单（与团队业绩一致）
+            if order_total > 0:
+                # 已付定金
+                if o.paid_amount:
+                    num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
+                    if num_match:
+                        page_paid += float(num_match.group(1))
+                # 代收金额
+                if o.collect_amount:
+                    page_collect += float(o.collect_amount)
+        # 已签收金额：只统计签收时间在筛选月份内且金额>0的订单（与团队业绩一致）
+        if o.logistics_status == '已签收':
+            # 判断订单归属月份：以签收时间为准
+            if o.sign_time:
+                order_month = o.sign_time.month
+                order_year = o.sign_time.year
+                
+                # 判断是否在筛选月份内
+                in_month = False
+                if month_filter:
+                    try:
+                        filter_year, filter_month = month_filter.split('-')
+                        if order_year == int(filter_year) and order_month == int(filter_month):
+                            in_month = True
+                    except:
+                        in_month = True  # 解析失败时统计所有
+                else:
+                    in_month = True  # 没有筛选时统计所有
+                
+                # 只统计金额>0的订单
+                if in_month:
+                    order_total = 0
+                    paid_val = 0
+                    if o.paid_amount:
+                        num_match = re.match(r'^(\d+(?:\.\d+)?)', str(o.paid_amount))
+                        if num_match:
+                            paid_val = float(num_match.group(1))
+                            order_total += paid_val
+                    if o.collect_amount:
+                        order_total += float(o.collect_amount)
+                    
+                    if order_total > 0:
+                        signed_amount += order_total
     
     # 总览统计：使用当前页的汇总数据
     total_paid = page_paid

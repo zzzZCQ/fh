@@ -569,43 +569,34 @@ def team_performance_overview():
     ).all()
     
     # ========== 统计当月总业绩 ==========
-    # 总业绩：当月所有订单（只统计主产品且金额>0，归属月份判断
+    # 总业绩：当月所有订单（只统计主产品且金额>0，归属月份判断，包含退回已签收）
     total_amount = 0
     total_count = 0
     for order in all_orders:
         # 只统计主产品
-        if (order.category or '未分类') in main_cat_names:
-            # 判断是否是退回已签收（两种情况：1. logistics_status 是退回已签收；2. logistics_warning_remark 包含退回关键词且是已签收状态）
-            is_returned = False
-            if order.logistics_status == '退回已签收':
-                is_returned = True
-            elif order.logistics_status == '已签收' and order.logistics_warning_remark:
-                return_keywords = ['退回', '拒收', '退件']
-                is_returned = any(keyword in order.logistics_warning_remark for keyword in return_keywords)
-            
-            # 排除退回已签收和拒签
-            if is_returned or order.logistics_status == '拒签':
-                continue
-            
-            # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
-            order_month = None
-            order_year = None
-            if order.sign_time:
-                order_month = order.sign_time.month
-                order_year = order.sign_time.year
-            elif order.create_time:
-                order_month = order.create_time.month
-                order_year = order.create_time.year
-            
-            # 只统计当前查询月份的订单
-            if order_month != month or order_year != year:
-                continue
-            
-            # 金额>0的订单统计
-            amt = get_order_amount(order)
-            if amt > 0:
-                total_amount += amt
-                total_count += 1
+        cat = order.category or '未分类'
+        if cat not in main_cat_names:
+            continue
+        
+        # 判断订单归属月份：以签收时间为主，没有签收时间时用创建时间
+        order_month = None
+        order_year = None
+        if order.sign_time:
+            order_month = order.sign_time.month
+            order_year = order.sign_time.year
+        elif order.create_time:
+            order_month = order.create_time.month
+            order_year = order.create_time.year
+        
+        # 只统计当前查询月份的订单
+        if order_month != month or order_year != year:
+            continue
+        
+        # 金额>0的订单统计
+        amt = get_order_amount(order)
+        if amt > 0:
+            total_amount += amt
+            total_count += 1
     
     # 已签收业绩（只统计主产品且金额>0，归属月份判断
     signed_amount = 0
@@ -721,7 +712,7 @@ def team_performance_overview():
             'prev_signed_amount': 0 # 上月已签收业绩
         }
     
-    # 第二步：统计总业绩
+    # 第二步：统计总业绩（包含退回已签收，与产品维度一致）
     for order in all_orders:
         cat = order.category or '未分类'
         if cat not in main_cat_names:
@@ -745,7 +736,7 @@ def team_performance_overview():
             continue
         
         sid = order.salesman_id
-        if sid in salesman_stats:  # 只统计可见用户
+        if sid in salesman_stats:
             salesman_stats[sid]['total_amount'] += amt
             salesman_stats[sid]['total_count'] += 1
     
@@ -958,11 +949,10 @@ def team_category_distribution():
     main_categories = Category.query.filter_by(is_main_product=True, is_active=True).all()
     main_cat_names = {c.name for c in main_categories}
 
-    # 不按时间筛选，后面再判断归属月份
+    # 不按时间筛选，后面再判断归属月份（包含退回已签收，与产品维度一致）
     orders = Order.query.filter(
         Order.salesman_id.in_(user_ids),
-        Order.status.in_(['submitted', 'shipped']),
-        Order.logistics_status != '退回已签收'
+        Order.status.in_(['submitted', 'shipped'])
     ).all()
 
     category_data = {}
@@ -1586,31 +1576,30 @@ def product_overview():
             return_keywords = ['退回', '拒收', '退件']
             is_returned = any(keyword in order.logistics_warning_remark for keyword in return_keywords)
         
-        # 排除退回已签收和拒签的订单（跟个人维度统一）
-        if is_returned or order.logistics_status == '拒签':
-            continue
-        
-        # 签收率分母、总数统计（排除退回已签收）
+        # 总数统计（包含退回已签收）
         product_stats[category]['sign_rate_denominator'] += 1
         product_stats[category]['total_amount'] += amount
         product_stats[category]['total_count'] += 1
-        product_stats[category]['valid_amount'] += amount
         
         # 总体统计
         total_amount += amount
         total_count += 1
         
-        # 统计性别
-        gender = order.gender or ''
-        if gender == '男':
-            product_stats[category]['male_count'] += 1
-            male_count += 1
-        elif gender == '女':
-            product_stats[category]['female_count'] += 1
-            female_count += 1
-        else:
-            product_stats[category]['unknown_gender_count'] += 1
-            unknown_gender_count += 1
+        # 有效业绩、性别统计排除退回已签收和拒签（跟个人维度统一）
+        if not is_returned and order.logistics_status != '拒签':
+            product_stats[category]['valid_amount'] += amount
+            
+            # 统计性别
+            gender = order.gender or ''
+            if gender == '男':
+                product_stats[category]['male_count'] += 1
+                male_count += 1
+            elif gender == '女':
+                product_stats[category]['female_count'] += 1
+                female_count += 1
+            else:
+                product_stats[category]['unknown_gender_count'] += 1
+                unknown_gender_count += 1
     
     # 统计已签收订单
     for order in signed_orders:

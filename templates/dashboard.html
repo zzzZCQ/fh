@@ -512,20 +512,7 @@ function clearStatusFilters() {
     </div>
 </div>
 
-<!-- 订单详情弹窗 -->
-<div class="modal fade" id="orderDetailModal" tabindex="-1">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">订单详情{% if can_edit_order_detail %}（可编辑）{% endif %}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="orderDetailContent"></div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-            </div>
-        </div>
-    </div>
+{% include 'order_detail_modal.html' %}
 </div>
 
 <!-- 补发赠品弹窗 -->
@@ -651,7 +638,7 @@ function showOrderDetail(orderId) {
                     <div id="logisticsSection"></div>
                 `;
             } else {
-                // 只读模式
+                // 只读模式（与公共模板一致）
                 document.getElementById('orderDetailContent').innerHTML = `
                     <div class="row">
                         <div class="col-md-6">
@@ -679,9 +666,10 @@ function showOrderDetail(orderId) {
                     <div class="row mt-2">
                         <div class="col-12">
                             <strong>产品信息：</strong>
-                            <div class="border rounded p-2 mt-1 bg-light">${data.product_info}</div>
+                            <div class="border rounded p-2 mt-1 bg-light">${data.product_info || '-'}</div>
                         </div>
                     </div>
+                    ${data.gift_info ? `<div class="row mt-2"><div class="col-12"><strong>赠品信息：</strong><div class="border rounded p-2 mt-1 bg-light">${data.gift_info}</div></div></div>` : ''}
                     ${data.remark ? `<div class="row mt-2"><div class="col-12"><strong>备注：</strong><div class="border rounded p-2 mt-1 bg-light">${data.remark}</div></div></div>` : ''}
                     <div class="row mt-2">
                         <div class="col-6 text-muted small">创建时间：${data.create_time}</div>
@@ -707,6 +695,9 @@ function showOrderDetail(orderId) {
             footer.innerHTML += '<button type="button" class="btn btn-primary" onclick="saveOrder()">保存修改</button> ';
             {% endif %}
             footer.innerHTML += '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>';
+
+            // 设置模态框标题
+            document.getElementById('orderDetailModalTitle').textContent = canEditThisOrder ? '订单详情（可编辑）' : '订单详情';
 
             new bootstrap.Modal(document.getElementById('orderDetailModal')).show();
 
