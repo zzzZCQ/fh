@@ -687,16 +687,16 @@ def team_performance_overview():
     salesman_stats = {}
     
     # 第一步：先获取所有权限可见的业务员并初始化
-    # 获取管理的所有用户（排除level=1的用户，不参与排行）
+    # 获取管理的所有用户
     managed_users = []
     if current_user.username == 'admin':
         if group_id:
             group = Group.query.get(group_id)
             if group:
                 group_ids = [group.id] + group.get_all_children_ids()
-                managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman'), User.level != 1).all()
+                managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman')).all()
         else:
-            managed_users = User.query.filter(User.roles.contains('salesman'), User.level != 1).all()
+            managed_users = User.query.filter(User.roles.contains('salesman')).all()
     elif current_user.group_id:
         managed_ids = current_user.get_managed_group_ids()
         if group_id:
@@ -704,9 +704,9 @@ def team_performance_overview():
                 group = Group.query.get(group_id)
                 if group:
                     group_ids = [group.id] + group.get_all_children_ids()
-                    managed_users = User.query.filter(User.group_id.in_(group_ids), User.level != 1).all()
+                    managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman')).all()
         else:
-            managed_users = User.query.filter(User.group_id.in_(managed_ids), User.level != 1).all()
+            managed_users = User.query.filter(User.group_id.in_(managed_ids), User.roles.contains('salesman')).all()
     
     # 初始化所有可见业务员（即使没有业绩）
     for user in managed_users:
@@ -1071,16 +1071,16 @@ def sign_rate_by_person():
     # 按业务员统计（只统计主产品且金额>0）
     person_stats = {}
     
-    # 第一步：先获取所有权限可见的业务员并初始化（排除level=1的用户，不参与排行）
+    # 第一步：先获取所有权限可见的业务员并初始化
     managed_users = []
     if current_user.username == 'admin':
         if group_id:
             group = Group.query.get(group_id)
             if group:
                 group_ids = [group.id] + group.get_all_children_ids()
-                managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman'), User.level != 1).all()
+                managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman')).all()
         else:
-            managed_users = User.query.filter(User.roles.contains('salesman'), User.level != 1).all()
+            managed_users = User.query.filter(User.roles.contains('salesman')).all()
     elif current_user.group_id:
         managed_ids = current_user.get_managed_group_ids()
         if group_id:
@@ -1088,9 +1088,9 @@ def sign_rate_by_person():
                 group = Group.query.get(group_id)
                 if group:
                     group_ids = [group.id] + group.get_all_children_ids()
-                    managed_users = User.query.filter(User.group_id.in_(group_ids), User.level != 1).all()
+                    managed_users = User.query.filter(User.group_id.in_(group_ids), User.roles.contains('salesman')).all()
         else:
-            managed_users = User.query.filter(User.group_id.in_(managed_ids), User.level != 1).all()
+            managed_users = User.query.filter(User.group_id.in_(managed_ids), User.roles.contains('salesman')).all()
     
     # 初始化所有可见业务员（即使没有订单）
     for user in managed_users:
