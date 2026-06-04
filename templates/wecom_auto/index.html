@@ -1,0 +1,972 @@
+{% extends "base.html" %}
+
+{% block title %}自动运营 - 发货通知系统{% endblock %}
+
+{% block content %}
+<style>
+    .container-fluid {
+        max-width: 1600px;
+    }
+    
+    /* 未登录状态 - 展示扫码登录 */
+    .login-section {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 60vh;
+        padding: 40px;
+    }
+    
+    .login-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        padding: 40px;
+        text-align: center;
+        max-width: 500px;
+        width: 100%;
+    }
+    
+    .login-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+    
+    /* 已登录状态 - 微信风格布局 */
+    .main-content {
+        display: flex;
+        gap: 0;
+        height: calc(100vh - 140px);
+        min-height: 600px;
+        background: #f5f5f5;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    /* ========== 左侧客户列表 (微信风格) ========== */
+    .customer-panel {
+        width: 320px;
+        background: #2a2a2a;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #3a3a3a;
+    }
+
+    .customer-panel-header {
+        padding: 14px 16px;
+        background: #2a2a2a;
+        border-bottom: 1px solid #3a3a3a;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .customer-panel-header h6 {
+        color: #fff;
+        font-size: 16px;
+        font-weight: 500;
+    }
+
+    .customer-panel-header .btn {
+        border: none;
+        color: #8a8a8a;
+        padding: 6px 10px;
+    }
+
+    .customer-panel-header .btn:hover {
+        background: #3a3a3a;
+        color: #fff;
+    }
+
+    .customer-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .customer-list::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .customer-list::-webkit-scrollbar-thumb {
+        background: #4a4a4a;
+        border-radius: 3px;
+    }
+
+    .customer-item {
+        padding: 12px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        transition: background 0.15s;
+        border-bottom: 1px solid #333;
+    }
+
+    .customer-item:hover {
+        background: #3a3a3a;
+    }
+
+    .customer-item.active {
+        background: #3a3a3a;
+        border-left: 3px solid #07c160;
+    }
+
+    .customer-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 18px;
+        flex-shrink: 0;
+    }
+
+    .customer-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .customer-name {
+        font-weight: 500;
+        color: #fff;
+        font-size: 14px;
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .customer-preview {
+        font-size: 12px;
+        color: #6a6a6a;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .customer-time {
+        font-size: 11px;
+        color: #5a5a5a;
+        flex-shrink: 0;
+    }
+
+    /* ========== 中间对话区域 (微信风格) ========== */
+    .chat-panel {
+        flex: 1;
+        background: #f5f5f5;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .chat-header {
+        padding: 14px 20px;
+        background: #fff;
+        border-bottom: 1px solid #e5e5e5;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .chat-header h6 {
+        color: #333;
+        font-size: 16px;
+        font-weight: 500;
+    }
+
+    .chat-content {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        background: #f5f5f5;
+    }
+
+    .chat-content::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .chat-content::-webkit-scrollbar-thumb {
+        background: #ccc;
+        border-radius: 3px;
+    }
+
+    .chat-empty {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #999;
+    }
+
+    .chat-empty-icon {
+        font-size: 64px;
+        margin-bottom: 16px;
+        opacity: 0.5;
+    }
+
+    .chat-input-area {
+        padding: 12px 16px;
+        background: #fff;
+        border-top: 1px solid #e5e5e5;
+    }
+
+    .chat-input-area .input-group {
+        gap: 12px;
+    }
+
+    .chat-input-area textarea {
+        resize: none;
+        border: 1px solid #e5e5e5;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .chat-input-area textarea:focus {
+        border-color: #07c160;
+        box-shadow: 0 0 0 2px rgba(7, 193, 96, 0.1);
+    }
+
+    .chat-input-area .btn-primary {
+        background: #07c160;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 20px;
+        font-weight: 500;
+    }
+
+    .chat-input-area .btn-primary:hover {
+        background: #06ad56;
+    }
+
+    /* 消息气泡 */
+    .message-item {
+        display: flex;
+        margin-bottom: 16px;
+        animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message-item.sent {
+        flex-direction: row-reverse;
+    }
+
+    .message-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    .message-item.sent .message-avatar {
+        background: linear-gradient(135deg, #07c160, #05a054);
+    }
+
+    .message-bubble {
+        max-width: 70%;
+        padding: 10px 14px;
+        border-radius: 8px;
+        margin: 0 10px;
+        font-size: 14px;
+        line-height: 1.6;
+        position: relative;
+    }
+
+    .message-item.received .message-bubble {
+        background: #fff;
+        color: #333;
+    }
+
+    .message-item.sent .message-bubble {
+        background: #07c160;
+        color: #fff;
+    }
+
+    .message-time {
+        font-size: 11px;
+        color: #999;
+        margin-top: 4px;
+        text-align: right;
+    }
+
+    .message-item.sent .message-time {
+        text-align: right;
+    }
+
+    /* ========== 右侧模板面板 (可折叠) ========== */
+    .template-panel {
+        width: 0;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: width 0.3s ease;
+        border-left: 1px solid #e5e5e5;
+    }
+
+    .template-panel.open {
+        width: 300px;
+    }
+
+    .template-panel-header {
+        padding: 14px 16px;
+        border-bottom: 1px solid #e5e5e5;
+        background: #fafafa;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .template-panel-header h6 {
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    .template-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+    }
+
+    .template-item {
+        padding: 12px;
+        border: 1px solid #e5e5e5;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .template-item:hover {
+        border-color: #07c160;
+        background: #f0f9f2;
+    }
+
+    .template-name {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 6px;
+        font-size: 13px;
+    }
+
+    .template-content {
+        font-size: 12px;
+        color: #666;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* 模板切换按钮 */
+    .template-toggle {
+        position: fixed;
+        right: 20px;
+        bottom: 100px;
+        z-index: 100;
+    }
+    
+    /* 状态指示器 */
+    .status-indicator {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: #f0fdf4;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+    
+    .status-indicator.offline {
+        background: #fef2f2;
+    }
+    
+    .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #22c55e;
+    }
+    
+    .status-dot.offline {
+        background: #ef4444;
+    }
+    
+    /* 空状态 */
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #999;
+    }
+    
+    .empty-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+    }
+    
+    /* 消息气泡 */
+    .message-bubble {
+        max-width: 70%;
+        padding: 12px 16px;
+        border-radius: 12px;
+        margin-bottom: 16px;
+    }
+    
+    .message-sent {
+        background: #3b82f6;
+        color: white;
+        margin-left: auto;
+    }
+</style>
+
+<div class="container-fluid mt-4">
+    <h2 class="mb-4"><i class="bi bi-wechat me-2"></i>自动运营</h2>
+    
+    <!-- 状态指示器 -->
+    <div id="statusIndicator" class="status-indicator offline mb-4">
+        <span class="status-dot offline"></span>
+        <span id="statusText">未登录</span>
+        <span class="ms-auto">
+            <button id="closeBrowserBtn" class="btn btn-sm btn-outline-danger d-none" onclick="closeBrowser()">
+                <i class="bi bi-x-circle"></i> 关闭浏览器
+            </button>
+        </span>
+    </div>
+    
+    <!-- 未登录状态 -->
+    <div id="loginSection" class="login-section">
+        <div class="login-card">
+            <div class="login-icon">
+                <i class="bi bi-qr-code-scan text-primary"></i>
+            </div>
+            <h4 class="mb-3">企业微信扫码登录</h4>
+            <p class="text-muted mb-4">点击下方按钮，启动浏览器并扫码登录企业微信</p>
+            <button id="loginBtn" class="btn btn-primary btn-lg" onclick="startLogin()">
+                <i class="bi bi-play-circle me-2"></i>点击登录
+            </button>
+        </div>
+    </div>
+    
+    <!-- 已登录状态 - 主界面 -->
+    <div id="mainContent" class="main-content d-none">
+        <!-- 左侧：客户列表 -->
+        <div class="customer-panel">
+            <div class="customer-panel-header">
+                <h6 class="mb-0"><i class="bi bi-people me-2"></i>客户列表</h6>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshCustomers()">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+            <div class="customer-list" id="customerList">
+                <!-- 动态生成客户列表 -->
+            </div>
+        </div>
+
+        <!-- 中间：对话区域 -->
+        <div class="chat-panel">
+            <div class="chat-header">
+                <h6 class="mb-0" id="chatTitle">选择客户开始对话</h6>
+            </div>
+            <div class="chat-content" id="chatContent">
+                <div class="chat-empty">
+                    <div class="chat-empty-icon"><i class="bi bi-chat-dots"></i></div>
+                    <div>选择左侧客户开始对话</div>
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <div class="d-flex gap-2 w-100">
+                    <textarea id="messageInput" class="form-control" rows="2" placeholder="输入消息内容... (Enter发送, Shift+Enter换行)" disabled onkeydown="handleMessageKeydown(event)"></textarea>
+                    <button id="sendBtn" class="btn btn-primary" onclick="sendMessage()" disabled style="min-width: 80px;">
+                        <i class="bi bi-send me-1"></i>发送
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：消息模板 (可折叠) -->
+        <div class="template-panel" id="templatePanel">
+            <div class="template-panel-header">
+                <h6 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>消息模板</h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="toggleTemplatePanel()">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+            <div class="template-list" id="templateList">
+                <!-- 动态生成模板列表 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 模板面板切换按钮 -->
+    <button class="btn btn-success template-toggle rounded-circle shadow" onclick="toggleTemplatePanel()" title="消息模板" style="width: 50px; height: 50px;">
+        <i class="bi bi-chat-quote"></i>
+    </button>
+</div>
+
+<!-- 添加模板模态框 -->
+<div class="modal fade" id="addTemplateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加消息模板</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">模板名称</label>
+                    <input type="text" class="form-control" id="templateName" placeholder="例如：新客户问候">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">消息内容</label>
+                    <textarea class="form-control" id="templateContent" rows="5" placeholder="输入消息内容..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="addTemplate()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast提示 -->
+<div class="toast-container position-fixed top-4 end-4" id="toastContainer"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentCustomer = null;
+let templates = [];
+let checkLoginInterval = null;
+
+// 页面加载
+document.addEventListener('DOMContentLoaded', function() {
+    loadStatus();
+    loadTemplates();
+    
+    // 定时检查登录状态
+    checkLoginInterval = setInterval(checkLogin, 3000);
+});
+
+// 显示Toast
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type} border-0`;
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="this.parentElement.parentElement.remove()"></button>
+        </div>
+    `;
+    document.getElementById('toastContainer').appendChild(toast);
+    new bootstrap.Toast(toast).show();
+    setTimeout(() => toast.remove(), 5000);
+}
+
+// 加载状态
+async function loadStatus() {
+    try {
+        const res = await fetch('/admin/wecom-auto/api/status');
+        const data = await res.json();
+        if (data.success) {
+            updateUI(data.data);
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+// 检查登录状态
+async function checkLogin() {
+    try {
+        const res = await fetch('/admin/wecom-auto/api/check-login');
+        const data = await res.json();
+        if (data.success) {
+            updateUI(data.data);
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+// 更新UI
+function updateUI(status) {
+    const indicator = document.getElementById('statusIndicator');
+    const dot = document.querySelector('.status-dot');
+    const text = document.getElementById('statusText');
+    const loginSection = document.getElementById('loginSection');
+    const mainContent = document.getElementById('mainContent');
+    const closeBtn = document.getElementById('closeBrowserBtn');
+    
+    if (status.logged_in) {
+        indicator.classList.remove('offline');
+        dot.classList.remove('offline');
+        text.textContent = '已登录';
+        loginSection.classList.add('d-none');
+        mainContent.classList.remove('d-none');
+        closeBtn.classList.remove('d-none');
+        
+        // 加载客户列表
+        if (!currentCustomer) {
+            refreshCustomers();
+        }
+    } else if (status.browser_running) {
+        indicator.classList.remove('offline');
+        dot.classList.remove('offline');
+        text.textContent = '浏览器运行中，请扫码...';
+        loginSection.classList.remove('d-none');
+        mainContent.classList.add('d-none');
+        closeBtn.classList.remove('d-none');
+        
+        // 更新登录按钮
+        document.getElementById('loginBtn').innerHTML = '<i class="bi bi-hourglass me-2"></i>等待扫码...';
+        document.getElementById('loginBtn').disabled = true;
+    } else {
+        indicator.classList.add('offline');
+        dot.classList.add('offline');
+        text.textContent = '未登录';
+        loginSection.classList.remove('d-none');
+        mainContent.classList.add('d-none');
+        closeBtn.classList.add('d-none');
+        
+        // 重置登录按钮
+        document.getElementById('loginBtn').innerHTML = '<i class="bi bi-play-circle me-2"></i>点击登录';
+        document.getElementById('loginBtn').disabled = false;
+    }
+}
+
+// 开始登录
+async function startLogin() {
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>启动中...';
+    
+    try {
+        const res = await fetch('/admin/wecom-auto/api/start-login', {
+            method: 'POST'
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            btn.innerHTML = '<i class="bi bi-hourglass me-2"></i>等待扫码...';
+        } else {
+            showToast(data.message, 'danger');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>点击登录';
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('启动失败', 'danger');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>点击登录';
+    }
+}
+
+// 关闭浏览器
+async function closeBrowser() {
+    if (!confirm('确定要关闭浏览器吗？')) return;
+    
+    try {
+        const res = await fetch('/admin/wecom-auto/api/close-browser', {
+            method: 'POST'
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            currentCustomer = null;
+        } else {
+            showToast(data.message, 'danger');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('操作失败', 'danger');
+    }
+}
+
+// 刷新客户列表
+async function refreshCustomers() {
+    const listEl = document.getElementById('customerList');
+    listEl.innerHTML = '<div class="text-center p-4"><span class="spinner-border spinner-border-sm"></span> 加载中...</div>';
+    
+    try {
+        const res = await fetch('/admin/wecom-auto/api/customers');
+        const data = await res.json();
+        
+        if (data.success) {
+            renderCustomers(data.data);
+        } else {
+            listEl.innerHTML = `<div class="text-center p-4 text-danger">${data.message}</div>`;
+        }
+    } catch (e) {
+        console.error(e);
+        listEl.innerHTML = '<div class="text-center p-4 text-danger">加载失败</div>';
+    }
+}
+
+// 渲染客户列表 (微信风格)
+function renderCustomers(customers) {
+    const listEl = document.getElementById('customerList');
+
+    if (!customers || customers.length === 0) {
+        listEl.innerHTML = `
+            <div class="d-flex flex-column align-items-center justify-content-center h-100 text-secondary">
+                <i class="bi bi-people" style="font-size: 48px; opacity: 0.5;"></i>
+                <div class="mt-2" style="font-size: 13px;">暂无客户</div>
+            </div>
+        `;
+        return;
+    }
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+    listEl.innerHTML = customers.map(c => `
+        <div class="customer-item" data-id="${c.id}" data-name="${c.name}" onclick="selectCustomer(this)">
+            <div class="customer-avatar">${c.name.charAt(0).toUpperCase()}</div>
+            <div class="customer-info">
+                <div class="customer-name">${c.name}</div>
+                <div class="customer-preview">${c.lastMessage || '暂无消息'}</div>
+            </div>
+            <div class="customer-time">${timeStr}</div>
+        </div>
+    `).join('');
+}
+
+// 选择客户
+function selectCustomer(el) {
+    // 移除其他选中状态
+    document.querySelectorAll('.customer-item').forEach(i => i.classList.remove('active'));
+    // 添加选中状态
+    el.classList.add('active');
+
+    // 更新当前客户
+    currentCustomer = {
+        id: el.dataset.id,
+        name: el.dataset.name
+    };
+
+    // 更新标题
+    document.getElementById('chatTitle').textContent = currentCustomer.name;
+
+    // 启用输入框
+    document.getElementById('messageInput').disabled = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('messageInput').focus();
+
+    // 清空聊天内容
+    document.getElementById('chatContent').innerHTML = `
+        <div class="chat-empty">
+            <div class="chat-empty-icon"><i class="bi bi-chat-dots"></i></div>
+            <div>开始和 ${currentCustomer.name} 对话</div>
+        </div>
+    `;
+}
+
+// 消息输入框键盘事件
+function handleMessageKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+}
+
+// 发送消息
+async function sendMessage() {
+    const content = document.getElementById('messageInput').value.trim();
+    if (!content) {
+        showToast('请输入消息内容', 'warning');
+        return;
+    }
+    
+    if (!currentCustomer) {
+        showToast('请先选择客户', 'warning');
+        return;
+    }
+    
+    const btn = document.getElementById('sendBtn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>发送中...';
+    
+    try {
+        const res = await fetch('/admin/wecom-auto/api/send-message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                customer_name: currentCustomer.name,
+                content: content
+            })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            // 添加消息气泡
+            addMessageBubble(content, true);
+            document.getElementById('messageInput').value = '';
+        } else {
+            showToast(data.message, 'danger');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('发送失败', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+
+// 添加消息气泡 (微信风格)
+function addMessageBubble(content, isSent) {
+    const chatContent = document.getElementById('chatContent');
+
+    // 如果有empty状态，先清空
+    const emptyEl = chatContent.querySelector('.chat-empty');
+    if (emptyEl) {
+        chatContent.innerHTML = '';
+    }
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const avatar = isSent ? '我' : (currentCustomer ? currentCustomer.name.charAt(0).toUpperCase() : '?');
+
+    const bubble = document.createElement('div');
+    bubble.className = `message-item ${isSent ? 'sent' : 'received'}`;
+    bubble.innerHTML = `
+        <div class="message-avatar">${avatar}</div>
+        <div class="message-bubble">
+            ${content}
+        </div>
+    `;
+    chatContent.appendChild(bubble);
+    chatContent.scrollTop = chatContent.scrollHeight;
+}
+
+// 加载消息模板
+async function loadTemplates() {
+    try {
+        const res = await fetch('/admin/wecom-auto/api/templates');
+        const data = await res.json();
+        if (data.success) {
+            templates = data.data;
+            renderTemplates();
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+// 渲染消息模板
+function renderTemplates() {
+    const listEl = document.getElementById('templateList');
+
+    if (!templates || templates.length === 0) {
+        listEl.innerHTML = `
+            <div class="d-flex flex-column align-items-center justify-content-center py-5 text-secondary">
+                <i class="bi bi-file-earmark-text" style="font-size: 36px; opacity: 0.5;"></i>
+                <div class="mt-2" style="font-size: 13px;">暂无模板</div>
+                <button class="btn btn-sm btn-outline-primary mt-3" onclick="showAddTemplateModal()">
+                    <i class="bi bi-plus me-1"></i>添加模板
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    listEl.innerHTML = templates.map(t => `
+        <div class="template-item" onclick="useTemplate(${t.id})">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="template-name">${t.name}</div>
+                <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteTemplate(${t.id})" title="删除">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+            <div class="template-content">${t.content}</div>
+        </div>
+    `).join('') + `
+        <button class="btn btn-outline-primary btn-sm w-100 mt-2" onclick="showAddTemplateModal()">
+            <i class="bi bi-plus me-1"></i>添加模板
+        </button>
+    `;
+}
+
+// 切换模板面板
+function toggleTemplatePanel() {
+    const panel = document.getElementById('templatePanel');
+    panel.classList.toggle('open');
+}
+
+// 使用模板
+function useTemplate(templateId) {
+    const template = templates.find(t => t.id === templateId);
+    if (!template) return;
+    
+    document.getElementById('messageInput').value = template.content;
+    showToast('已选择模板：' + template.name, 'info');
+}
+
+// 显示添加模板模态框
+function showAddTemplateModal() {
+    document.getElementById('templateName').value = '';
+    document.getElementById('templateContent').value = '';
+    new bootstrap.Modal(document.getElementById('addTemplateModal')).show();
+}
+
+// 添加模板
+async function addTemplate() {
+    const name = document.getElementById('templateName').value.trim();
+    const content = document.getElementById('templateContent').value.trim();
+    
+    if (!name || !content) {
+        showToast('请填写完整信息', 'warning');
+        return;
+    }
+    
+    try {
+        const res = await fetch('/admin/wecom-auto/api/templates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, content })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('添加成功', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('addTemplateModal')).hide();
+            loadTemplates();
+        } else {
+            showToast(data.message, 'danger');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('添加失败', 'danger');
+    }
+}
+</script>
+{% endblock %}

@@ -53,3 +53,18 @@ DINGTALK_WORKSPACE_ID = os.environ.get('DINGTALK_WORKSPACE_ID', 'Jpaq7SGr4jAWDP0
 # 在钉钉管理后台 -> 组织架构 -> 部门 -> 点击部门查看部门ID
 # 根部门ID通常是1，表示全员可见
 DINGTALK_DEPT_ID = os.environ.get('DINGTALK_DEPT_ID', '1')
+
+# 企业微信配置
+WECOM_CORP_ID = os.environ.get('WECOM_CORP_ID', '')  # 企业ID
+WECOM_AGENT_ID = os.environ.get('WECOM_AGENT_ID', '')  # 应用ID
+WECOM_SECRET = os.environ.get('WECOM_SECRET', '')  # 应用密钥
+WECOM_CONTACT_SECRET = os.environ.get('WECOM_CONTACT_SECRET', '')  # 客户联系Secret
+
+# 企业微信扫码登录配置
+WECOM_QR_APP_ID = os.environ.get('WECOM_QR_APP_ID', '')  # 扫码登录应用ID
+WECOM_QR_APP_SECRET = os.environ.get('WECOM_QR_APP_SECRET', '')  # 扫码登录应用密钥
+WECOM_QR_REDIRECT_URI = os.environ.get('WECOM_QR_REDIRECT_URI', 'http://localhost:5000/wecom/callback')  # 回调地址
+
+# 企业微信消息配置
+WECOM_MESSAGE_TOKEN = os.environ.get('WECOM_MESSAGE_TOKEN', '')  # 消息回调Token
+WECOM_MESSAGE_ENCODING_AES_KEY = os.environ.get('WECOM_MESSAGE_ENCODING_AES_KEY', '')  # 消息回调加密密钥

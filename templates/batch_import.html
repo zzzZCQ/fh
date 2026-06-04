@@ -14,7 +14,7 @@
                     <h5 class="mb-0">执行导入</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('import_routes.execute_batch_import') }}" enctype="multipart/form-data">
+                    <form id="importForm" method="POST" action="{{ url_for('import_routes.execute_batch_import') }}" enctype="multipart/form-data">
                         <div class="mb-3">
                             <label for="category_id" class="form-label">产品类别 <span class="text-danger">*</span></label>
                             <select class="form-select" id="category_id" name="category_id" required>
@@ -29,10 +29,29 @@
                             <input type="file" class="form-control" id="file" name="file" accept=".xlsx,.xls" required>
                             <div class="form-text">支持 .xlsx, .xls 格式</div>
                         </div>
-                        <button type="submit" class="btn btn-primary w-100">
-                            <i class="bi bi-upload me-1"></i> 执行导入
+                        <button type="submit" id="submitBtn" class="btn btn-primary w-100">
+                            <i class="bi bi-upload me-1"></i> <span id="btnText">执行导入</span>
                         </button>
                     </form>
+                    
+                    <!-- 加载进度条区域 -->
+                    <div id="progressContainer" class="d-none mt-4">
+                        <div class="text-center mb-2">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">正在加载...</span>
+                            </div>
+                        </div>
+                        <h6 class="text-center" id="progressText">正在导入中...</h6>
+                        <div class="progress mt-3" style="height: 8px;">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" 
+                                 style="width: 0%" 
+                                 aria-valuenow="0" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="100"></div>
+                        </div>
+                        <p class="text-center text-muted small mt-2">请勿关闭页面</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -103,4 +122,74 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('importForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('btnText');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    
+    form.addEventListener('submit', function(e) {
+        // 检查表单是否已经在提交中
+        if (submitBtn.disabled) {
+            e.preventDefault();
+            return;
+        }
+        
+        // 禁用按钮
+        submitBtn.disabled = true;
+        submitBtn.classList.add('disabled');
+        btnText.textContent = '正在导入...';
+        
+        // 显示进度条
+        progressContainer.classList.remove('d-none');
+        
+        // 进度条动画模拟
+        simulateProgress();
+    });
+    
+    function simulateProgress() {
+        let progress = 0;
+        const messages = [
+            '正在读取Excel文件...',
+            '正在匹配订单数据...',
+            '正在更新运单号...',
+            '正在发送通知...',
+            '几乎完成了...'
+        ];
+        
+        function updateProgress() {
+            if (progress < 100) {
+                // 前95%之前快速前进
+                if (progress < 30) {
+                    progress += Math.random() * 15;
+                } else if (progress < 70) {
+                    progress += Math.random() * 10;
+                } else if (progress < 90) {
+                    progress += Math.random() * 5;
+                } else {
+                    progress += Math.random() * 2;
+                }
+                
+                // 更新文本
+                const messageIndex = Math.min(Math.floor(progress / 20), messages.length - 1);
+                progressText.textContent = messages[messageIndex];
+                
+                // 更新进度条
+                progress = Math.min(progress, 95);
+                progressBar.style.width = progress + '%';
+                progressBar.setAttribute('aria-valuenow', progress);
+                
+                // 继续更新
+                setTimeout(updateProgress, 200 + Math.random() * 300);
+            }
+        }
+        
+        updateProgress();
+    }
+});
+</script>
 {% endblock %}

@@ -326,6 +326,18 @@
                 </a>
             </nav>
         </div>
+
+        <!-- 企业微信（超级管理员可见） -->
+        {% if current_user.username == 'admin' %}
+        <div class="menu-group">
+            <div class="menu-label">企业微信</div>
+            <nav class="nav flex-column">
+                <a class="nav-link {% if request.endpoint == 'wecom_auto.index' %}active{% endif %}" href="{{ url_for('wecom_auto.index') }}">
+                    <i class="bi bi-robot"></i> 自动运营
+                </a>
+            </nav>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 

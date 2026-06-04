@@ -401,7 +401,7 @@ def export_orders():
                 for excel_col_name, order_field in mapping.items():
                     col_idx = resolve_col_index(excel_col_name, header_map)
                     print(f"[DEBUG]   列 '{excel_col_name}' -> 索引 {col_idx}, 字段 {order_field}")
-                    if col_idx is None or col_idx > 1000:
+                    if col_idx is None or col_idx < 0 or col_idx > 1000:
                         print(f"[WARN]   无效的列索引 {col_idx}，跳过此列")
                         continue
                     # 序号自动递增
@@ -494,7 +494,7 @@ def export_orders():
                 for excel_col_name, order_field in mapping.items():
                     col_idx = resolve_col_index(excel_col_name, header_map)
                     print(f"[DEBUG]   列 '{excel_col_name}' -> 索引 {col_idx}, 字段 {order_field}")
-                    if not col_idx or col_idx > 1000:
+                    if col_idx is None or col_idx <= 0 or col_idx > 1000:
                         print(f"[WARN]   无效的列索引 {col_idx}，跳过此列")
                         continue
                     if order_field == '__seq__':
@@ -513,21 +513,41 @@ def export_orders():
             tmp.close()
             output_files.append((cat_name, tmp.name))
 
+    # 先标记订单为已导出（不管是否发送钉钉都标记）
+    print(f"[DEBUG] 标记 {len(orders)} 个订单为已导出")
+    for order in orders:
+        order.export_marked = True
+        order.export_mark_time = datetime.now()
+    db.session.commit()
+    print("[DEBUG] 订单标记完成")
+
     # 根据当前用户权限决定是否发送钉钉
     can_dingtalk = getattr(current_user, 'can_dingtalk_export', False)
     print(f"[DEBUG] can_dingtalk_export = {can_dingtalk}")
 
+    # 保存文件路径供异步线程使用
+    file_paths_for_async = list(output_files)
+    order_count_for_async = len(orders)
+
     # 异步发送钉钉消息，不阻塞文件下载
-    def send_dingtalk_async(output_files, order_count):
+    def send_dingtalk_async(file_paths, order_count):
         """异步发送钉钉消息"""
         try:
+            # 延迟导入避免模块级别的问题
+            import sys
+            # 清除可能缓存的模块，重新导入
+            modules_to_remove = [m for m in sys.modules.keys() if 'services' in m or 'models' in m]
+            for m in modules_to_remove:
+                del sys.modules[m]
+
+            # 在线程中导入services（此时已有app_context）
             from services import send_excel_as_online_sheet
 
             all_success = True
             error_messages = []
 
-            if len(output_files) == 1:
-                cat_name, filepath = output_files[0]
+            if len(file_paths) == 1:
+                cat_name, filepath = file_paths[0]
                 file_display = f'{cat_name}-{datetime.now().strftime("%Y%m%d")}.xlsx'
                 print(f"[DEBUG] [ASYNC] 发送单个文件: {file_display}")
                 result = send_excel_as_online_sheet(filepath, file_display, order_count)
@@ -538,7 +558,7 @@ def export_orders():
                     error_messages.append(result.get('error', '未知错误'))
             else:
                 # 多个类别，发送多个预览链接
-                for cat_name, filepath in output_files:
+                for cat_name, filepath in file_paths:
                     file_display = f'{cat_name}-{datetime.now().strftime("%Y%m%d")}.xlsx'
                     print(f"[DEBUG] [ASYNC] 发送文件: {file_display}")
                     result = send_excel_as_online_sheet(filepath, file_display, order_count)
@@ -549,18 +569,7 @@ def export_orders():
                         error_messages.append(f"{cat_name}: {result.get('error', '未知错误')}")
 
             if all_success:
-                print(f"[DEBUG] [ASYNC] 钉钉发送成功，标记 {order_count} 个订单为已导出")
-                # 标记已导出的订单
-                from models import Order
-                orders_to_mark = Order.query.filter(
-                    Order.status == 'submitted',
-                    Order.export_marked == False
-                ).all()
-                for order in orders_to_mark:
-                    order.export_marked = True
-                    order.export_mark_time = datetime.now()
-                from models import db
-                db.session.commit()
+                print(f"[DEBUG] [ASYNC] 钉钉发送成功")
             else:
                 error_msg = '; '.join(error_messages)
                 print(f"[ERROR] [ASYNC] 钉钉发送失败: {error_msg}")
@@ -572,10 +581,22 @@ def export_orders():
 
     if can_dingtalk:
         # 启动异步线程发送钉钉消息
+        from app import app
         import threading
+
+        # 使用 app.app_context() 创建上下文
+        ctx = app.app_context()
+        ctx.push()
+
+        def run_with_context(file_paths, order_count):
+            try:
+                send_dingtalk_async(file_paths, order_count)
+            finally:
+                ctx.pop()
+
         threading.Thread(
-            target=send_dingtalk_async,
-            args=(output_files, len(orders)),
+            target=run_with_context,
+            args=(file_paths_for_async, order_count_for_async),
             daemon=True
         ).start()
         print("[DEBUG] 钉钉消息已在后台发送，文件下载不受影响")

@@ -450,3 +450,49 @@ class CustomerInfo(db.Model):
     __table_args__ = (
         db.UniqueConstraint('user_id', 'nickname', name='unique_user_nickname'),
     )
+
+
+class WecomConfig(db.Model):
+    """企业微信配置模型"""
+    __tablename__ = 'wecom_config'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    corp_id = db.Column(db.String(100), default='')  # 企业ID
+    agent_id = db.Column(db.String(50), default='')  # 应用ID
+    secret = db.Column(db.String(200), default='')  # 应用密钥
+    qr_app_id = db.Column(db.String(100), default='')  # 扫码登录应用ID
+    qr_app_secret = db.Column(db.String(200), default='')  # 扫码登录密钥
+    qr_redirect_uri = db.Column(db.String(500), default='')  # 回调地址
+    contact_secret = db.Column(db.String(200), default='')  # 客户联系Secret
+    message_token = db.Column(db.String(100), default='')  # 消息回调Token
+    message_aes_key = db.Column(db.String(200), default='')  # 消息回调加密密钥
+    is_active = db.Column(db.Boolean, default=True)  # 是否启用
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    update_time = db.Column(db.DateTime, default=_now_bj, onupdate=_now_bj)
+    
+    @classmethod
+    def get_active_config(cls):
+        """获取活跃的配置（单例）"""
+        config = cls.query.filter_by(is_active=True).first()
+        if not config:
+            # 创建默认配置
+            config = cls()
+            db.session.add(config)
+            db.session.commit()
+        return config
+    
+    def to_dict(self):
+        """转为字典"""
+        return {
+            'id': self.id,
+            'corp_id': self.corp_id,
+            'agent_id': self.agent_id,
+            'secret': self.secret,
+            'qr_app_id': self.qr_app_id,
+            'qr_app_secret': self.qr_app_secret,
+            'qr_redirect_uri': self.qr_redirect_uri,
+            'contact_secret': self.contact_secret,
+            'message_token': self.message_token,
+            'message_aes_key': self.message_aes_key,
+            'is_active': self.is_active
+        }

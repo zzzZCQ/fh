@@ -1,0 +1,4 @@
+# 企业微信自动化依赖
+playwright==1.43.0
+apscheduler==3.10.4
+python-dotenv==1.0.1

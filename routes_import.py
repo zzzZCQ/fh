@@ -265,9 +265,15 @@ def col_letter_to_index(col_str: str) -> int:
     col_str = col_str.strip().upper()
     if not col_str or not col_str[0].isalpha():
         return 0
+    # 限制长度防止数值过大
+    if len(col_str) > 3:
+        return 0
     result = 0
     for ch in col_str:
         result = result * 26 + (ord(ch) - ord('A') + 1)
+        # 防止结果过大
+        if result > 1000:
+            return 0
     return result
 
 
@@ -283,7 +289,7 @@ def resolve_col_index(excel_col, header_map):
     if not all(c.isalpha() for c in excel_col_clean):
         return None
     # 再尝试列号匹配（A->1, B->2...）
-    col_idx = col_letter_to_index(excel_col)
+    col_idx = col_letter_to_index(excel_col_clean)
     # 检查是否在合理的列索引范围内（1-1000）
     if 0 < col_idx <= 1000:
         return col_idx
@@ -388,7 +394,7 @@ def execute_batch_import():
                 rows_data.append(row_data)
         else:
             import openpyxl
-            wb = openpyxl.load_workbook(file)
+            wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
             ws = wb.active
 
             # 建立列名->列号映射
@@ -408,6 +414,7 @@ def execute_batch_import():
                     if col_idx:
                         row_data[field] = ws.cell(row=row, column=col_idx).value
                 rows_data.append(row_data)
+            wb.close()
 
         # 更新订单
         updated_count = 0
@@ -421,6 +428,51 @@ def execute_batch_import():
         print(f"[DEBUG] 默认快递种类: {default_express}")
         print(f"[DEBUG] 类别: {category.name}")
         print(f"[DEBUG] 共读取 {len(rows_data)} 行数据")
+
+        # 字段预处理：大写字母、去特殊字符、只保留字母数字汉字
+        def normalize_field(s):
+            s = str(s).upper()
+            s = re.sub(r'[^\w\u4e00-\u9fff]', '', s)
+            return s
+
+        # 预加载所有业务员并建立索引
+        has_salesman_in_mapping = 'salesman_name' in mapping
+        salesman_map = {}
+        if has_salesman_in_mapping:
+            all_salesmen = User.query.filter(User.roles.like('%salesman%')).all()
+            for s in all_salesmen:
+                salesman_map[normalize_field(s.name)] = s
+
+        # 预加载所有待发货订单并建立索引
+        has_group_in_mapping = 'group_name' in mapping
+        # 构建查询条件：只查询待发货订单，减少数据量
+        orders_query = Order.query.filter_by(
+            category=category.name,
+            status='submitted',
+            export_marked=False
+        )
+        all_orders = orders_query.all()
+        
+        # 建立订单索引，加速匹配
+        # 格式: {(group_name_norm, customer_name_norm): [order1, order2, ...]}
+        order_index = {}
+        for order in all_orders:
+            key = (normalize_field(order.group_name), normalize_field(order.customer_name))
+            if key not in order_index:
+                order_index[key] = []
+            order_index[key].append(order)
+        
+        # 单独建立只按客户名的索引（无组别时使用）
+        order_index_by_customer = {}
+        if not has_group_in_mapping:
+            for order in all_orders:
+                customer_key = normalize_field(order.customer_name)
+                if customer_key not in order_index_by_customer:
+                    order_index_by_customer[customer_key] = []
+                order_index_by_customer[customer_key].append(order)
+
+        # 按业务员收集发货的订单信息
+        salesman_orders_map = {}
 
         for idx, row_data in enumerate(rows_data):
             group_name = str(row_data.get('group_name', '')).strip()
@@ -442,19 +494,10 @@ def execute_batch_import():
             if not express_type and default_express:
                 express_type = default_express
 
-            # 字段预处理：大写字母、去特殊字符、只保留字母数字汉字
-            def normalize_field(s):
-                s = s.upper()
-                s = re.sub(r'[^\w\u4e00-\u9fff]', '', s)
-                return s
-
             group_name_norm = normalize_field(group_name)
             customer_name_norm = normalize_field(customer_name)
 
             # 必填字段校验（只有映射中有组别时才要求）
-            has_group_in_mapping = 'group_name' in mapping
-            has_salesman_in_mapping = 'salesman_name' in mapping
-
             if has_group_in_mapping and not group_name:
                 skipped_count += 1
                 continue
@@ -467,40 +510,26 @@ def execute_batch_import():
                 skipped_count += 1
                 continue
 
-            # 查找业务员（也做预处理匹配，支持多角色）
+            # 查找业务员（从预加载的索引中找）
             salesman = None
-            if salesman_name:
-                all_salesmen = User.query.filter(User.roles.like('%salesman%')).all()
-                salesman = next((s for s in all_salesmen if normalize_field(s.name) == normalize_field(salesman_name)), None)
+            if has_salesman_in_mapping and salesman_name:
+                salesman_key = normalize_field(salesman_name)
+                salesman = salesman_map.get(salesman_key)
 
             # 如果映射中有业务员字段但找不到，则跳过
             if has_salesman_in_mapping and not salesman:
                 skipped_count += 1
                 continue
 
-            # 查找匹配的订单
-            if has_salesman_in_mapping and salesman:
-                # 有业务员字段：按业务员过滤
-                all_orders = Order.query.filter_by(
-                    category=category.name,
-                    salesman_id=salesman.id
-                ).all()
-            else:
-                # 无业务员字段：不用业务员过滤，只按类别匹配
-                all_orders = Order.query.filter_by(
-                    category=category.name
-                ).all()
-
-            # 筛选出客户名匹配的候选订单（组别可选）
+            # 查找匹配的订单（从索引中查找）
+            candidates = []
             if has_group_in_mapping:
                 # 有组别字段：组别+客户名双重匹配
-                candidates = [o for o in all_orders
-                             if normalize_field(o.group_name) == group_name_norm
-                             and normalize_field(o.customer_name) == customer_name_norm]
+                key = (group_name_norm, customer_name_norm)
+                candidates = order_index.get(key, [])
             else:
                 # 无组别字段：只用客户名匹配
-                candidates = [o for o in all_orders
-                             if normalize_field(o.customer_name) == customer_name_norm]
+                candidates = order_index_by_customer.get(customer_name_norm, [])
 
             if not candidates:
                 print(f"[DEBUG]   未找到匹配订单（客户名={customer_name}不匹配）")
@@ -510,12 +539,12 @@ def execute_batch_import():
             # 如果有托寄物内容，用数字匹配筛选
             order = None
             if new_product_info:
-                extract_digits = lambda s: ''.join(re.findall(r'\d+', s or ''))
-                target_digits = extract_digits(new_product_info)
+                extract_digits_func = lambda s: ''.join(re.findall(r'\d+', str(s) or ''))
+                target_digits = extract_digits_func(new_product_info)
                 if target_digits:
                     # 尝试找数字匹配的订单（包含匹配：订单数字包含Excel数字）
                     for c in candidates:
-                        order_digits = extract_digits(c.product_info)
+                        order_digits = extract_digits_func(c.product_info)
                         # 检查订单数字是否包含Excel数字，或Excel数字是否包含订单数字
                         if target_digits in order_digits or order_digits in target_digits:
                             order = c
@@ -526,35 +555,58 @@ def execute_batch_import():
                 order = candidates[0]
             if order:
                 print(f"[DEBUG]   找到订单: id={order.id}, status={order.status}")
-                if order.status == 'submitted':
-                    order.tracking_number = tracking_number
-                    order.express_type = express_type or order.express_type
-                    order.status = 'shipped'
+                order.tracking_number = tracking_number
+                order.express_type = express_type or order.express_type
+                order.status = 'shipped'
 
-                    # 判断是否为主品，非主品发货即签收
-                    if category.is_main_product:
-                        # 主品：正常发货流程
-                        if express_type == '顺丰':
-                            order.logistics_status = '已发货'
-                    else:
-                        # 非主品：发货即签收
-                        order.logistics_status = '已签收'
-                        print(f"[DEBUG]   非主品类别，直接标记为已签收")
-
-                    updated_count += 1
-
-                    # 通知业务员
-                    notify_users([order.salesman_id],
-                                f'您的订单 {order.group_name} 已发货，{order.express_type}：{tracking_number}，请注意查收！',
-                                order_id=order.id)
+                # 判断是否为主品，非主品发货即签收
+                if category.is_main_product:
+                    # 主品：正常发货流程
+                    if express_type == '顺丰':
+                        order.logistics_status = '已发货'
                 else:
-                    print(f"[DEBUG]   订单状态不是待发货，跳过")
-                    not_found_count += 1
+                    # 非主品：发货即签收
+                    order.logistics_status = '已签收'
+                    print(f"[DEBUG]   非主品类别，直接标记为已签收")
+
+                updated_count += 1
+
+                # 按业务员收集订单信息
+                salesman_id = order.salesman_id
+                if salesman_id not in salesman_orders_map:
+                    salesman_orders_map[salesman_id] = []
+                salesman_orders_map[salesman_id].append({
+                    'group_name': order.group_name,
+                    'express_type': express_type,
+                    'tracking_number': tracking_number
+                })
             else:
                 print(f"[DEBUG]   未找到匹配订单")
                 not_found_count += 1
 
+        # 一次性提交所有数据库更新
         db.session.commit()
+
+        # 异步按业务员汇总发送通知（不阻塞主线程）
+        if salesman_orders_map:
+            import threading
+            def send_notifications_async():
+                for salesman_id, orders in salesman_orders_map.items():
+                    try:
+                        # 构建汇总通知内容
+                        order_lines = []
+                        for idx, order_info in enumerate(orders, 1):
+                            line = f"{idx}. {order_info['group_name']} - {order_info['express_type']}：{order_info['tracking_number']}"
+                            order_lines.append(line)
+                        
+                        content = f"【批量发货通知】\n本次有 {len(orders)} 个订单已发货：\n" + "\n".join(order_lines) + "\n请注意查收！"
+                        
+                        notify_users([salesman_id], content)
+                        print(f"[DEBUG] 已给业务员 {salesman_id} 发送批量通知")
+                    except Exception as e:
+                        print(f"[DEBUG] 发送通知失败: {e}")
+            threading.Thread(target=send_notifications_async, daemon=True).start()
+
         msg = f'批量导入完成，共更新 {updated_count} 条订单！'
         if not_found_count > 0:
             msg += f'（{not_found_count} 条未匹配到订单）'
@@ -563,6 +615,8 @@ def execute_batch_import():
         flash(msg, 'success')
 
     except Exception as e:
+        import traceback
+        print(f"[ERROR] 导入失败: {traceback.format_exc()}")
         flash(f'导入失败：{str(e)}', 'danger')
 
     return redirect(url_for('import_routes.batch_import_page'))
