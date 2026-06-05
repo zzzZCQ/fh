@@ -154,7 +154,7 @@
         <div class="user-info">
             <div class="notification-btn position-relative" onclick="toggleNotificationPanel()">
                 <i class="bi bi-bell" style="font-size:18px;"></i>
-                {% if unread_count > 0 %}
+                {% if unread_count|default(0) > 0 %}
                 <span class="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill">{{ unread_count }}</span>
                 {% endif %}
             </div>
@@ -332,8 +332,8 @@
         <div class="menu-group">
             <div class="menu-label">企业微信</div>
             <nav class="nav flex-column">
-                <a class="nav-link {% if request.endpoint == 'wecom_auto.index' %}active{% endif %}" href="{{ url_for('wecom_auto.index') }}">
-                    <i class="bi bi-robot"></i> 自动运营
+                <a class="nav-link {% if request.endpoint == 'wecom_scrm.index' %}active{% endif %}" href="{{ url_for('wecom_scrm.index') }}">
+                    <i class="bi bi-robot"></i> SCRM管理
                 </a>
             </nav>
         </div>

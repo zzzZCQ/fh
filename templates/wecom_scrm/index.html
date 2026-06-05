@@ -106,18 +106,85 @@
         margin-bottom: 16px;
         color: #cbd5e1;
     }
+    .tab-btn {
+        border: none;
+        background: transparent;
+        padding: 8px 16px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s;
+        color: #64748b;
+    }
+    .tab-btn:hover {
+        color: #334155;
+    }
+    .tab-btn.active {
+        color: #0ea5e9;
+        border-bottom-color: #0ea5e9;
+    }
+    .lib-info-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
+    .lib-tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 10px;
+        margin-right: 4px;
+        margin-bottom: 4px;
+    }
+    .lib-tag.available {
+        background: rgba(255,255,255,0.3);
+    }
+    .lib-tag.unavailable {
+        background: rgba(0,0,0,0.2);
+    }
+    .list-item {
+        padding: 12px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .list-item:hover {
+        background: #f8fafc;
+    }
 </style>
 
 <div class="container-fluid">
+    <div class="row g-3 mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="card-title mb-0"><i class="bi bi-wechat me-2"></i>企业微信超级封装</h5>
+                            <p class="text-muted small mb-0">基于 wxwork_pc_api 和 ntwork</p>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="refreshLibsInfo()">
+                            <i class="bi bi-info-circle me-1"></i> 查看库信息
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row g-3">
         <!-- 左侧：账号管理 -->
         <div class="col-2">
             <div class="panel">
                 <div class="panel-header">
                     <h6 class="mb-0"><i class="bi bi-robot me-2"></i>托管账号</h6>
-                    <button class="btn btn-sm btn-primary" onclick="showAddAccountModal()">
-                        <i class="bi bi-plus-lg"></i>
-                    </button>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-primary" onclick="showAddAccountModal()">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="quickAddAccount()">
+                            <i class="bi bi-qr-code-scan"></i> 扫码添加
+                        </button>
+                    </div>
                 </div>
                 <div class="panel-body" id="accountList">
                     <div class="text-center py-4">
@@ -127,16 +194,29 @@
             </div>
         </div>
 
-        <!-- 中间：客户列表 -->
+        <!-- 中间：多功能面板 -->
         <div class="col-4">
             <div class="panel">
-                <div class="panel-header">
-                    <h6 class="mb-0" id="customerPanelTitle"><i class="bi bi-people me-2"></i>客户列表</h6>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="refreshCustomers()">
+                <div class="panel-header" style="padding: 0;">
+                    <div class="d-flex">
+                        <button class="tab-btn active" onclick="switchTab('customers')" id="tab-customers">
+                            <i class="bi bi-people me-1"></i>客户
+                        </button>
+                        <button class="tab-btn" onclick="switchTab('inner-contacts')" id="tab-inner-contacts">
+                            <i class="bi bi-person-workspace me-1"></i>内部
+                        </button>
+                        <button class="tab-btn" onclick="switchTab('external-contacts')" id="tab-external-contacts">
+                            <i class="bi bi-person-lines-fill me-1"></i>外部
+                        </button>
+                        <button class="tab-btn" onclick="switchTab('rooms')" id="tab-rooms">
+                            <i class="bi bi-people-fill me-1"></i>群聊
+                        </button>
+                    </div>
+                    <button class="btn btn-sm btn-outline-secondary me-2" onclick="refreshCurrentTab()">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
                 </div>
-                <div class="panel-body" id="customerList">
+                <div class="panel-body" id="panelBody">
                     <div class="empty-state">
                         <i class="bi bi-person-lines-fill"></i>
                         <div>请先选择一个账号</div>
@@ -199,13 +279,13 @@
     </div>
 </div>
 
-<!-- 登录模态框 -->
+<!-- 扫码登录模态框 -->
 <div class="modal fade" id="loginModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">企业微信扫码登录</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title"><i class="bi bi-qr-code-scan me-2"></i>企业微信扫码登录</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="stopLoginPolling()"></button>
             </div>
             <div class="modal-body text-center">
                 <div class="mb-3">
@@ -213,7 +293,36 @@
                         <div class="spinner-border text-primary"></div>
                     </div>
                 </div>
-                <div class="text-muted" id="loginStatus">正在准备登录...</div>
+                <div id="loginStatus" class="mb-2">
+                    <span class="spinner-border spinner-border-sm text-primary me-2"></span>
+                    正在生成二维码...
+                </div>
+                <div id="loginTip" class="text-muted small">
+                    请使用企业微信扫描二维码登录
+                </div>
+                <div id="loginUserInfo" class="mt-3" style="display: none;">
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <span id="loginUserName"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 库信息模态框 -->
+<div class="modal fade" id="libsInfoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-cpu me-2"></i>超级封装信息</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="libsInfoContent">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -225,16 +334,46 @@
 <script>
 let currentAccount = null;
 let currentCustomer = null;
+let currentTab = 'customers';
 let accounts = [];
-let customers = [];
 let addAccountModal = null;
 let loginModal = null;
+let libsInfoModal = null;
+let libsInfo = null;
 
 $(document).ready(function() {
     addAccountModal = new bootstrap.Modal(document.getElementById('addAccountModal'));
     loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+    libsInfoModal = new bootstrap.Modal(document.getElementById('libsInfoModal'));
     loadAccounts();
+    loadLibsInfo();
 });
+
+function switchTab(tab) {
+    currentTab = tab;
+    
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`tab-${tab}`).classList.add('active');
+    
+    refreshCurrentTab();
+}
+
+function refreshCurrentTab() {
+    switch(currentTab) {
+        case 'customers':
+            loadCustomers();
+            break;
+        case 'inner-contacts':
+            loadInnerContacts();
+            break;
+        case 'external-contacts':
+            loadExternalContacts();
+            break;
+        case 'rooms':
+            loadRooms();
+            break;
+    }
+}
 
 function loadAccounts() {
     $.get('/admin/wecom-scrm/api/accounts', function(data) {
@@ -278,7 +417,7 @@ function renderAccounts() {
                 <div class="d-flex gap-1">
                     ${account.status !== 'online' ? `
                         <button class="btn btn-sm btn-success" onclick="event.stopPropagation(); startLogin(${account.id})">
-                            <i class="bi bi-qr-code-scan"></i> 登录
+                            <i class="bi bi-play-circle"></i> 登录
                         </button>
                     ` : ''}
                     <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); deleteAccount(${account.id})">
@@ -293,31 +432,30 @@ function renderAccounts() {
 function selectAccount(accountId) {
     currentAccount = accounts.find(a => a.id === accountId);
     renderAccounts();
-    if (currentAccount) {
-        document.getElementById('customerPanelTitle').innerHTML = 
-            `<i class="bi bi-people me-2"></i>客户列表 (${currentAccount.account_name})`;
-        loadCustomers();
-    }
+    refreshCurrentTab();
     currentCustomer = null;
     resetChatArea();
 }
 
 function loadCustomers() {
-    if (!currentAccount) return;
+    if (!currentAccount) {
+        showEmptyState('请先选择一个账号');
+        return;
+    }
     
-    const container = document.getElementById('customerList');
+    const container = document.getElementById('panelBody');
     container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
     
     $.get(`/admin/wecom-scrm/api/accounts/${currentAccount.id}/customers`, function(data) {
         if (data.success) {
-            customers = data.data;
-            renderCustomers();
+            const customers = data.data;
+            renderCustomerList(customers);
         }
     });
 }
 
-function renderCustomers() {
-    const container = document.getElementById('customerList');
+function renderCustomerList(customers) {
+    const container = document.getElementById('panelBody');
     if (customers.length === 0) {
         container.innerHTML = `
             <div class="empty-state" style="padding: 40px 16px;">
@@ -347,9 +485,82 @@ function renderCustomers() {
     }).join('');
 }
 
+function loadInnerContacts() {
+    const container = document.getElementById('panelBody');
+    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+    
+    $.get('/admin/wecom-scrm/api/super/contacts/inner', function(data) {
+        if (data.success) {
+            const contacts = data.data;
+            renderSimpleList(contacts, '内部联系人', 'person-workspace');
+        }
+    });
+}
+
+function loadExternalContacts() {
+    const container = document.getElementById('panelBody');
+    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+    
+    $.get('/admin/wecom-scrm/api/super/contacts/external', function(data) {
+        if (data.success) {
+            const contacts = data.data;
+            renderSimpleList(contacts, '外部联系人', 'person-lines-fill');
+        }
+    });
+}
+
+function loadRooms() {
+    const container = document.getElementById('panelBody');
+    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+    
+    $.get('/admin/wecom-scrm/api/super/rooms', function(data) {
+        if (data.success) {
+            const rooms = data.data;
+            renderSimpleList(rooms, '群聊', 'people-fill');
+        }
+    });
+}
+
+function renderSimpleList(items, title, icon) {
+    const container = document.getElementById('panelBody');
+    if (items.length === 0) {
+        showEmptyState(`暂无${title}`);
+        return;
+    }
+
+    container.innerHTML = items.map(item => `
+        <div class="list-item">
+            <div class="d-flex gap-3 align-items-center">
+                <div class="avatar-placeholder" style="width: 32px; height: 32px; font-size: 12px;">
+                    <i class="bi bi-${icon}"></i>
+                </div>
+                <div class="flex-grow-1 overflow-hidden">
+                    <div class="fw-semibold text-truncate">${escapeHtml(item.name || item.title || '未知')}</div>
+                    <div class="text-muted small text-truncate">
+                        ${item.corp_name || item.user_id || item.member_count ? `${item.member_count || ''}人` : '暂无信息'}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function showEmptyState(message) {
+    const container = document.getElementById('panelBody');
+    container.innerHTML = `
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <div>${message}</div>
+        </div>
+    `;
+}
+
 function selectCustomer(customerId) {
+    if (currentTab !== 'customers') return;
+    
+    const customers = []; 
     currentCustomer = customers.find(c => c.id === customerId);
-    renderCustomers();
+    refreshCurrentTab();
     renderChat();
 }
 
@@ -427,11 +638,6 @@ function addChatMessage(content, type) {
     chatArea.scrollTop = chatArea.scrollHeight;
 }
 
-function refreshCustomers() {
-    loadCustomers();
-    showToast('客户列表已刷新', 'success');
-}
-
 function showAddAccountModal() {
     document.getElementById('accountName').value = '';
     document.getElementById('realName').value = '';
@@ -502,19 +708,247 @@ function startLogin(accountId) {
         method: 'POST',
         success: function(data) {
             if (data.success) {
-                document.getElementById('loginStatus').textContent = '请使用企业微信扫描二维码登录';
+                if (data.data.libs_info) {
+                    libsInfo = data.data.libs_info;
+                }
+                document.getElementById('loginStatus').textContent = '请在企业微信中登录';
                 document.getElementById('qrCodeContainer').innerHTML = `
                     <div class="text-center">
-                        <i class="bi bi-qr-code" style="font-size: 80px; color: #cbd5e1;"></i>
-                        <div class="text-muted small mt-2">登录功能开发中...</div>
+                        <i class="bi bi-wechat" style="font-size: 80px; color: #07c160;"></i>
+                        <div class="mt-3 text-muted">请打开企业微信客户端进行登录</div>
+                        ${data.data.mode ? `<div class="small text-muted mt-2">当前模式: ${data.data.mode}</div>` : ''}
                     </div>
                 `;
+                pollLoginStatus(accountId);
             } else {
                 document.getElementById('loginStatus').textContent = data.message || '启动登录失败';
                 showToast(data.message || '启动登录失败', 'danger');
             }
         }
     });
+}
+
+function quickAddAccount() {
+    loginModal.show();
+    document.getElementById('qrCodeContainer').innerHTML = '<div class="spinner-border text-primary"></div>';
+    document.getElementById('loginStatus').innerHTML = '<span class="spinner-border spinner-border-sm text-primary me-2"></span>正在生成二维码...';
+    document.getElementById('loginTip').style.display = 'block';
+    document.getElementById('loginUserInfo').style.display = 'none';
+
+    // 使用真实的扫码登录API
+    safeAjax({
+        url: '/admin/wecom-scrm/api/qrlogin/create',
+        method: 'GET',
+        success: function(data) {
+            if (data.success) {
+                // 显示二维码
+                document.getElementById('qrCodeContainer').innerHTML = `<img src="${data.data.qrcode}" alt="登录二维码" style="max-width: 240px; border-radius: 8px;">`;
+                document.getElementById('loginStatus').innerHTML = '请使用企业微信扫描二维码';
+                document.getElementById('loginTip').textContent = '二维码有效期5分钟';
+                
+                // 开始轮询扫码状态
+                startLoginPolling(data.data.session_id);
+            } else {
+                document.getElementById('loginStatus').textContent = data.message || '生成二维码失败';
+                showToast(data.message || '生成二维码失败', 'danger');
+            }
+        }
+    });
+}
+
+let loginPollingInterval = null;
+let currentLoginSessionId = null;
+
+function startLoginPolling(sessionId) {
+    currentLoginSessionId = sessionId;
+    
+    if (loginPollingInterval) {
+        clearInterval(loginPollingInterval);
+    }
+    
+    loginPollingInterval = setInterval(function() {
+        if (!currentLoginSessionId) return;
+        
+        safeAjax({
+            url: '/admin/wecom-scrm/api/qrlogin/status/' + currentLoginSessionId,
+            method: 'GET',
+            success: function(data) {
+                if (data.success) {
+                    var status = data.data.status;
+                    var statusText = data.data.status_text;
+                    
+                    switch(status) {
+                        case 0: // 等待扫码
+                            document.getElementById('loginStatus').innerHTML = '请使用企业微信扫描二维码';
+                            break;
+                        case 1: // 已扫码
+                            document.getElementById('loginStatus').innerHTML = '<span class="text-warning"><i class="bi bi-check-circle me-2"></i>已扫码，请在手机确认登录</span>';
+                            break;
+                        case 2: // 登录成功
+                            document.getElementById('loginStatus').innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill me-2"></i>登录成功！</span>';
+                            stopLoginPolling();
+                            
+                            // 获取登录结果并创建账号
+                            getLoginResult(currentLoginSessionId);
+                            break;
+                        case 3: // 已过期
+                            document.getElementById('loginStatus').innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-2"></i>二维码已过期</span>';
+                            document.getElementById('loginTip').innerHTML = '<button class="btn btn-sm btn-primary" onclick="quickAddAccount()">刷新二维码</button>';
+                            stopLoginPolling();
+                            break;
+                        case 4: // 登录失败
+                            document.getElementById('loginStatus').innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-2"></i>登录失败</span>';
+                            document.getElementById('loginTip').innerHTML = '<button class="btn btn-sm btn-primary" onclick="quickAddAccount()">重新登录</button>';
+                            stopLoginPolling();
+                            break;
+                    }
+                }
+            }
+        });
+    }, 2000);
+}
+
+function stopLoginPolling() {
+    if (loginPollingInterval) {
+        clearInterval(loginPollingInterval);
+        loginPollingInterval = null;
+    }
+}
+
+function getLoginResult(sessionId) {
+    safeAjax({
+        url: '/admin/wecom-scrm/api/qrlogin/result/' + sessionId,
+        method: 'GET',
+        success: function(data) {
+            if (data.success) {
+                var account = data.data.account;
+                var userInfo = data.data.user_info;
+                
+                // 显示成功信息
+                document.getElementById('loginUserInfo').style.display = 'block';
+                document.getElementById('loginUserName').textContent = '登录成功：' + (userInfo.name || '企业微信用户');
+                document.getElementById('loginTip').style.display = 'none';
+                
+                showToast('登录成功！账号已创建', 'success');
+                
+                // 3秒后关闭模态框并刷新账号列表
+                setTimeout(function() {
+                    loginModal.hide();
+                    loadAccounts();
+                }, 2000);
+            } else {
+                showToast(data.message || '获取登录结果失败', 'danger');
+            }
+        }
+    });
+}
+
+function pollLoginStatus(accountId) {
+    const interval = setInterval(() => {
+        safeAjax({
+            url: `/admin/wecom-scrm/api/accounts/${accountId}/login-status`,
+            method: 'GET',
+            success: function(data) {
+                if (data.success) {
+                    if (data.data.status === 'online') {
+                        clearInterval(interval);
+                        loginModal.hide();
+                        loadAccounts();
+                        showToast('登录成功', 'success');
+                    } else if (data.data.status === 'failed') {
+                        clearInterval(interval);
+                        document.getElementById('loginStatus').textContent = '登录失败: ' + (data.data.message || '未知错误');
+                    }
+                }
+            }
+        });
+    }, 3000);
+}
+
+function pollQuickAddStatus() {
+    const interval = setInterval(() => {
+        safeAjax({
+            url: '/admin/wecom-scrm/api/accounts/quick-add/status',
+            method: 'GET',
+            success: function(data) {
+                if (data.success) {
+                    if (data.data.status === 'success') {
+                        clearInterval(interval);
+                        loginModal.hide();
+                        loadAccounts();
+                        showToast('账号添加成功', 'success');
+                    } else if (data.data.status === 'failed') {
+                        clearInterval(interval);
+                        document.getElementById('loginStatus').textContent = '添加失败: ' + (data.data.message || '未知错误');
+                    }
+                }
+            }
+        });
+    }, 3000);
+}
+
+function loadLibsInfo() {
+    $.get('/admin/wecom-scrm/api/super/libs-info', function(data) {
+        if (data.success) {
+            libsInfo = data.data;
+        }
+    });
+}
+
+function refreshLibsInfo() {
+    libsInfoModal.show();
+    const content = document.getElementById('libsInfoContent');
+    content.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+    
+    $.get('/admin/wecom-scrm/api/super/libs-info', function(data) {
+        if (data.success) {
+            libsInfo = data.data;
+            renderLibsInfo(libsInfo);
+        }
+    });
+}
+
+function renderLibsInfo(info) {
+    const content = document.getElementById('libsInfoContent');
+    content.innerHTML = `
+        <div class="lib-info-card">
+            <h6 class="mb-2"><i class="bi bi-magic me-2"></i>超级封装</h6>
+            <div class="mb-2">
+                <small>当前使用: <strong>${info.current || '未初始化'}</strong></small>
+            </div>
+            <div>
+                <span class="lib-tag ${info.available['wxwork_pc_api'] ? 'available' : 'unavailable'}">
+                    wxwork_pc_api ${info.available['wxwork_pc_api'] ? '✓' : '✗'}
+                </span>
+                <span class="lib-tag ${info.available['ntwork'] ? 'available' : 'unavailable'}">
+                    ntwork ${info.available['ntwork'] ? '✓' : '✗'}
+                </span>
+                <span class="lib-tag available">
+                    mock ✓
+                </span>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-info-circle me-2"></i>使用说明</h6>
+                <ul class="mb-0 small">
+                    <li><strong>wxwork_pc_api:</strong> 功能最强大，需要下载 DLL 文件</li>
+                    <li><strong>ntwork:</strong> 成熟稳定，可通过 pip install ntwork 安装</li>
+                    <li><strong>mock:</strong> 模拟数据，用于开发和测试</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-box-arrow-down me-2"></i>安装提示</h6>
+                <div class="small text-muted">
+                    <code>pip install ntwork</code>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 function escapeHtml(text) {

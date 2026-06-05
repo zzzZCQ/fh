@@ -72,6 +72,12 @@ def update_logistics():
         # 记录本次点击时间
         _update_logistics_click_cache[user_id] = now
     
+    # 先回滚之前可能失败的事务，避免挂起
+    try:
+        db.session.rollback()
+    except:
+        pass
+    
     print(f"[update_logistics] 收到请求, page={request.form.get('page')}")
     page = request.form.get('page', 1, type=int)
     customer_keyword = request.form.get('customer_keyword', '').strip()
@@ -106,18 +112,36 @@ def update_logistics():
     from sqlalchemy import case
     from models import Category
     
+    # 排序逻辑与dashboard保持一致
     page_orders = query.outerjoin(Category, Category.name == Order.category).order_by(
-        case((Order.status == 'submitted', 0), else_=1),
         case(
-            (Order.logistics_status == '运送中', 3),
-            (Order.logistics_status == '已发货', 4),
-            (Order.logistics_status == '待派送', 2),
-            (Order.logistics_status == '派送中', 1),
-            (Order.logistics_status == '已签收', 5),
-            (Order.logistics_status == '退回已签收', 6),
-            else_=6
+            # 0: 待发货 主品（无论物流状态如何）
+            ((Order.status == 'submitted') & (Category.is_main_product == True), 0),
+            # 1: 待发货 非主品 + 未导出（无论物流状态如何）
+            ((Order.status == 'submitted') & ((Category.is_main_product == False) | (Category.is_main_product == None)) & (Order.export_marked == False), 1),
+            # 2: 派送中
+            (Order.logistics_status == '派送中', 2),
+            # 3: 待派送
+            (Order.logistics_status == '待派送', 3),
+            # 4: 已揽收/已揽件（非待发货状态）
+            ((Order.logistics_status == '已揽收') & (Order.status != 'submitted'), 4),
+            ((Order.logistics_status == '已揽件') & (Order.status != 'submitted'), 4),
+            # 5: 运送中
+            (Order.logistics_status == '运送中', 5),
+            # 6: 已发货（非待发货状态）
+            ((Order.logistics_status == '已发货') & (Order.status != 'submitted'), 6),
+            # 7: 待发货 非主品 + 已导出（无论物流状态如何）
+            ((Order.status == 'submitted') & ((Category.is_main_product == False) | (Category.is_main_product == None)) & (Order.export_marked == True), 7),
+            # 8: 已签收 主品
+            ((Order.logistics_status == '已签收') & (Category.is_main_product == True), 8),
+            # 9: 已签收 非主品
+            ((Order.logistics_status == '已签收') & ((Category.is_main_product == False) | (Category.is_main_product == None)), 9),
+            # 10: 退回已签收
+            (Order.logistics_status == '退回已签收', 10),
+            # 11: 其他
+            else_=11
         ),
-        case((Category.is_main_product == True, 0), else_=1),
+        # 创建时间降序
         Order.create_time.desc()
     ).paginate(page=page, per_page=per_page, error_out=False).items
     
@@ -130,6 +154,8 @@ def update_logistics():
         # 检查是否是主品，非主品不调用API更新
         category = Category.query.filter_by(name=order.category).first()
         is_main_product = category.is_main_product if category else False
+        
+        print(f"[update_logistics] 订单ID={order.id}: status={order.status}, express={order.express_type}, tracking={order.tracking_number}, log_status={order.logistics_status}, is_main={is_main_product}")
         
         if (is_main_product and  # 只更新主品的物流
             order.express_type == '顺丰' and 

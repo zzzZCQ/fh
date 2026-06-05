@@ -1082,8 +1082,24 @@ def api_order_edit(order_id):
     order.paid_amount = new_paid_amount if new_paid_amount else None
     order.collect_amount = float(new_collect_amount) if new_collect_amount else 0
     order.remark = new_remark
+    
+    # 更新运单号和状态
     order.tracking_number = new_tracking_number if new_tracking_number else None
     order.express_type = new_express_type if new_express_type else None
+    
+    # 如果有运单号且当前是待发货状态，自动改为已发货状态
+    if new_tracking_number and order.status == 'submitted':
+        order.status = 'shipped'
+        
+        # 判断是否为主品，非主品发货即签收
+        category = Category.query.filter_by(name=order.category).first()
+        if category and not category.is_main_product:
+            # 非主品：发货即签收
+            order.logistics_status = '已签收'
+        elif new_express_type == '顺丰':
+            # 主品且顺丰：标记为已发货
+            order.logistics_status = '已发货'
+    
     order.gender = new_gender if new_gender else None
     from models import _now_bj
     order.update_time = _now_bj()

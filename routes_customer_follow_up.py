@@ -196,10 +196,9 @@ def follow_up_list():
     if per_page not in [20, 50, 100]:
         per_page = 20
         
+    # 按时间倒序，最新的在上边
     pagination = query.order_by(
-        CustomerFollowUp.group_name,
-        CustomerFollowUp.category,
-        CustomerFollowUp.salesman_name
+        CustomerFollowUp.create_time.desc()
     ).paginate(page=page, per_page=per_page, error_out=False)
     
     records = pagination.items
@@ -388,6 +387,9 @@ def sync_follow_up():
         amount_str = str(int(total_amount)) if total_amount == int(total_amount) else str(total_amount)
 
         if existing:
+            # 如果已标记为已对接，则跳过更新
+            if existing.is_followed_up:
+                continue
             # 更新已存在的记录
             existing.is_main_signed = is_signed
             existing.purchased_products = all_products

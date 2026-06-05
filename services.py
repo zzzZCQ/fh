@@ -15,7 +15,7 @@ from config import (
     DINGTALK_CORP_ID, DINGTALK_APP_KEY, DINGTALK_APP_SECRET, DINGTALK_AGENT_ID,
     DINGTALK_CHAT_ID, DINGTALK_UNION_ID, DINGTALK_SPACE_ID, DINGTALK_OPERATOR_ID, DINGTALK_WORKSPACE_ID
 )
-from models import db, Order, OrderReminder
+from models import db, Order, OrderReminder, _now_bj
 
 # ============ 物流信息缓存 ============
 CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cache')
@@ -196,23 +196,27 @@ def _update_order_status_from_routes(order, routes):
     # 更新异常标识（无论状态是否变化，都要更新异常标识）
     from models import db
     if is_warning:
+        # 检查是否之前已经有异常标记（避免重复发送通知）
+        was_warning = order.logistics_warning
         order.logistics_warning = True
         order.logistics_warning_remark = remark
         print(f"[物流异常] 订单 {order.id}: 检测到异常 - {remark}")
         
-        # 发送通知给业务员
-        if order.salesman_id:
+        # 只有当异常标记从 False 变成 True 时，才发送通知（每个单据只发送一次）
+        if not was_warning and order.salesman_id:
             try:
                 from models import User, BroadcastNotification, NotificationReceipt
                 
                 salesman = db.session.get(User, order.salesman_id)
                 if salesman:
-                    # 尝试导入 socket_events
-                    try:
-                        from socket_events import push_notification_to_user
-                    except ImportError:
-                        print("[物流异常通知] socket_events 未初始化，跳过实时推送")
-                        push_notification_to_user = None
+                    # 查询一个存在的用户作为发送者
+                    sender_id = order.salesman_id
+                    if not db.session.get(User, sender_id):
+                        first_user = db.session.query(User).first()
+                        if first_user:
+                            sender_id = first_user.id
+                        else:
+                            sender_id = None
                     
                     notification = BroadcastNotification(
                         title='📦 物流异常提醒',
@@ -220,7 +224,7 @@ def _update_order_status_from_routes(order, routes):
                         priority='important',
                         target_type='user',
                         target_ids=str(order.salesman_id),
-                        sender_id=1,
+                        sender_id=sender_id,
                         status='sent',
                         sent_time=_now_bj()
                     )
@@ -232,17 +236,6 @@ def _update_order_status_from_routes(order, routes):
                         user_id=order.salesman_id
                     )
                     db.session.add(receipt)
-
-                    if push_notification_to_user:
-                        notification_data = {
-                            'id': notification.id,
-                            'title': notification.title,
-                            'content': notification.content,
-                            'image_url': None,
-                            'priority': notification.priority,
-                            'timestamp': notification.sent_time.isoformat() if notification.sent_time else None
-                        }
-                        push_notification_to_user(order.salesman_id, notification_data)
 
                     print(f"[物流异常通知] 已保存通知给业务员 {salesman.name} (ID: {order.salesman_id})")
             except Exception as notify_err:
