@@ -16,7 +16,7 @@ bp = Blueprint('customer_follow_up', __name__)
 def _extract_product_display(order):
     """从产品信息中提取产品+数量，如：康欣胶囊 x5
     
-    逻辑：如果产品信息中包含类别名，则提取数量；否则忽略（返回空）
+    逻辑：如果产品信息中包含类别名（或类别名核心部分），则提取数量；否则忽略（返回空）
     """
     info = order.product_info or ''
     category = order.category or ''
@@ -37,6 +37,23 @@ def _extract_product_display(order):
         if qty:
             return f'{category} x{qty}'
         return category
+    
+    # 如果类别名包含括号（如"固本回元口服液（0526）"），尝试用核心名称匹配
+    # 去掉括号及其内容
+    category_core = re.sub(r'[（(].*[）)]', '', category).strip()
+    
+    if category_core and category_core != category and category_core in info:
+        # 使用核心名称匹配
+        qty = ''
+        qty_match = re.search(r'[xX×*]\s*(\d+)', info)
+        if not qty_match:
+            qty_match = re.search(r'[数量qty]*[：:]*\s*(\d+)', info)
+        if qty_match:
+            qty = qty_match.group(1)
+        
+        if qty:
+            return f'{category_core} x{qty}'
+        return category_core
     
     # 产品信息中不包含类别名，忽略（可能是赠品）
     return ''

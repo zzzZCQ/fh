@@ -496,3 +496,105 @@ class WecomConfig(db.Model):
             'message_aes_key': self.message_aes_key,
             'is_active': self.is_active
         }
+
+
+class WecomAccount(db.Model):
+    """企业微信托管账号模型（SCRM系统）"""
+    __tablename__ = 'wecom_account'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # 所属用户
+    
+    # 账号信息
+    account_name = db.Column(db.String(200), nullable=False)  # 账号名称/别名
+    real_name = db.Column(db.String(100))  # 真实姓名
+    wecom_id = db.Column(db.String(200))  # 企业微信ID
+    wecom_alias = db.Column(db.String(200))  # 别名/备注
+    
+    # 状态信息
+    status = db.Column(db.String(50), default='offline')  # offline/online/expired
+    last_login_time = db.Column(db.DateTime)  # 最后登录时间
+    last_sync_time = db.Column(db.DateTime)  # 最后同步时间
+    
+    # 浏览器/登录状态存储
+    browser_storage = db.Column(db.Text)  # Playwright浏览器状态JSON存储
+    cookies = db.Column(db.Text)  # Cookies JSON
+    
+    # 统计信息
+    customer_count = db.Column(db.Integer, default=0)  # 客户数
+    message_count = db.Column(db.Integer, default=0)  # 消息数
+    
+    is_active = db.Column(db.Boolean, default=True)
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    update_time = db.Column(db.DateTime, default=_now_bj, onupdate=_now_bj)
+    
+    user = db.relationship('User', backref=db.backref('wecom_accounts', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'account_name': self.account_name,
+            'real_name': self.real_name,
+            'wecom_id': self.wecom_id,
+            'wecom_alias': self.wecom_alias,
+            'status': self.status,
+            'last_login_time': self.last_login_time.isoformat() if self.last_login_time else None,
+            'last_sync_time': self.last_sync_time.isoformat() if self.last_sync_time else None,
+            'customer_count': self.customer_count,
+            'message_count': self.message_count,
+            'is_active': self.is_active,
+            'create_time': self.create_time.isoformat() if self.create_time else None
+        }
+
+
+class WecomCustomer(db.Model):
+    """企业微信客户信息（SCRM系统）"""
+    __tablename__ = 'wecom_customer'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('wecom_account.id'), nullable=False)  # 所属账号
+    
+    # 客户信息
+    external_user_id = db.Column(db.String(200))  # 企业微信外部联系人ID
+    name = db.Column(db.String(200), nullable=False)  # 客户名
+    avatar = db.Column(db.String(500))  # 头像URL
+    gender = db.Column(db.String(10))  # 性别
+    position = db.Column(db.String(200))  # 职位
+    corp_name = db.Column(db.String(200))  # 公司名称
+    
+    # 状态和备注
+    remark = db.Column(db.Text)  # 备注
+    tags = db.Column(db.Text)  # 标签JSON
+    status = db.Column(db.String(50), default='normal')  # normal/blocked/deleted
+    
+    # 统计信息
+    first_contact_time = db.Column(db.DateTime)  # 首次联系时间
+    last_contact_time = db.Column(db.DateTime)  # 最后联系时间
+    message_count = db.Column(db.Integer, default=0)  # 消息数
+    
+    is_active = db.Column(db.Boolean, default=True)
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    update_time = db.Column(db.DateTime, default=_now_bj, onupdate=_now_bj)
+    
+    account = db.relationship('WecomAccount', backref=db.backref('customers', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'external_user_id': self.external_user_id,
+            'name': self.name,
+            'avatar': self.avatar,
+            'gender': self.gender,
+            'position': self.position,
+            'corp_name': self.corp_name,
+            'remark': self.remark,
+            'tags': self.tags,
+            'status': self.status,
+            'first_contact_time': self.first_contact_time.isoformat() if self.first_contact_time else None,
+            'last_contact_time': self.last_contact_time.isoformat() if self.last_contact_time else None,
+            'message_count': self.message_count,
+            'is_active': self.is_active,
+            'create_time': self.create_time.isoformat() if self.create_time else None
+        }

@@ -279,17 +279,24 @@ def col_letter_to_index(col_str: str) -> int:
 
 def resolve_col_index(excel_col, header_map):
     """解析Excel列标识为列索引，支持列名或列号(A,B,C...)"""
-    # 先尝试列名匹配
+    # 先尝试列名匹配（原始值）
     if excel_col in header_map:
         return header_map[excel_col]
+    
+    # 尝试标准化的列名匹配（去除空格等）
+    excel_col_clean = ''.join(str(excel_col).strip().split())
+    if excel_col_clean in header_map:
+        return header_map[excel_col_clean]
+    
     # 检查是否是有效的列字母格式（只包含A-Z，不超过3个字符）
-    excel_col_clean = str(excel_col).strip().upper()
-    if len(excel_col_clean) > 3:
+    excel_col_upper = str(excel_col).strip().upper()
+    if len(excel_col_upper) > 3:
         return None
-    if not all(c.isalpha() for c in excel_col_clean):
+    if not all(c.isalpha() for c in excel_col_upper):
         return None
+    
     # 再尝试列号匹配（A->1, B->2...）
-    col_idx = col_letter_to_index(excel_col_clean)
+    col_idx = col_letter_to_index(excel_col_upper)
     # 检查是否在合理的列索引范围内（1-1000）
     if 0 < col_idx <= 1000:
         return col_idx
@@ -300,13 +307,20 @@ def is_col_letter_mapping(mapping):
     """判断映射是否全部使用列号（A,B,C...）"""
     for key in mapping.keys():
         key = key.strip().upper()
-        if not key or not key[0].isalpha():
+        if not key:
             return False
-        # 如果是纯字母（列号），返回True
-        if key.replace(' ', '').isalpha():
-            continue
-        else:
+        
+        # 严格检查：必须是纯英文字母（A-Z），长度1-3
+        if len(key) > 3:
             return False
+        
+        # 检查每个字符是否都是A-Z
+        for c in key:
+            if not ('A' <= c <= 'Z'):
+                return False
+        
+        # 确认是有效的列号（A-Z, AA-ZZ, AAA-ZZZ）
+        continue
     return True
 
 
@@ -375,15 +389,32 @@ def execute_batch_import():
             wb = xlrd.open_workbook(file_contents=file.read())
             ws = wb.sheet_by_index(0)
 
+            print(f"[DEBUG] === Excel文件信息 (xls) ===")
+            print(f"[DEBUG] 总行数: {ws.nrows}, 总列数: {ws.ncols}")
+            
             # 建立列名->列号映射
             header_map = {}
+            print(f"[DEBUG] 读取的表头（第一行）:")
             for col in range(ws.ncols):
                 cell_value = ws.cell(0, col).value
-                if cell_value:
-                    header_map[str(cell_value).strip()] = col
+                col_letter = chr(ord('A') + col)
+                print(f"[DEBUG]   列 {col_letter} (索引 {col}): {repr(cell_value)}")
+                if cell_value is not None:
+                    # 标准化列名：去除空格、换行等
+                    cleaned_value = str(cell_value).strip()
+                    # 去除换行、制表符等
+                    cleaned_value = ''.join(cleaned_value.split())
+                    if cleaned_value:
+                        header_map[cleaned_value] = col
+                        # 同时也保留原始值
+                        header_map[str(cell_value).strip()] = col
+
+            print(f"[DEBUG] 建立的header_map: {header_map}")
 
             # 读取数据行（列号模式从第1行开始，列名模式从第2行开始）
             start_row = 0 if no_header else 1
+            print(f"[DEBUG] no_header={no_header}, start_row={start_row}")
+            
             rows_data = []
             for row in range(start_row, ws.nrows):
                 row_data = {}
@@ -392,20 +423,57 @@ def execute_batch_import():
                     if col_idx is not None:
                         row_data[field] = ws.cell(row, col_idx).value
                 rows_data.append(row_data)
+                # 输出前几行的详细数据
+                if len(rows_data) <= 5:
+                    print(f"[DEBUG]   读取第 {row+1} 行数据: {row_data}")
+            
+            print(f"[DEBUG] 从Excel共读取了 {len(rows_data)} 行原始数据")
         else:
             import openpyxl
-            wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
+            # 重置文件指针
+            file.seek(0)
+            wb = openpyxl.load_workbook(file, read_only=False, data_only=True)
+            
+            print(f"[DEBUG] === Excel文件信息 (xlsx) ===")
+            print(f"[DEBUG] Workbook工作表: {wb.sheetnames}")
+            
             ws = wb.active
-
+            print(f"[DEBUG] 当前工作表: {ws.title}")
+            print(f"[DEBUG] 工作表总行数: {ws.max_row}, 总列数: {ws.max_column}")
+            
+            # 调试：遍历前10行前15列，看看实际内容
+            print(f"[DEBUG] 查看前10行前15列的内容:")
+            for row in range(1, min(11, ws.max_row + 1)):
+                row_content = []
+                for col in range(1, min(16, ws.max_column + 1)):
+                    cell = ws.cell(row=row, column=col)
+                    val = cell.value
+                    row_content.append(f"{chr(ord('A')+col-1)}{row}={repr(val)}")
+                print(f"[DEBUG]   行 {row}: {' | '.join(row_content)}")
+            
             # 建立列名->列号映射
             header_map = {}
+            print(f"[DEBUG] 读取的表头（第一行）:")
             for col in range(1, ws.max_column + 1):
                 cell_value = ws.cell(row=1, column=col).value
-                if cell_value:
-                    header_map[str(cell_value).strip()] = col
+                col_letter = chr(ord('A') + col - 1)
+                print(f"[DEBUG]   列 {col_letter} (索引 {col}): {repr(cell_value)}")
+                if cell_value is not None:
+                    # 标准化列名：去除空格、换行等
+                    cleaned_value = str(cell_value).strip()
+                    # 去除换行、制表符等
+                    cleaned_value = ''.join(cleaned_value.split())
+                    if cleaned_value:
+                        header_map[cleaned_value] = col
+                        # 同时也保留原始值
+                        header_map[str(cell_value).strip()] = col
+
+            print(f"[DEBUG] 建立的header_map: {header_map}")
 
             # 读取数据行（列号模式从第1行开始，列名模式从第2行开始）
             start_row = 1 if no_header else 2
+            print(f"[DEBUG] no_header={no_header}, start_row={start_row}")
+            
             rows_data = []
             for row in range(start_row, ws.max_row + 1):
                 row_data = {}
@@ -414,6 +482,11 @@ def execute_batch_import():
                     if col_idx:
                         row_data[field] = ws.cell(row=row, column=col_idx).value
                 rows_data.append(row_data)
+                # 输出前几行的详细数据
+                if len(rows_data) <= 5:
+                    print(f"[DEBUG]   读取第 {row} 行数据: {row_data}")
+            
+            print(f"[DEBUG] 从Excel共读取了 {len(rows_data)} 行原始数据")
             wb.close()
 
         # 更新订单
@@ -436,45 +509,95 @@ def execute_batch_import():
             return s
 
         # 预加载所有业务员并建立索引
-        has_salesman_in_mapping = 'salesman_name' in mapping
+        # 注意：mapping的值是字段名，不是键！
+        mapping_values = list(mapping.values())
+        has_group_in_mapping = 'group_name' in mapping_values
+        has_salesman_in_mapping = 'salesman_name' in mapping_values
+        print(f"[DEBUG] has_group_in_mapping={has_group_in_mapping}, has_salesman_in_mapping={has_salesman_in_mapping}")
+        print(f"[DEBUG] mapping keys: {list(mapping.keys())}")
+        print(f"[DEBUG] mapping values: {list(mapping.values())}")
+        
         salesman_map = {}
         if has_salesman_in_mapping:
             all_salesmen = User.query.filter(User.roles.like('%salesman%')).all()
             for s in all_salesmen:
                 salesman_map[normalize_field(s.name)] = s
 
+        # 先查询所有订单，统计类别分布
+        all_orders_all = Order.query.all()
+        print(f"[DEBUG] 数据库中总共有 {len(all_orders_all)} 个订单")
+        
+        # 统计各个类别的订单数
+        category_stats = {}
+        for order in all_orders_all:
+            cat = order.category
+            if cat not in category_stats:
+                category_stats[cat] = 0
+            category_stats[cat] += 1
+        print(f"[DEBUG] 各类别订单统计: {category_stats}")
+        
+        # 专门查询我们选择的类别的订单
+        target_category_orders = Order.query.filter(Order.category == category.name).all()
+        print(f"[DEBUG] 选择的类别'{category.name}'有 {len(target_category_orders)} 个订单")
+        for i, order in enumerate(target_category_orders[:20]):
+            print(f"[DEBUG]   目标订单{i+1}: id={order.id}, 类别={repr(order.category)}, 状态={repr(order.status)}, 组别={repr(order.group_name)}, 客户名={repr(order.customer_name)}, export_marked={getattr(order, 'export_marked', 'N/A')}")
+
         # 预加载所有待发货订单并建立索引
-        has_group_in_mapping = 'group_name' in mapping
-        # 构建查询条件：只查询待发货订单，减少数据量
-        orders_query = Order.query.filter_by(
-            category=category.name,
-            status='submitted',
-            export_marked=False
+        # 构建查询条件：只查询待发货(status=submitted) + 已标记导出(export_marked=True) + 精确类别匹配
+        orders_query = Order.query.filter(
+            Order.category == category.name,
+            Order.status == 'submitted',
+            Order.export_marked == True
         )
         all_orders = orders_query.all()
         
-        # 建立订单索引，加速匹配
-        # 格式: {(group_name_norm, customer_name_norm): [order1, order2, ...]}
+        print(f"[DEBUG] 查询到 {len(all_orders)} 个待发货订单 (类别='{category.name}', status=submitted, export_marked=True)")
+        print(f"[DEBUG] 提示：如果查询结果为0，请确认数据库里的订单类别名称是否与选择的类别完全一致！")
+        
+        # 输出前5个待发货订单信息
+        print(f"[DEBUG] 前5个待发货订单:")
+        for i, order in enumerate(all_orders[:5]):
+            print(f"[DEBUG]   订单{i+1}: id={order.id}, 组别={repr(order.group_name)}, 业务员={repr(order.salesman.name if order.salesman else None)}, 客户名={repr(order.customer_name)}, 状态={order.status}")
+        
+        # 建立订单索引，严格按照模板配置的字段匹配
         order_index = {}
+        
         for order in all_orders:
-            key = (normalize_field(order.group_name), normalize_field(order.customer_name))
+            # 获取业务员姓名（标准化）
+            salesman_name_norm = ""
+            if order.salesman:
+                salesman_name_norm = normalize_field(order.salesman.name)
+            
+            group_name_norm = normalize_field(order.group_name)
+            customer_name_norm = normalize_field(order.customer_name)
+            
+            # 根据模板中实际配置的字段构建索引key
+            if has_group_in_mapping and has_salesman_in_mapping:
+                # 模板配置了 组别+业务员+客户名 三个字段
+                key = (group_name_norm, salesman_name_norm, customer_name_norm)
+            elif has_group_in_mapping:
+                # 模板配置了 组别+客户名 两个字段
+                key = (group_name_norm, customer_name_norm)
+            elif has_salesman_in_mapping:
+                # 模板配置了 业务员+客户名 两个字段
+                key = (salesman_name_norm, customer_name_norm)
+            else:
+                # 模板只配置了 客户名 一个字段
+                key = customer_name_norm
+            
             if key not in order_index:
                 order_index[key] = []
             order_index[key].append(order)
         
-        # 单独建立只按客户名的索引（无组别时使用）
-        order_index_by_customer = {}
-        if not has_group_in_mapping:
-            for order in all_orders:
-                customer_key = normalize_field(order.customer_name)
-                if customer_key not in order_index_by_customer:
-                    order_index_by_customer[customer_key] = []
-                order_index_by_customer[customer_key].append(order)
+        print(f"[DEBUG] 建立了 {len(order_index)} 个订单索引，匹配策略：{'组别+业务员+客户名' if has_group_in_mapping and has_salesman_in_mapping else '组别+客户名' if has_group_in_mapping else '业务员+客户名' if has_salesman_in_mapping else '仅客户名'}")
 
         # 按业务员收集发货的订单信息
         salesman_orders_map = {}
 
+        print(f"[DEBUG] === 开始处理 {len(rows_data)} 行数据 ===")
+        
         for idx, row_data in enumerate(rows_data):
+            print(f"[DEBUG] 处理第 {idx+1} 行: {row_data}")
             group_name = str(row_data.get('group_name', '')).strip()
             salesman_name = str(row_data.get('salesman_name', '')).strip()
             customer_name = str(row_data.get('customer_name', '')).strip()
@@ -499,14 +622,17 @@ def execute_batch_import():
 
             # 必填字段校验（只有映射中有组别时才要求）
             if has_group_in_mapping and not group_name:
+                print(f"[DEBUG]   第 {idx+1} 行跳过：缺少组别")
                 skipped_count += 1
                 continue
 
             if not tracking_number or tracking_number == '0':
+                print(f"[DEBUG]   第 {idx+1} 行跳过：缺少快递单号 (tracking_number={repr(tracking_number)})")
                 skipped_count += 1
                 continue
 
             if not customer_name:
+                print(f"[DEBUG]   第 {idx+1} 行跳过：缺少客户姓名")
                 skipped_count += 1
                 continue
 
@@ -521,18 +647,40 @@ def execute_batch_import():
                 skipped_count += 1
                 continue
 
-            # 查找匹配的订单（从索引中查找）
-            candidates = []
-            if has_group_in_mapping:
-                # 有组别字段：组别+客户名双重匹配
+            # 查找匹配的订单（严格按照模板配置的字段匹配）
+            salesman_name_norm = normalize_field(salesman_name)
+            
+            # 根据模板中实际配置的字段构建查找key
+            if has_group_in_mapping and has_salesman_in_mapping:
+                # 模板配置了 组别+业务员+客户名 三个字段
+                key = (group_name_norm, salesman_name_norm, customer_name_norm)
+                match_desc = f"组别={repr(group_name)} (标准化={repr(group_name_norm)}), 业务员={repr(salesman_name)} (标准化={repr(salesman_name_norm)}), 客户名={repr(customer_name)} (标准化={repr(customer_name_norm)})"
+            elif has_group_in_mapping:
+                # 模板配置了 组别+客户名 两个字段
                 key = (group_name_norm, customer_name_norm)
-                candidates = order_index.get(key, [])
+                match_desc = f"组别={repr(group_name)} (标准化={repr(group_name_norm)}), 客户名={repr(customer_name)} (标准化={repr(customer_name_norm)})"
+            elif has_salesman_in_mapping:
+                # 模板配置了 业务员+客户名 两个字段
+                key = (salesman_name_norm, customer_name_norm)
+                match_desc = f"业务员={repr(salesman_name)} (标准化={repr(salesman_name_norm)}), 客户名={repr(customer_name)} (标准化={repr(customer_name_norm)})"
             else:
-                # 无组别字段：只用客户名匹配
-                candidates = order_index_by_customer.get(customer_name_norm, [])
+                # 模板只配置了 客户名 一个字段
+                key = customer_name_norm
+                match_desc = f"客户名={repr(customer_name)} (标准化={repr(customer_name_norm)})"
+            
+            print(f"[DEBUG]   尝试匹配：{match_desc}")
+            
+            candidates = order_index.get(key, [])
+            print(f"[DEBUG]   找到 {len(candidates)} 个候选订单")
+            
+            # 输出所有候选订单信息
+            if candidates:
+                print(f"[DEBUG]   候选订单列表:")
+                for i, c in enumerate(candidates):
+                    print(f"[DEBUG]     候选{i+1}: id={c.id}, 客户名={repr(c.customer_name)}, 状态={c.status}, 快递单号={repr(c.tracking_number)}")
 
             if not candidates:
-                print(f"[DEBUG]   未找到匹配订单（客户名={customer_name}不匹配）")
+                print(f"[DEBUG]   未找到匹配订单")
                 not_found_count += 1
                 continue
 

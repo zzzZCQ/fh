@@ -68,6 +68,7 @@ from routes_tools import bp as tools_bp
 from routes_broadcast import bp as broadcast_bp
 from routes_wework import bp as wework_bp
 from routes_wecom_auto import wecom_auto_bp
+from routes_wecom_scrm import wecom_scrm_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(orders_bp)
@@ -86,6 +87,7 @@ app.register_blueprint(tools_bp)
 app.register_blueprint(broadcast_bp)
 app.register_blueprint(wework_bp)
 app.register_blueprint(wecom_auto_bp)
+app.register_blueprint(wecom_scrm_bp)
 
 # Flask-SocketIO初始化
 from flask_socketio import SocketIO, emit

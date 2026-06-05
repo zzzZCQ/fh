@@ -676,9 +676,19 @@ class WeComAutoBot:
         return self.browser is not None and self.context is not None and self.page is not None
     
     def _get_random_config(self) -> tuple:
-        """获取随机配置"""
-        ua = random.choice(USER_AGENTS)
-        viewport = random.choice(VIEWPORTS)
+        """获取配置 - 强制使用iPad配置"""
+        # 只选择iPad的User-Agent
+        ipad_agents = [ua for ua in USER_AGENTS if "iPad" in ua]
+        ua = random.choice(ipad_agents)
+        
+        # 只选择iPad的分辨率
+        ipad_viewports = [
+            {"width": 1024, "height": 1366},
+            {"width": 1180, "height": 820},
+            {"width": 1080, "height": 810},
+        ]
+        viewport = random.choice(ipad_viewports)
+        
         offset = random.choice(WINDOW_OFFSETS)
         timezone = random.choice(TIMEZONES)
         return ua, viewport, offset, timezone
@@ -911,22 +921,67 @@ class WeComAutoBot:
             return False
     
     def get_login_qrcode_url(self) -> Optional[str]:
-        """获取登录二维码页面URL"""
+        """获取登录二维码页面URL - iPad版企业微信扫码登录"""
         if not self.page:
             if not self.launch_browser(headless=False):
                 return None
         
         try:
-            self.page.goto("https://work.weixin.qq.com/wework_admin/loginpage_wx", wait_until="networkidle", timeout=15000)
-            self._human_delay(2.0, 4.0)
+            # 尝试企业微信移动端扫码登录入口
+            urls_to_try = [
+                # 尝试企业微信移动版登录
+                "https://work.weixin.qq.com/wework_admin/qrlogin",
+                "https://work.weixin.qq.com/wework_admin/loginpage_wx?wwr=1",
+                "https://work.weixin.qq.com/wework_admin/mobile_index",
+                "https://work.weixin.qq.com/",
+            ]
             
-            # 注入防检测脚本
-            self._apply_anti_detect()
+            for url in urls_to_try:
+                try:
+                    print(f"[WeComBot] 尝试访问: {url}")
+                    self.page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                    self._human_delay(2.5, 4.0)
+                    # 注入防检测脚本
+                    self._apply_anti_detect()
+                    
+                    # 检查页面是否包含二维码
+                    page_content = self.page.content()
+                    if "qrlogin" in page_content.lower() or "扫码" in page_content:
+                        print(f"[WeComBot] 找到二维码页面: {url}")
+                        break
+                except Exception as e:
+                    print(f"[WeComBot] 访问 {url} 失败: {e}")
+                    continue
             
             # 返回当前页面URL
             return self.page.url
         except Exception as e:
             print(f"[WeComBot] 获取登录页面失败: {e}")
+            import traceback
+            print(f"[WeComBot] 详细错误: {traceback.format_exc()}")
+            return None
+    
+    def capture_qrcode_screenshot(self) -> Optional[str]:
+        """截取二维码图片并保存，返回保存路径"""
+        if not self.page:
+            return None
+        
+        try:
+            # 确保截图目录存在
+            screenshot_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'screenshots')
+            os.makedirs(screenshot_dir, exist_ok=True)
+            
+            # 生成唯一文件名
+            filename = f"qrcode_{int(time.time())}.png"
+            filepath = os.path.join(screenshot_dir, filename)
+            
+            # 截取整个页面
+            self.page.screenshot(path=filepath, full_page=True)
+            print(f"[WeComBot] 二维码截图已保存: {filepath}")
+            
+            return filename
+        except Exception as e:
+            print(f"[WeComBot] 截取二维码失败: {e}")
             return None
     
     def wait_for_login(self, timeout: int = 300) -> bool:

@@ -525,84 +525,58 @@ def export_orders():
     can_dingtalk = getattr(current_user, 'can_dingtalk_export', False)
     print(f"[DEBUG] can_dingtalk_export = {can_dingtalk}")
 
-    # 保存文件路径供异步线程使用
-    file_paths_for_async = list(output_files)
-    order_count_for_async = len(orders)
+    dingtalk_success = False
+    dingtalk_error = None
 
-    # 异步发送钉钉消息，不阻塞文件下载
-    def send_dingtalk_async(file_paths, order_count):
-        """异步发送钉钉消息"""
+    if can_dingtalk:
         try:
-            # 延迟导入避免模块级别的问题
-            import sys
-            # 清除可能缓存的模块，重新导入
-            modules_to_remove = [m for m in sys.modules.keys() if 'services' in m or 'models' in m]
-            for m in modules_to_remove:
-                del sys.modules[m]
-
-            # 在线程中导入services（此时已有app_context）
             from services import send_excel_as_online_sheet
 
+            print(f"[DEBUG] 开始发送钉钉通知，共 {len(output_files)} 个文件...")
             all_success = True
             error_messages = []
 
-            if len(file_paths) == 1:
-                cat_name, filepath = file_paths[0]
+            if len(output_files) == 1:
+                cat_name, filepath = output_files[0]
                 file_display = f'{cat_name}-{datetime.now().strftime("%Y%m%d")}.xlsx'
-                print(f"[DEBUG] [ASYNC] 发送单个文件: {file_display}")
-                result = send_excel_as_online_sheet(filepath, file_display, order_count)
-                print(f"[DEBUG] [ASYNC] 发送结果: {result}")
+                print(f"[DEBUG] 发送单个文件: {file_display}")
+                result = send_excel_as_online_sheet(filepath, file_display, len(orders))
+                print(f"[DEBUG] 发送结果: {result}")
 
-                if not result.get('success'):
-                    all_success = False
+                if result.get('success'):
+                    dingtalk_success = True
+                else:
                     error_messages.append(result.get('error', '未知错误'))
             else:
-                # 多个类别，发送多个预览链接
-                for cat_name, filepath in file_paths:
+                for cat_name, filepath in output_files:
                     file_display = f'{cat_name}-{datetime.now().strftime("%Y%m%d")}.xlsx'
-                    print(f"[DEBUG] [ASYNC] 发送文件: {file_display}")
-                    result = send_excel_as_online_sheet(filepath, file_display, order_count)
-                    print(f"[DEBUG] [ASYNC] 发送结果: {result}")
+                    print(f"[DEBUG] 发送文件: {file_display}")
+                    result = send_excel_as_online_sheet(filepath, file_display, len(orders))
+                    print(f"[DEBUG] 发送结果: {result}")
 
                     if not result.get('success'):
                         all_success = False
                         error_messages.append(f"{cat_name}: {result.get('error', '未知错误')}")
 
-            if all_success:
-                print(f"[DEBUG] [ASYNC] 钉钉发送成功")
-            else:
-                error_msg = '; '.join(error_messages)
-                print(f"[ERROR] [ASYNC] 钉钉发送失败: {error_msg}")
+                if all_success:
+                    dingtalk_success = True
+
+            if not dingtalk_success:
+                dingtalk_error = '; '.join(error_messages)
+                print(f"[ERROR] 钉钉发送失败: {dingtalk_error}")
 
         except Exception as e:
             import traceback
-            error_detail = f"{str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] [ASYNC] 钉钉发送异常: {error_detail}")
+            dingtalk_error = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] 钉钉发送异常: {dingtalk_error}")
 
+    # 根据钉钉发送结果设置提示信息
     if can_dingtalk:
-        # 启动异步线程发送钉钉消息
-        from app import app
-        import threading
-
-        # 使用 app.app_context() 创建上下文
-        ctx = app.app_context()
-        ctx.push()
-
-        def run_with_context(file_paths, order_count):
-            try:
-                send_dingtalk_async(file_paths, order_count)
-            finally:
-                ctx.pop()
-
-        threading.Thread(
-            target=run_with_context,
-            args=(file_paths_for_async, order_count_for_async),
-            daemon=True
-        ).start()
-        print("[DEBUG] 钉钉消息已在后台发送，文件下载不受影响")
-        flash('导出成功！钉钉消息正在后台发送，请稍等片刻查看群消息。', 'success')
+        if dingtalk_success:
+            flash('导出成功！钉钉消息已发送。', 'success')
+        else:
+            flash(f'导出成功，但钉钉消息发送失败：{dingtalk_error}', 'warning')
     else:
-        print("[DEBUG] 用户未开启钉钉导出权限")
         flash('导出成功！（您未开启钉钉导出权限，如需发送钉钉请联系管理员）', 'success')
 
     # 如果只有一个类别，直接下载

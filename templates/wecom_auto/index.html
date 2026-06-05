@@ -440,6 +440,27 @@
         color: white;
         margin-left: auto;
     }
+    
+    /* 企业微信iframe容器 */
+    .wecom-container {
+        width: 100%;
+    }
+    
+    .wecom-iframe-wrapper {
+        width: 100%;
+        height: 800px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .wecom-iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+    }
+    
 </style>
 
 <div class="container-fluid mt-4">
@@ -460,13 +481,36 @@
     <div id="loginSection" class="login-section">
         <div class="login-card">
             <div class="login-icon">
-                <i class="bi bi-qr-code-scan text-primary"></i>
+                <i class="bi bi-tablet-landscape text-primary"></i>
             </div>
-            <h4 class="mb-3">企业微信扫码登录</h4>
-            <p class="text-muted mb-4">点击下方按钮，启动浏览器并扫码登录企业微信</p>
+            <h4 class="mb-3">企业微信iPad版登录</h4>
+            
+            <div id="qrcodeContainer" class="mb-4 d-none">
+                <img id="qrcodeImage" src="" alt="二维码" class="img-thumbnail" style="max-width: 400px;">
+                <p class="text-muted mt-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    右侧将打开浏览器窗口，请在该窗口中用手机企业微信扫码登录
+                </p>
+                <button class="btn btn-sm btn-outline-secondary mt-2" onclick="refreshQrcode()">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新二维码
+                </button>
+            </div>
+            
+            <p id="loginInstruction" class="text-muted mb-4">
+                点击下方按钮，将启动iPad版企业微信浏览器窗口
+            </p>
             <button id="loginBtn" class="btn btn-primary btn-lg" onclick="startLogin()">
-                <i class="bi bi-play-circle me-2"></i>点击登录
+                <i class="bi bi-play-circle me-2"></i>登录企业微信iPad版
             </button>
+        </div>
+        
+        <div class="alert alert-info mt-4" role="alert">
+            <h6 class="alert-heading"><i class="bi bi-info-circle me-2"></i>说明</h6>
+            <ul class="mb-0">
+                <li>系统将在您的电脑上打开一个模拟iPad的浏览器窗口</li>
+                <li>在该窗口中用手机企业微信扫码登录（iPad版不会让电脑端掉线）</li>
+                <li>登录后可以直接在该浏览器窗口中查看客户并发送消息</li>
+            </ul>
         </div>
     </div>
     
@@ -662,6 +706,10 @@ function updateUI(status) {
 // 开始登录
 async function startLogin() {
     const btn = document.getElementById('loginBtn');
+    const qrcodeContainer = document.getElementById('qrcodeContainer');
+    const loginInstruction = document.getElementById('loginInstruction');
+    const qrcodeImage = document.getElementById('qrcodeImage');
+    
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>启动中...';
     
@@ -674,16 +722,43 @@ async function startLogin() {
         if (data.success) {
             showToast(data.message, 'success');
             btn.innerHTML = '<i class="bi bi-hourglass me-2"></i>等待扫码...';
+            
+            // 显示二维码
+            if (data.data && data.data.qrcode_url) {
+                qrcodeImage.src = data.data.qrcode_url + '?t=' + Date.now();
+                qrcodeContainer.classList.remove('d-none');
+                loginInstruction.classList.add('d-none');
+            }
         } else {
             showToast(data.message, 'danger');
             btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>点击登录';
+            btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>登录企业微信iPad版';
         }
     } catch (e) {
         console.error(e);
         showToast('启动失败', 'danger');
         btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>点击登录';
+        btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>登录企业微信iPad版';
+    }
+}
+
+// 刷新二维码
+async function refreshQrcode() {
+    const qrcodeImage = document.getElementById('qrcodeImage');
+    
+    try {
+        const res = await fetch('/admin/wecom-auto/api/qrcode-screenshot');
+        const data = await res.json();
+        
+        if (data.success && data.data && data.data.qrcode_url) {
+            qrcodeImage.src = data.data.qrcode_url + '?t=' + Date.now();
+            showToast('二维码已刷新', 'success');
+        } else {
+            showToast(data.message || '刷新失败', 'danger');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('刷新失败', 'danger');
     }
 }
 

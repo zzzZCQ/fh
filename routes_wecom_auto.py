@@ -62,6 +62,9 @@ def start_login():
         if not url:
             return jsonify({'success': False, 'message': '打开登录页面失败'})
         
+        # 截取二维码图片
+        qrcode_filename = bot.capture_qrcode_screenshot()
+        
         # 启动后台监控线程
         global login_monitor_thread, login_monitor_active
         login_monitor_active = True
@@ -71,8 +74,29 @@ def start_login():
         
         return jsonify({
             'success': True,
-            'message': '浏览器已打开，请扫码登录'
+            'message': '浏览器已打开，请扫码登录',
+            'data': {
+                'qrcode_url': f'/static/screenshots/{qrcode_filename}' if qrcode_filename else None
+            }
         })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@wecom_auto_bp.route('/api/qrcode-screenshot')
+def get_qrcode_screenshot():
+    """获取当前登录页面的二维码截图"""
+    try:
+        qrcode_filename = bot.capture_qrcode_screenshot()
+        if qrcode_filename:
+            return jsonify({
+                'success': True,
+                'data': {
+                    'qrcode_url': f'/static/screenshots/{qrcode_filename}'
+                }
+            })
+        else:
+            return jsonify({'success': False, 'message': '截取二维码失败'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 

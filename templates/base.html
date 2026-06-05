@@ -338,6 +338,18 @@
             </nav>
         </div>
         {% endif %}
+
+        <!-- 企业微信SCRM系统 -->
+        {% if current_user.has_role('salesman') %}
+        <div class="menu-group">
+            <div class="menu-label">客户运营</div>
+            <nav class="nav flex-column">
+                <a class="nav-link {% if request.endpoint == 'wecom_scrm.index' %}active{% endif %}" href="{{ url_for('wecom_scrm.index') }}">
+                    <i class="bi bi-chat-dots"></i> 企业微信SCRM
+                </a>
+            </nav>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 
