@@ -71,8 +71,8 @@ function showOrderDetail(orderId) {
 
             new bootstrap.Modal(document.getElementById('orderDetailModal')).show();
 
-            // 顺丰已发货订单，加载物流信息
-            if (data.express_type === '顺丰' && data.status === 'shipped' && data.tracking_number) {
+            // 已发货且有单号的订单，加载物流信息
+            if (data.status === 'shipped' && data.tracking_number) {
                 loadLogistics(data.id);
             }
         })
@@ -93,7 +93,16 @@ function loadLogistics(orderId) {
     fetch('/api/order/' + orderId + '/logistics')
         .then(r => r.json())
         .then(result => {
-            if (result.error) { section.innerHTML = ''; return; }
+            if (result.error) {
+                section.innerHTML = `
+                    <div class="text-center mt-3">
+                        <div class="text-danger small mb-2">${result.error || '物流查询失败'}</div>
+                        <button class="btn btn-outline-secondary btn-sm ms-2" onclick="refreshLogistics(${orderId})" title="刷新物流">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>`;
+                return;
+            }
             const routes = result.routes || [];
             if (routes.length === 0) {
                 section.innerHTML = `

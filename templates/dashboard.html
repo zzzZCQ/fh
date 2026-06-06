@@ -216,7 +216,19 @@
                             <th>快递信息</th>
                             <th>签收时间</th>
                             <th>创建时间</th>
-                            <th style="width: 350px;">操作</th>
+                            <th style="width: 280px;">
+                                <div class="d-flex align-items-center gap-2">
+                                    {% if can_export %}
+                                    <button type="button" class="btn btn-sm btn-success" onclick="saveExportMarks()" title="保存勾选的导出标记">
+                                        <i class="bi bi-save"></i> 保存
+                                    </button>
+                                    <span class="small">|</span>
+                                    {% endif %}
+                                    <span class="small">操作</span>
+                                    <span class="small">|</span>
+                                    <span class="small">导出标记</span>
+                                </div>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -281,14 +293,12 @@
                                 <!-- 导出标记 -->
                                 {% if can_see_export_mark and order.status == 'submitted' %}
                                     {% if can_export %}
-                                        <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline">
-                                            <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}" style="transform: scale(1.2); cursor: pointer;">
-                                        </form>
+                                    <input type="checkbox" class="export-checkbox" data-order-id="{{ order.id }}" {% if order.export_marked %}checked{% endif %} style="transform: scale(1.2); cursor: pointer;" onclick="event.stopPropagation()">
                                     {% else %}
                                         {% if order.export_marked %}
-                                            <span class="text-success fs-5" title="已导出">✅</span>
+                                        <span class="text-success fs-5" title="已导出">✅</span>
                                         {% else %}
-                                            <span class="text-muted fs-5" title="未导出">⭕</span>
+                                        <span class="text-muted fs-5" title="未导出">⭕</span>
                                         {% endif %}
                                     {% endif %}
                                 {% endif %}
@@ -701,8 +711,8 @@ function showOrderDetail(orderId) {
 
             new bootstrap.Modal(document.getElementById('orderDetailModal')).show();
 
-            // 顺丰已发货订单，加载物流信息
-            if (data.express_type === '顺丰' && data.status === 'shipped' && data.tracking_number) {
+            // 已发货订单，加载物流信息
+            if (data.status === 'shipped' && data.tracking_number) {
                 loadLogistics(data.id);
             }
         });
@@ -1039,6 +1049,45 @@ function submitExport() {
     }, 2000);
 }
 {% endif %}
+
+// 批量保存导出标记
+
+function saveExportMarks() {
+    const checkboxes = document.querySelectorAll('.export-checkbox');
+    
+    // 获取所有显示的订单ID
+    const allIds = Array.from(checkboxes).map(cb => parseInt(cb.dataset.orderId));
+    
+    // 获取已勾选的订单ID
+    const checkedIds = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => parseInt(cb.dataset.orderId));
+    
+    if (allIds.length === 0) {
+        showToast('没有可操作的订单', 'warning');
+        return;
+    }
+    
+    // 发送批量保存请求（包含所有订单ID）
+    fetch('/export/batch-toggle-export?action=mark&ids=' + checkedIds.join(',') + '&all_ids=' + allIds.join(','), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('导出标记已保存！', 'success');
+        } else {
+            showToast(data.message || '保存失败', 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('保存失败，请重试', 'danger');
+    });
+}
 
 </script>
 

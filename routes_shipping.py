@@ -6,7 +6,7 @@ from flask_login import login_required, current_user
 
 from models import db, User, Order, Category
 from helpers import role_required, notify_users
-from services import update_single_order_logistics
+from services import update_single_order_logistics, get_sf_routes_batch, _update_order_status_from_routes
 
 bp = Blueprint('shipping', __name__)
 
@@ -164,13 +164,36 @@ def update_logistics():
             orders_to_update.append(order)
     
     print(f"[update_logistics] 其中有 {len(orders_to_update)} 个订单需要更新")
-    
+
     updated_count = 0
-    for i, order in enumerate(orders_to_update):
-        print(f"[update_logistics] 正在更新第 {i+1}/{len(orders_to_update)} 个订单: id={order.id}, customer={order.customer_name}, tracking={order.tracking_number}, status={order.logistics_status}")
-        result = update_single_order_logistics(order)
-        if result and result.get('status'):
-            updated_count += 1
+
+    # 分批处理，每批最多10条
+    BATCH_SIZE = 10
+    for batch_start in range(0, len(orders_to_update), BATCH_SIZE):
+        batch_orders = orders_to_update[batch_start:batch_start + BATCH_SIZE]
+
+        # 收集本批次的单号和手机号后4位
+        tracking_numbers = []
+        phone_last4_list = []
+        for order in batch_orders:
+            phone_last4 = order.phone[-4:] if order.phone and len(order.phone) >= 4 else ''
+            tracking_numbers.append(order.tracking_number)
+            phone_last4_list.append(phone_last4)
+
+        print(f"[update_logistics] 批量查询第 {batch_start//BATCH_SIZE + 1} 批: {len(batch_orders)} 个订单")
+
+        # 一次性查询本批次的所有路由
+        routes_dict = get_sf_routes_batch(tracking_numbers, phone_last4_list)
+
+        # 逐个更新订单状态
+        for order in batch_orders:
+            routes = routes_dict.get(order.tracking_number, [])
+            print(f"[update_logistics] 更新订单 {order.id}: tracking={order.tracking_number}, routes数量={len(routes)}")
+            # 使用路由更新订单状态（内部不再调用API，直接用已查询的routes）
+            result = _update_order_status_from_routes(order, routes)
+            if result:
+                updated_count += 1
+
     flash(f'物流信息已更新！共更新了 {updated_count} 条。', 'success')
     return redirect(url_for('orders.dashboard',
         page=request.form.get('page', 1),

@@ -346,8 +346,8 @@ function showOrderDetail(orderId) {
 
             new bootstrap.Modal(document.getElementById('orderDetailModal')).show();
 
-            // 顺丰已发货订单，加载物流信息
-            if (data.express_type === '顺丰' && data.status === 'shipped' && data.tracking_number) {
+            // 已发货订单，加载物流信息
+            if (data.status === 'shipped' && data.tracking_number) {
                 loadLogistics(data.id);
             }
         })

@@ -140,7 +140,17 @@
                         <th>快递信息</th>
                         <th>签收时间</th>
                         <th>创建时间</th>
-                        <th style="width: 350px;">操作</th>
+                        <th style="width: 280px;">
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-sm btn-success" onclick="saveExportMarks()" title="保存勾选的导出标记">
+                                    <i class="bi bi-save"></i> 保存
+                                </button>
+                                <span class="small">|</span>
+                                <span class="small">操作</span>
+                                <span class="small">|</span>
+                                <span class="small">导出标记</span>
+                            </div>
+                        </th>
                     </tr>
 
                 </thead>
@@ -148,7 +158,6 @@
                 <tbody>
 
                     {% for order in orders.items %}
-
                     <tr style="cursor: pointer;" onclick="showOrderDetail({{ order.id }})">
 
                         <td>{{ order.group_name }}</td>
@@ -216,12 +225,9 @@
                         <td>{{ order.create_time.strftime('%Y-%m-%d %H:%M') }}</td>
                         <td onclick="event.stopPropagation()">
                             <div class="d-flex gap-1 align-items-center">
-                                <!-- 导出标记 -->
+                                <!-- 导出标记 checkbox -->
                                 {% if order.status == 'submitted' %}
-                                <form method="POST" action="{{ url_for('export.toggle_export_mark', order_id=order.id) }}" class="d-inline">
-                                    <input type="checkbox" {% if order.export_marked %}checked{% endif %} onchange="this.form.submit()" title="{% if order.export_marked %}点击取消导出标记{% else %}点击标记为已导出{% endif %}" style="transform: scale(1.2); cursor: pointer;">
-                                    <span class="text-muted small ms-1">导出</span>
-                                </form>
+                                <input type="checkbox" class="export-checkbox" data-order-id="{{ order.id }}" {% if order.export_marked %}checked{% endif %} style="transform: scale(1.2); cursor: pointer;" onclick="event.stopPropagation()">
                                 {% endif %}
                                 <!-- 发货按钮 -->
                                 {% if order.status == 'submitted' %}
@@ -536,6 +542,125 @@ function exportOrders() {
     window.location.href = '/export/orders?' + params.toString();
 
 }
+
+// 批量导出标记操作
+
+function toggleAllExport(checkbox) {
+    const checkboxes = document.querySelectorAll('.export-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateSelectAllState();
+}
+
+function updateSelectAllState() {
+    const checkboxes = document.querySelectorAll('.export-checkbox');
+    const selectAll = document.getElementById('selectAllExport');
+    if (checkboxes.length === 0) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+        return;
+    }
+    
+    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    if (checkedCount === 0) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+    } else if (checkedCount === checkboxes.length) {
+        selectAll.checked = true;
+        selectAll.indeterminate = false;
+    } else {
+        selectAll.checked = false;
+        selectAll.indeterminate = true;
+    }
+}
+
+function batchToggleExport(markAsExport) {
+    const checkboxes = document.querySelectorAll('.export-checkbox');
+    const selectedIds = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.orderId);
+    
+    if (selectedIds.length === 0) {
+        showToast('请先选择要操作的订单', 'warning');
+        return;
+    }
+    
+    // 发送批量请求
+    const action = markAsExport ? 'mark' : 'unmark';
+    fetch(`/export/batch-toggle-export?action=${action}&ids=${selectedIds.join(',')}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message || `已成功${markAsExport ? '标记' : '取消'}${selectedIds.length}个订单`, 'success');
+            // 刷新页面或更新UI
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
+        } else {
+            showToast(data.message || '操作失败', 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('操作失败，请重试', 'danger');
+    });
+}
+
+// 批量保存导出标记（根据当前勾选状态保存）
+function saveExportMarks() {
+    const checkboxes = document.querySelectorAll('.export-checkbox');
+    
+    // 获取所有显示的订单ID
+    const allIds = Array.from(checkboxes).map(cb => parseInt(cb.dataset.orderId));
+    
+    // 获取已勾选的订单ID
+    const checkedIds = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => parseInt(cb.dataset.orderId));
+    
+    if (allIds.length === 0) {
+        showToast('没有可操作的订单', 'warning');
+        return;
+    }
+    
+    // 发送批量保存请求（包含所有订单ID）
+    fetch('/export/batch-toggle-export?action=mark&ids=' + checkedIds.join(',') + '&all_ids=' + allIds.join(','), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('导出标记已保存！', 'success');
+        } else {
+            showToast(data.message || '保存失败', 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('保存失败，请重试', 'danger');
+    });
+}
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', function() {
+    // 绑定现有checkbox的change事件
+    const checkboxes = document.querySelectorAll('.export-checkbox');
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', updateSelectAllState);
+    });
+    
+    // 初始化全选状态
+    updateSelectAllState();
+});
 
 </script>
 

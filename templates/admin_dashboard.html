@@ -644,7 +644,8 @@ function showOrderDetail(orderId) {
 
             
 
-            // 如果是顺丰已发货订单，加载物流信�?            if (data.express_type === '顺丰' && data.status === 'shipped' && data.tracking_number) {
+            // 如果是已发货订单，加载物流信息
+            if (data.status === 'shipped' && data.tracking_number) {
 
                 loadLogistics(data.id);
 

@@ -627,3 +627,84 @@ def download_file(token):
     if not info:
         return '下载链接已过期或无效', 404
     return send_file(info['file_path'], as_attachment=True, download_name=info['file_name'])
+
+
+# ============ 批量导出标记操作 ============
+@bp.route('/export/batch-toggle-export', methods=['POST'])
+@role_required('shipper', 'admin')
+def batch_toggle_export():
+    """批量切换导出标记
+    
+    参数:
+        action: 'mark' 标记导出 或 'unmark' 取消导出
+        ids: 订单ID列表，逗号分隔
+    """
+    action = request.args.get('action', 'mark')
+    ids_str = request.args.get('ids', '')
+    
+    # 获取页面上所有待发货订单ID（用于处理取消标记）
+    all_submitted_ids_str = request.args.get('all_ids', '')
+    all_submitted_ids = []
+    if all_submitted_ids_str:
+        try:
+            all_submitted_ids = [int(id.strip()) for id in all_submitted_ids_str.split(',') if id.strip()]
+        except ValueError:
+            pass
+    
+    marked_ids = []
+    if ids_str:
+        try:
+            marked_ids = [int(id.strip()) for id in ids_str.split(',') if id.strip()]
+        except ValueError:
+            return jsonify({'success': False, 'message': '订单ID格式错误'})
+    
+    # 如果没有标记任何订单，则不处理
+    if not marked_ids:
+        return jsonify({'success': True, 'message': '没有需要保存的导出标记'})
+    
+    # 查询已标记的订单
+    orders = Order.query.filter(Order.id.in_(marked_ids)).all()
+    
+    if not orders:
+        return jsonify({'success': False, 'message': '未找到相关订单'})
+    
+    # 权限检查
+    if current_user.username != 'admin' and current_user.group_id:
+        managed_group_ids = current_user.get_managed_group_ids()
+        orders = [o for o in orders if o.group_id in managed_group_ids]
+    
+    if not orders:
+        return jsonify({'success': False, 'message': '无权限操作这些订单'})
+    
+    # 标记为已导出
+    for order in orders:
+        if order.status == 'submitted':
+            order.export_marked = True
+            order.export_mark_time = datetime.now()
+    
+    # 如果提供了所有ID列表，则取消未选中的订单的导出标记
+    if all_submitted_ids and action == 'mark':
+        # 找出需要取消标记的订单
+        ids_to_unmark = [id for id in all_submitted_ids if id not in marked_ids]
+        if ids_to_unmark:
+            orders_to_unmark = Order.query.filter(
+                Order.id.in_(ids_to_unmark),
+                Order.status == 'submitted'
+            ).all()
+            
+            # 权限检查
+            if current_user.username != 'admin' and current_user.group_id:
+                managed_group_ids = current_user.get_managed_group_ids()
+                orders_to_unmark = [o for o in orders_to_unmark if o.group_id in managed_group_ids]
+            
+            for order in orders_to_unmark:
+                order.export_marked = False
+                order.export_mark_time = None
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True, 
+        'message': f'导出标记已保存！',
+        'count': len(orders)
+    })

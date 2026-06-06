@@ -138,10 +138,13 @@ def get_logistics_with_cache(order, force_refresh=False):
 
 
 def _update_order_status_from_routes(order, routes):
-    """根据路由信息更新订单物流状态"""
+    """根据路由信息更新订单物流状态
+    Returns:
+        dict: {'success': bool, 'status': str or None}
+    """
     if not routes:
-        return
-    
+        return {'success': False, 'status': None}
+
     # 取最后一条路由节点（最新的状态）
     latest = routes[-1] if routes else {}
     
@@ -267,7 +270,7 @@ def _update_order_status_from_routes(order, routes):
             else:
                 # 状态没变，但异常标识可能变了，需要commit
                 db.session.commit()
-            return  # 已更新为退回已签收，无需继续
+            return {'success': True, 'status': target_status}  # 已更新为退回已签收，无需继续
         
         # 正常状态更新
         if new_status != order.logistics_status:
@@ -289,6 +292,250 @@ def _update_order_status_from_routes(order, routes):
         else:
             # 状态没变，但异常标识可能变了，需要commit
             db.session.commit()
+
+    return {'success': True, 'status': order.logistics_status}
+
+# ============ uapis.cn 物流查询 ============
+UAPIS_API_KEY = "uapi--5ndmrhw66hOT4V0WfAF96QPEZh_ruE2BtgHPLlF"
+UAPIS_API_URL = "https://uapis.cn/api/v1/misc/tracking/query"
+
+def query_logistics_uapis(tracking_number, phone_last4=None):
+    """通过 uapis.cn 查询物流信息 (无缓存，直接查询)"""
+    try:
+        params = {
+            'tracking_number': tracking_number
+        }
+        if phone_last4:
+            params['phone'] = phone_last4
+        
+        headers = {
+            'Authorization': f'Bearer {UAPIS_API_KEY}',
+            'Accept': 'application/json'
+        }
+        
+        print(f"uapis.cn 查询: tracking_number={tracking_number}, phone_last4={phone_last4}")
+        print(f"uapis.cn 请求URL: {UAPIS_API_URL}")
+        response = requests.get(UAPIS_API_URL, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        result = response.json()
+        print(f"uapis.cn 响应: {result}")
+        
+        # 解析结果格式，转换为与顺丰API兼容的格式
+        # 支持多种响应结构
+        data = result
+        
+        # 如果有 data 字段，先取 data
+        if 'data' in data:
+            data = data['data']
+        
+        # 调试输出
+        print(f"[DEBUG] 完整响应: {result}")
+        print(f"[DEBUG] data 字段: {data}")
+        
+        # 检查是否是成功响应
+        # 检查返回码是否为成功
+        is_success_code = (result.get('code') == 200 or result.get('success') is True)
+        # 或者直接检查是否有 tracks 或 tracking_number
+        has_data = ('tracking_number' in data or 'tracks' in data or 'status' in data)
+        success = is_success_code or has_data
+        
+        print(f"[DEBUG] 是否成功响应: {success}")
+        
+        if success:
+            # 获取轨迹列表，支持多种字段名
+            track_list = []
+            
+            # 优先从 data 里找
+            for key in ['tracks', 'list', 'traces', 'data']:
+                if key in data and isinstance(data[key], list):
+                    track_list = data[key]
+                    print(f"[DEBUG] 从 data.{key} 找到轨迹列表")
+                    break
+            
+            # 如果外层没找到，在原始 result 里找
+            if not track_list:
+                for key in ['tracks', 'list', 'traces', 'data']:
+                    if key in result and isinstance(result[key], list):
+                        track_list = result[key]
+                        print(f"[DEBUG] 从 result.{key} 找到轨迹列表")
+                        break
+            
+            print(f"[DEBUG] 最终轨迹列表长度: {len(track_list)}")
+            if track_list:
+                print(f"[DEBUG] 第一条轨迹: {track_list[0]}")
+            
+            # 获取物流状态
+            status_text = data.get('status', result.get('status', ''))
+            status_code = data.get('status_code', result.get('status_code', ''))
+            
+            # 转换为我们系统使用的状态
+            status_map = {
+                'pending': '待揽收',
+                'picked_up': '已揽收',
+                'in_transit': '运送中',
+                'out_for_delivery': '派送中',
+                'delivered': '已签收',
+                'exception': '异常',
+                'unknown': '未知'
+            }
+            
+            # 使用 status_code 映射，或者直接使用 status_text
+            system_status = status_map.get(status_code, status_text[:20] if status_text else '')
+            
+            # 如果没有状态，尝试从最后一条轨迹推断
+            if not system_status and track_list:
+                last_track = track_list[-1]
+                context = last_track.get('context', '') or last_track.get('remark', '')
+                if '签收' in context:
+                    system_status = '已签收'
+                elif '派送' in context:
+                    system_status = '派送中'
+                elif '揽收' in context or '取件' in context:
+                    system_status = '已揽收'
+                elif '运输' in context or '发往' in context or '离开' in context:
+                    system_status = '运送中'
+            
+            routes = []
+            if track_list:
+                for track in track_list:
+                    # 获取时间，支持多种字段名
+                    time_str = ''
+                    for key in ['time', 'acceptTime', 'datetime', 'date', 'timestamp']:
+                        if key in track:
+                            time_str = track[key]
+                            break
+                    
+                    # 获取描述，支持多种字段名
+                    context = ''
+                    for key in ['context', 'remark', 'desc', 'status']:
+                        if key in track:
+                            context = track[key]
+                            break
+                    
+                    if context:
+                        routes.append({
+                            'acceptTime': time_str,
+                            'remark': context,
+                            'secondaryStatusName': system_status  # 使用简短的状态
+                        })
+            
+            print(f"解析结果: {len(routes)} 条轨迹, 状态: {system_status}")
+            
+            return {
+                'success': True, 
+                'routes': routes,
+                'status': system_status
+            }
+        else:
+            print(f"uapis.cn 查询返回失败: {result}")
+            return {'success': False, 'error': result.get('message', '查询失败')}
+            
+    except Exception as e:
+        print(f"uapis.cn 查询失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+def get_logistics_uapis_with_cache(order, force_refresh=False, update_db=True):
+    """通过 uapis.cn 获取物流信息 (带缓存)
+    
+    逻辑：所有状态都缓存，非最终状态有效期2小时，已签收按月缓存（永久保留）
+    强制刷新时直接调用API
+    
+    Args:
+        order: 订单对象
+        force_refresh: 是否强制刷新
+        update_db: 是否更新数据库（默认是，普通查看详情时设为False）
+    
+    Returns:
+        dict with 'routes', 'from_cache', 'status'
+    """
+    if not order.tracking_number:
+        return {'routes': [], 'from_cache': False, 'status': ''}
+    
+    tracking_number = order.tracking_number
+    
+    # 已签收是最终状态，永久保留缓存
+    final_statuses = ['已签收']
+    is_final_status = order.logistics_status in final_statuses
+    sign_time = order.sign_time
+    
+    # 非强制刷新时，先尝试读缓存
+    if not force_refresh:
+        cache_data = load_logistics_cache(tracking_number, is_final_status, sign_time)
+        if cache_data:
+            print(f"[uapis 缓存] 命中缓存: {tracking_number}")
+            # 从缓存中更新状态
+            if cache_data['routes'] and update_db:
+                _update_order_status_from_routes(order, cache_data['routes'])
+            return {
+                'routes': cache_data['routes'],
+                'from_cache': True,
+                'status': order.logistics_status or ''
+            }
+    
+    # 调用 uapis.cn API查询（强制刷新或缓存不存在/过期）
+    phone_last4 = order.phone[-4:] if order.phone and len(order.phone) >= 4 else None
+    result = query_logistics_uapis(tracking_number, phone_last4)
+    
+    if not result['success']:
+        return {
+            'routes': [],
+            'from_cache': False,
+            'status': order.logistics_status or '',
+            'error': result.get('error')
+        }
+    
+    # 使用 uapis.cn 返回的状态更新
+    routes = result['routes']
+    status = result.get('status', '')
+    
+    # 只有 update_db 为 True 时才更新数据库
+    if update_db:
+        if status:
+            order.logistics_status = status
+            # 如果是已签收，记录签收时间
+            if status == '已签收' and routes:
+                last_track = routes[0]
+                time_str = last_track.get('acceptTime', '')
+                if time_str:
+                    try:
+                        from datetime import datetime
+                        order.sign_time = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+                    except:
+                        pass
+        elif routes:
+            # 从轨迹推断状态
+            _update_order_status_from_routes(order, routes)
+    
+    # 保存缓存（所有状态都保存，包括空结果）
+    # 如果有状态，按状态判断是否为最终状态
+    new_is_final = status in final_statuses if status else (order.logistics_status in final_statuses)
+    # 如果不更新数据库，使用旧的 sign_time
+    cache_sign_time = None
+    if new_is_final:
+        if status == '已签收' and routes:
+            # 尝试从轨迹获取时间
+            last_track = routes[0]
+            time_str = last_track.get('acceptTime', '')
+            if time_str:
+                try:
+                    from datetime import datetime
+                    cache_sign_time = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+                except:
+                    pass
+        # 如果没找到，使用订单已有的 sign_time
+        if not cache_sign_time:
+            cache_sign_time = order.sign_time
+    
+    save_logistics_cache(tracking_number, routes, new_is_final, cache_sign_time)
+    
+    return {
+        'routes': routes,
+        'from_cache': False,
+        'status': status or order.logistics_status or ''
+    }
 
 # ============ 下载令牌管理 ============
 _download_tokens = {}
@@ -415,6 +662,63 @@ def get_sf_routes(tracking_number, phone_last4=''):
 
     print(f"[SF_API] 未获取到路由信息")
     return []
+
+
+def get_sf_routes_batch(tracking_numbers, phone_last4_list=None):
+    """
+    批量查询顺丰物流路由信息（最多10条）
+
+    Args:
+        tracking_numbers: 顺丰运单号列表（最多10个）
+        phone_last4_list: 收件人手机号后4位列表（可选，需与tracking_numbers顺序对应）
+
+    Returns:
+        dict: {tracking_number: routes_list} 路由字典
+    """
+    if not tracking_numbers:
+        return {}
+
+    # 限制最多10条
+    tracking_numbers = tracking_numbers[:10]
+    if phone_last4_list:
+        phone_last4_list = phone_last4_list[:10]
+
+    # 构建请求参数
+    msg_data = {
+        'language': '0',
+        'trackingType': '1',
+        'trackingNumber': tracking_numbers,
+        'methodType': '1'
+    }
+
+    # 如果有手机号后4位，添加到请求中（逗号分隔的字符串，与单号顺序对应）
+    if phone_last4_list:
+        msg_data['checkPhoneNo'] = ','.join(phone_last4_list)
+
+    print(f"[SF_API] 批量查询路由: tracking_numbers={tracking_numbers}, phone_last4_list={phone_last4_list}")
+    result = call_sf_api(SF_SERVICE_CODE, msg_data)
+
+    # 返回字典：{单号: 路由列表}
+    routes_dict = {}
+
+    if result['success']:
+        data = result['data']
+        if isinstance(data, str):
+            data = json.loads(data)
+        if data.get('success'):
+            route_resps = data.get('msgData', {}).get('routeResps', [])
+            print(f"[SF_API] 批量查询返回routeResps数量: {len(route_resps)}")
+            for route_resp in route_resps:
+                # 每个route_resp包含trackingNumber字段，用于识别是哪个单号
+                tn = route_resp.get('trackingNumber', '')
+                if tn and tn in tracking_numbers:
+                    routes = route_resp.get('routes', [])
+                    routes_dict[tn] = routes
+                    print(f"[SF_API] 单号{tn}路由数量: {len(routes)}")
+            return routes_dict
+
+    print(f"[SF_API] 批量查询未获取到路由信息")
+    return {tn: [] for tn in tracking_numbers}
 
 
 def update_single_order_logistics(order):

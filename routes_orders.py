@@ -962,26 +962,38 @@ def api_order_logistics(order_id):
     elif order.salesman_id != current_user.id:
         return jsonify({'error': '无权查看'}), 403
 
-    # 非顺丰或未发货，返回空
-    if order.express_type != '顺丰' or order.status != 'shipped' or not order.tracking_number:
+    # 未发货或无单号，返回空
+    if order.status != 'shipped' or not order.tracking_number:
         return jsonify({'routes': [], 'tracking_number': order.tracking_number or '', 'express_type': order.express_type or ''})
     
-    # 非主品不调用顺丰API，返回空
+    # 检查是否为主品
     cat = Category.query.filter_by(name=order.category, is_active=True).first()
-    if not cat or not cat.is_main_product:
-        return jsonify({'routes': [], 'tracking_number': order.tracking_number or '', 'express_type': order.express_type or '', 'logistics_status': order.logistics_status or ''})
+    is_main_product = cat and cat.is_main_product
     
-    # 使用缓存获取物流信息
-    from services import get_logistics_with_cache
-    result = get_logistics_with_cache(order, force_refresh=False)
-
-    return jsonify({
-        'routes': result['routes'],
-        'tracking_number': order.tracking_number,
-        'express_type': order.express_type,
-        'logistics_status': order.logistics_status or '',
-        'from_cache': result['from_cache']
-    })
+    if is_main_product and order.express_type == '顺丰':
+        # 主品顺丰：使用顺丰API
+        from services import get_logistics_with_cache
+        result = get_logistics_with_cache(order, force_refresh=False)
+        return jsonify({
+            'routes': result['routes'],
+            'tracking_number': order.tracking_number,
+            'express_type': order.express_type,
+            'logistics_status': order.logistics_status or '',
+            'from_cache': result['from_cache']
+        })
+    else:
+        # 非主品或非顺丰：使用 uapis.cn API (带缓存，不更新数据库)
+        from services import get_logistics_uapis_with_cache
+        result = get_logistics_uapis_with_cache(order, force_refresh=False, update_db=False)
+        
+        # 无论成功与否都返回结果，这样前端能显示刷新按钮
+        return jsonify({
+            'routes': result['routes'],
+            'tracking_number': order.tracking_number,
+            'express_type': order.express_type or '',
+            'logistics_status': result.get('status', order.logistics_status or ''),
+            'from_cache': result.get('from_cache', False)
+        })
 
 
 @bp.route('/api/order/<int:order_id>/logistics/refresh', methods=['POST'])
@@ -1000,27 +1012,44 @@ def api_order_logistics_refresh(order_id):
     elif order.salesman_id != current_user.id:
         return jsonify({'error': '无权操作'}), 403
 
-    # 非顺丰或未发货
-    if order.express_type != '顺丰' or order.status != 'shipped' or not order.tracking_number:
-        return jsonify({'error': '非顺丰订单或未发货'}), 400
+    # 未发货或无单号
+    if order.status != 'shipped' or not order.tracking_number:
+        return jsonify({'error': '未发货或无快递单号'}), 400
     
-    # 非主品不调用顺丰API
+    # 检查是否为主品
     cat = Category.query.filter_by(name=order.category, is_active=True).first()
-    if not cat or not cat.is_main_product:
-        return jsonify({'error': '非主品订单不支持刷新物流'}), 400
-
-    # 强制刷新物流信息
-    from services import get_logistics_with_cache
-    result = get_logistics_with_cache(order, force_refresh=True)
-
-    return jsonify({
-        'success': True,
-        'routes': result['routes'],
-        'tracking_number': order.tracking_number,
-        'express_type': order.express_type,
-        'logistics_status': order.logistics_status or '',
-        'from_cache': False
-    })
+    is_main_product = cat and cat.is_main_product
+    
+    if is_main_product and order.express_type == '顺丰':
+        # 主品顺丰：使用顺丰API
+        from services import get_logistics_with_cache
+        result = get_logistics_with_cache(order, force_refresh=True)
+        return jsonify({
+            'success': True,
+            'routes': result['routes'],
+            'tracking_number': order.tracking_number,
+            'express_type': order.express_type,
+            'logistics_status': order.logistics_status or '',
+            'from_cache': False
+        })
+    else:
+        # 非主品或非顺丰：使用 uapis.cn API (带缓存，强制刷新，不更新数据库)
+        from services import get_logistics_uapis_with_cache
+        result = get_logistics_uapis_with_cache(order, force_refresh=True, update_db=False)
+        
+        if 'error' in result:
+            return jsonify({
+                'error': result.get('error', '查询失败')
+            }), 400
+        
+        return jsonify({
+            'success': True,
+            'routes': result['routes'],
+            'tracking_number': order.tracking_number,
+            'express_type': order.express_type or '',
+            'logistics_status': result.get('status', order.logistics_status or ''),
+            'from_cache': False
+        })
 
 
 @bp.route('/api/order/<int:order_id>/edit', methods=['POST'])
