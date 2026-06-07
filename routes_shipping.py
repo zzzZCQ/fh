@@ -6,7 +6,7 @@ from flask_login import login_required, current_user
 
 from models import db, User, Order, Category
 from helpers import role_required, notify_users
-from services import update_single_order_logistics, get_sf_routes_batch, _update_order_status_from_routes
+from services import update_single_order_logistics, get_sf_routes_batch, _update_order_status_from_routes, save_logistics_cache
 
 bp = Blueprint('shipping', __name__)
 
@@ -184,6 +184,9 @@ def update_logistics():
 
         # 一次性查询本批次的所有路由
         routes_dict = get_sf_routes_batch(tracking_numbers, phone_last4_list)
+        print(f"[update_logistics] 本批次routes_dict内容: {routes_dict.keys()}")
+        for tn, r in routes_dict.items():
+            print(f"[update_logistics] 单号{tn}有{len(r)}条路由")
 
         # 逐个更新订单状态
         for order in batch_orders:
@@ -193,16 +196,33 @@ def update_logistics():
             result = _update_order_status_from_routes(order, routes)
             if result:
                 updated_count += 1
+            
+            # 保存缓存
+            final_statuses = ['已签收', '退回已签收']
+            is_final = order.logistics_status in final_statuses
+            print(f"[update_logistics] 保存缓存: 单号={order.tracking_number}, is_final={is_final}, routes数量={len(routes)}")
+            save_logistics_cache(order.tracking_number, routes, is_final, order.sign_time if is_final else None)
 
     flash(f'物流信息已更新！共更新了 {updated_count} 条。', 'success')
-    return redirect(url_for('orders.dashboard',
-        page=request.form.get('page', 1),
-        per_page=per_page,
-        customer_keyword=request.form.get('customer_keyword', ''),
-        tracking_keyword=request.form.get('tracking_keyword', ''),
-        status=request.form.get('status', ''),
-        category=request.form.get('category', ''),
-        salesman_id=request.form.get('salesman_id', '')))
+    
+    # 构建重定向参数
+    redirect_args = {
+        'page': request.form.get('page', 1),
+        'per_page': per_page,
+        'customer_keyword': request.form.get('customer_keyword', ''),
+        'tracking_keyword': request.form.get('tracking_keyword', ''),
+        'category': request.form.get('category', ''),
+        'salesman_id': request.form.get('salesman_id', ''),
+        'month': request.form.get('month', ''),
+        'group_id': request.form.get('group_id', '')
+    }
+    
+    # 处理多选的 status
+    status_list = request.form.getlist('status')
+    if status_list:
+        redirect_args['status'] = status_list
+    
+    return redirect(url_for('orders.dashboard', **redirect_args))
 
 
 # ============ 删除审批路由 ============

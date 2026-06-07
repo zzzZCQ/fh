@@ -950,6 +950,7 @@ def api_order_reissue_gift(order_id):
 @login_required
 def api_order_logistics(order_id):
     """获取订单物流路由详情（带缓存）"""
+    print(f"[路由调试] 调用 /api/order/{order_id}/logistics")
     order = Order.query.get_or_404(order_id)
 
     # 权限检查
@@ -962,16 +963,21 @@ def api_order_logistics(order_id):
     elif order.salesman_id != current_user.id:
         return jsonify({'error': '无权查看'}), 403
 
+    print(f"[路由调试] 订单信息: status={order.status}, tracking={order.tracking_number}, express_type={order.express_type}")
+    
     # 未发货或无单号，返回空
     if order.status != 'shipped' or not order.tracking_number:
+        print(f"[路由调试] 未发货或无单号，返回空")
         return jsonify({'routes': [], 'tracking_number': order.tracking_number or '', 'express_type': order.express_type or ''})
     
     # 检查是否为主品
     cat = Category.query.filter_by(name=order.category, is_active=True).first()
     is_main_product = cat and cat.is_main_product
+    print(f"[路由调试] 主品判断: is_main_product={is_main_product}, category={order.category}")
     
     if is_main_product and order.express_type == '顺丰':
         # 主品顺丰：使用顺丰API
+        print(f"[路由调试] 主品顺丰，调用 get_logistics_with_cache")
         from services import get_logistics_with_cache
         result = get_logistics_with_cache(order, force_refresh=False)
         return jsonify({
@@ -983,10 +989,12 @@ def api_order_logistics(order_id):
         })
     else:
         # 非主品或非顺丰：使用 uapis.cn API (带缓存，不更新数据库)
+        print(f"[路由调试] 非主品或非顺丰，调用 get_logistics_uapis_with_cache")
         from services import get_logistics_uapis_with_cache
         result = get_logistics_uapis_with_cache(order, force_refresh=False, update_db=False)
         
         # 无论成功与否都返回结果，这样前端能显示刷新按钮
+        print(f"[路由调试] 返回结果: from_cache={result.get('from_cache', False)}, routes={len(result.get('routes', []))}")
         return jsonify({
             'routes': result['routes'],
             'tracking_number': order.tracking_number,

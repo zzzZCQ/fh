@@ -52,21 +52,73 @@ def save_logistics_cache(tracking_number, routes, is_signed=False, sign_time=Non
     with open(cache_path, 'w', encoding='utf-8') as f:
         json.dump(cache_data, f, ensure_ascii=False, indent=2)
     print(f"[CACHE] 保存物流缓存: {cache_path}")
+    print(f"[CACHE] 保存内容: 单号={tracking_number}, is_signed={is_signed}, routes数量={len(routes)}")
 
-def load_logistics_cache(tracking_number, is_signed=False, sign_time=None):
+def load_logistics_cache(tracking_number, is_signed=False, sign_time=None, create_time=None):
     """加载物流信息缓存
     
     Returns:
         dict with 'routes' and 'cache_time', or None if not found/expired
     """
+    # 尝试常规路径
     cache_path = _get_logistics_cache_path(tracking_number, is_signed, sign_time)
+    print(f"[CACHE] 尝试读取缓存: 单号={tracking_number}, is_signed={is_signed}, 路径={cache_path}")
     
-    if not os.path.exists(cache_path):
-        return None
+    if os.path.exists(cache_path):
+        return _try_load_cache(cache_path, is_signed)
     
+    # 如果是已签收但没找到，而且 sign_time 是 None
+    if is_signed and not sign_time:
+        print(f"[CACHE] 已签收但 sign_time 为 None，尝试搜索缓存")
+        # 搜索订单创建时间的前 2 个月、创建月、下一个月
+        search_months = []
+        if create_time:
+            # 前 2 个月
+            for i in [2, 1, 0, -1]:  # i=2: 前2个月，i=1: 前1个月，i=0: 当前月，i=-1: 下一个月
+                target_month = create_time.month - i
+                target_year = create_time.year
+                while target_month < 1:
+                    target_month += 12
+                    target_year -= 1
+                while target_month > 12:
+                    target_month -= 12
+                    target_year += 1
+                search_months.append((target_year, target_month))
+            print(f"[CACHE] 基于订单创建时间搜索: {search_months}")
+        
+        if search_months:
+            import glob
+            for year, month in search_months:
+                search_pattern = os.path.join(LOGISTICS_CACHE_DIR, str(year), str(month), f"{tracking_number}.json")
+                print(f"[CACHE] 搜索模式: {search_pattern}")
+                matching_files = glob.glob(search_pattern)
+                if matching_files:
+                    cache_path = matching_files[0]
+                    print(f"[CACHE] 找到缓存文件: {cache_path}")
+                    return _try_load_cache(cache_path, is_signed)
+        else:
+            # 没有创建时间，搜索所有月份
+            import glob
+            search_pattern = os.path.join(LOGISTICS_CACHE_DIR, '*', '*', f"{tracking_number}.json")
+            print(f"[CACHE] 无创建时间，搜索所有: {search_pattern}")
+            matching_files = glob.glob(search_pattern)
+            if matching_files:
+                # 取最近修改的那个
+                matching_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
+                cache_path = matching_files[0]
+                print(f"[CACHE] 找到缓存文件: {cache_path}")
+                return _try_load_cache(cache_path, is_signed)
+    
+    print(f"[CACHE] 缓存文件不存在: {cache_path}")
+    return None
+
+def _try_load_cache(cache_path, is_signed):
+    """尝试加载缓存文件"""
     try:
         with open(cache_path, 'r', encoding='utf-8') as f:
             cache_data = json.load(f)
+        
+        print(f"[CACHE] 读取到缓存: routes数量={len(cache_data.get('routes', []))}")
         
         # 未签收的缓存检查是否过期（2小时）
         # 已签收和退回已签收都是最终状态，永久保留，不删除
@@ -82,6 +134,8 @@ def load_logistics_cache(tracking_number, is_signed=False, sign_time=None):
         return cache_data
     except Exception as e:
         print(f"[CACHE] 读取缓存失败: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def get_logistics_with_cache(order, force_refresh=False):
@@ -97,7 +151,11 @@ def get_logistics_with_cache(order, force_refresh=False):
     Returns:
         dict with 'routes', 'from_cache', 'is_signed'
     """
+    print(f"[LOGISTICS_CACHE] get_logistics_with_cache 被调用: 单号={order.tracking_number}, force_refresh={force_refresh}")
+    print(f"[LOGISTICS_CACHE] 当前状态: logistics_status={order.logistics_status}, sign_time={order.sign_time}, create_time={order.create_time}")
+    
     if not order.tracking_number or order.express_type != '顺丰':
+        print(f"[LOGISTICS_CACHE] 不是顺丰或无单号，返回空")
         return {'routes': [], 'from_cache': False, 'is_signed': False}
     
     tracking_number = order.tracking_number
@@ -107,20 +165,28 @@ def get_logistics_with_cache(order, force_refresh=False):
     is_final_status = order.logistics_status in final_statuses
     sign_time = order.sign_time
     
+    print(f"[LOGISTICS_CACHE] 最终状态判断: is_final_status={is_final_status}")
+    
     # 非强制刷新时，先尝试读缓存
     if not force_refresh:
-        cache_data = load_logistics_cache(tracking_number, is_final_status, sign_time)
+        print(f"[LOGISTICS_CACHE] 尝试读取缓存...")
+        cache_data = load_logistics_cache(tracking_number, is_final_status, sign_time, order.create_time)
         if cache_data:
+            print(f"[LOGISTICS_CACHE] 缓存命中，使用缓存数据")
             _update_order_status_from_routes(order, cache_data['routes'])
             return {
                 'routes': cache_data['routes'],
                 'from_cache': True,
                 'is_signed': is_final_status
             }
+        else:
+            print(f"[LOGISTICS_CACHE] 缓存未命中，将调用API")
     
     # 调用顺丰API查询（强制刷新或缓存不存在/过期）
     phone_last4 = order.phone[-4:] if order.phone and len(order.phone) >= 4 else ''
+    print(f"[LOGISTICS_CACHE] 调用顺丰API: phone_last4={phone_last4}")
     routes = get_sf_routes(tracking_number, phone_last4)
+    print(f"[LOGISTICS_CACHE] API返回routes数量: {len(routes)}")
     
     # 更新订单状态
     _update_order_status_from_routes(order, routes)
@@ -128,6 +194,7 @@ def get_logistics_with_cache(order, force_refresh=False):
     # 保存缓存（所有状态都保存，包括空结果）
     # 如果更新后变成最终状态，按最终状态的方式保存（永久保留）
     new_is_final = order.logistics_status in final_statuses
+    print(f"[LOGISTICS_CACHE] 更新后的新状态: logistics_status={order.logistics_status}, new_is_final={new_is_final}")
     save_logistics_cache(tracking_number, routes, new_is_final, order.sign_time if new_is_final else None)
     
     return {
@@ -451,6 +518,7 @@ def get_logistics_uapis_with_cache(order, force_refresh=False, update_db=True):
     Returns:
         dict with 'routes', 'from_cache', 'status'
     """
+    print(f"[uapis 缓存] 调用 get_logistics_uapis_with_cache: tracking={order.tracking_number}, force_refresh={force_refresh}, update_db={update_db}")
     if not order.tracking_number:
         return {'routes': [], 'from_cache': False, 'status': ''}
     
@@ -460,12 +528,13 @@ def get_logistics_uapis_with_cache(order, force_refresh=False, update_db=True):
     final_statuses = ['已签收']
     is_final_status = order.logistics_status in final_statuses
     sign_time = order.sign_time
+    print(f"[uapis 缓存] 当前状态: logistics_status={order.logistics_status}, is_final_status={is_final_status}, sign_time={sign_time}, create_time={order.create_time}")
     
     # 非强制刷新时，先尝试读缓存
     if not force_refresh:
-        cache_data = load_logistics_cache(tracking_number, is_final_status, sign_time)
+        cache_data = load_logistics_cache(tracking_number, is_final_status, sign_time, order.create_time)
         if cache_data:
-            print(f"[uapis 缓存] 命中缓存: {tracking_number}")
+            print(f"[uapis 缓存] 命中缓存: {tracking_number}, routes数量={len(cache_data['routes'])}")
             # 从缓存中更新状态
             if cache_data['routes'] and update_db:
                 _update_order_status_from_routes(order, cache_data['routes'])
@@ -474,12 +543,16 @@ def get_logistics_uapis_with_cache(order, force_refresh=False, update_db=True):
                 'from_cache': True,
                 'status': order.logistics_status or ''
             }
+        else:
+            print(f"[uapis 缓存] 未命中缓存或缓存已过期: {tracking_number}")
     
     # 调用 uapis.cn API查询（强制刷新或缓存不存在/过期）
+    print(f"[uapis 缓存] 调用 uapis.cn API: {tracking_number}")
     phone_last4 = order.phone[-4:] if order.phone and len(order.phone) >= 4 else None
     result = query_logistics_uapis(tracking_number, phone_last4)
     
     if not result['success']:
+        print(f"[uapis 缓存] uapis.cn API调用失败: {result.get('error')}")
         return {
             'routes': [],
             'from_cache': False,
@@ -490,9 +563,11 @@ def get_logistics_uapis_with_cache(order, force_refresh=False, update_db=True):
     # 使用 uapis.cn 返回的状态更新
     routes = result['routes']
     status = result.get('status', '')
+    print(f"[uapis 缓存] uapis.cn API返回: status={status}, routes数量={len(routes)}")
     
     # 只有 update_db 为 True 时才更新数据库
     if update_db:
+        print(f"[uapis 缓存] 更新数据库")
         if status:
             order.logistics_status = status
             # 如果是已签收，记录签收时间
@@ -529,6 +604,7 @@ def get_logistics_uapis_with_cache(order, force_refresh=False, update_db=True):
         if not cache_sign_time:
             cache_sign_time = order.sign_time
     
+    print(f"[uapis 缓存] 保存缓存: tracking={tracking_number}, new_is_final={new_is_final}, cache_sign_time={cache_sign_time}")
     save_logistics_cache(tracking_number, routes, new_is_final, cache_sign_time)
     
     return {
@@ -697,24 +773,30 @@ def get_sf_routes_batch(tracking_numbers, phone_last4_list=None):
 
     print(f"[SF_API] 批量查询路由: tracking_numbers={tracking_numbers}, phone_last4_list={phone_last4_list}")
     result = call_sf_api(SF_SERVICE_CODE, msg_data)
+    print(f"[SF_API] 批量查询原始完整返回: {result}")
 
     # 返回字典：{单号: 路由列表}
     routes_dict = {}
 
     if result['success']:
         data = result['data']
+        print(f"[SF_API] 批量查询data字段: {data}")
         if isinstance(data, str):
+            print(f"[SF_API] data是字符串，尝试解析")
             data = json.loads(data)
+            print(f"[SF_API] 解析后data: {data}")
         if data.get('success'):
             route_resps = data.get('msgData', {}).get('routeResps', [])
             print(f"[SF_API] 批量查询返回routeResps数量: {len(route_resps)}")
+            print(f"[SF_API] routeResps内容: {route_resps}")
             for route_resp in route_resps:
-                # 每个route_resp包含trackingNumber字段，用于识别是哪个单号
-                tn = route_resp.get('trackingNumber', '')
+                # 每个route_resp包含mailNo字段（顺丰API返回的是mailNo，不是trackingNumber）
+                tn = route_resp.get('mailNo', '') or route_resp.get('trackingNumber', '')
+                print(f"[SF_API] route_resp中的单号: {tn}")
                 if tn and tn in tracking_numbers:
                     routes = route_resp.get('routes', [])
                     routes_dict[tn] = routes
-                    print(f"[SF_API] 单号{tn}路由数量: {len(routes)}")
+                    print(f"[SF_API] 单号{tn}路由数量: {len(routes)}, routes内容: {routes}")
             return routes_dict
 
     print(f"[SF_API] 批量查询未获取到路由信息")
