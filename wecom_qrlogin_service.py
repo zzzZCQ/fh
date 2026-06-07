@@ -16,6 +16,7 @@ from typing import Optional, Dict, Tuple
 from datetime import datetime
 import hashlib
 import random
+import re
 
 # 扫码登录状态
 SCAN_STATUS = {
@@ -80,10 +81,22 @@ class QRCodeSession:
 class QRLoginService:
     """企业微信扫码登录服务 - iPad协议版本"""
     
-    # iPad协议相关URL
-    IPAD_LOGIN_URL = 'https://wx.work.weixin.qq.com/wwlogin/login'
-    IPAD_QRCODE_URL = 'https://wx.work.weixin.qq.com/wwlogin/qrcode'
-    IPAD_CHECK_LOGIN_URL = 'https://wx.work.weixin.qq.com/wwlogin/checklogin'
+    # iPad设备配置（模拟真实iPad企业微信客户端）
+    IPAD_CONFIG = {
+        'user_agent': 'Mozilla/5.0 (iPad; CPU OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+        'device_id': 'iPad13,1',
+        'os_version': '17.2',
+        'app_version': '4.1.6.1501',
+        'screen_width': 1024,
+        'screen_height': 1366,
+    }
+    
+    # 企业微信登录相关URL
+    LOGIN_URLS = [
+        'https://work.weixin.qq.com/wework_admin/loginpage_wx',
+        'https://work.weixin.qq.com/',
+        'https://open.work.weixin.qq.com/wwopen/sso/3rd_qrConnect?appid=wx782c26e4c19acffb&redirect_uri=https://work.weixin.qq.com/wework_admin/loginpage_wx&state=STATE&scope=snsapi_login',
+    ]
     
     def __init__(self):
         self.sessions = {}  # session_id -> QRCodeSession
@@ -94,11 +107,14 @@ class QRLoginService:
         # HTTP 会话 - 模拟iPad客户端
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (iPad; CPU OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+            'User-Agent': self.IPAD_CONFIG['user_agent'],
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Referer': 'https://wx.work.weixin.qq.com/wwlogin/login',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
             'X-Requested-With': 'XMLHttpRequest',
+            'Referer': 'https://work.weixin.qq.com/',
+            'Origin': 'https://work.weixin.qq.com',
         })
         
         # 启动清理线程
@@ -139,24 +155,78 @@ class QRLoginService:
         random_str = ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_', k=32))
         return hashlib.md5(f"ipad_{timestamp}_{random_str}".encode()).hexdigest()
     
+    def _get_ipad_qrcode_url(self) -> Tuple[Optional[str], Optional[str]]:
+        """获取iPad企业微信登录二维码URL和ticket"""
+        try:
+            # 尝试访问登录页面获取ticket
+            for url in self.LOGIN_URLS:
+                try:
+                    response = self.session.get(url, timeout=30, allow_redirects=True)
+                    print(f"[QRLogin] 访问: {url} -> {response.status_code}")
+                    
+                    ticket = None
+                    # 从URL中提取ticket
+                    if 'ticket' in response.url:
+                        match = re.search(r'ticket=([a-zA-Z0-9_-]+)', response.url)
+                        if match:
+                            ticket = match.group(1)
+                            print(f"[QRLogin] ✅ 从URL获取ticket: {ticket[:20]}...")
+                    
+                    # 从cookie中获取
+                    if not ticket:
+                        for cookie in self.session.cookies:
+                            if cookie.name == 'wwrtx.ticket':
+                                ticket = cookie.value
+                                print(f"[QRLogin] ✅ 从cookie获取ticket: {ticket[:20]}...")
+                                break
+                    
+                    # 从页面内容中提取
+                    if not ticket and 'ticket' in response.text:
+                        match = re.search(r'ticket[\s=:"\'】【]+([a-zA-Z0-9_-]+)', response.text)
+                        if match:
+                            ticket = match.group(1)
+                            print(f"[QRLogin] ✅ 从页面内容获取ticket: {ticket[:20]}...")
+                    
+                    if ticket:
+                        # 返回iPad企业微信登录URL（用于扫码）
+                        ipad_login_url = f"https://wx.work.weixin.qq.com/wwlogin/login?type=wwclient&ticket={ticket}"
+                        print(f"[QRLogin] iPad登录URL: {ipad_login_url[:80]}...")
+                        return ipad_login_url, ticket
+                            
+                except Exception as e:
+                    print(f"[QRLogin] 访问失败: {e}")
+                    continue
+            
+            # 如果都失败，返回None
+            print("[QRLogin] ⚠️ 未获取到真实ticket")
+            return None, None
+            
+        except Exception as e:
+            print(f"[QRLogin] 获取ticket异常: {e}")
+            return None, None
+    
     def create_qrcode(self) -> Tuple[str, str]:
         """
-        创建二维码会话 - 使用iPad协议
+        创建二维码会话 - 使用iPad企业微信协议
         返回: (session_id, qrcode_image_base64)
         """
         session_id = self._generate_session_id()
         session = QRCodeSession(session_id)
         
         try:
-            # 模拟iPad客户端获取ticket
-            session.ticket = self._generate_ticket()
+            # 获取iPad企业微信登录二维码URL和ticket
+            qrcode_url, ticket = self._get_ipad_qrcode_url()
             
-            # iPad协议的扫码URL格式
-            # 格式: https://wx.work.weixin.qq.com/wwlogin/login?type=wwclient&ticket=xxx
-            qrcode_url = f"{self.IPAD_LOGIN_URL}?type=wwclient&ticket={session.ticket}"
+            if not qrcode_url or not ticket:
+                # 如果获取不到真实ticket，使用模拟值
+                print("[QRLogin] 使用模拟ticket")
+                ticket = self._generate_ticket()
+                qrcode_url = f"https://wx.work.weixin.qq.com/wwlogin/login?type=wwclient&ticket={ticket}"
+            
+            session.ticket = ticket
             session.qrcode_url = qrcode_url
             
-            print(f"[QRLogin] iPad协议二维码URL: {qrcode_url}")
+            print(f"[QRLogin] 二维码URL: {qrcode_url}")
             
             # 生成二维码图片
             qr = qrcode.QRCode(
@@ -177,15 +247,17 @@ class QRLoginService:
             with self.session_lock:
                 self.sessions[session_id] = session
             
-            print(f"[QRLogin] 创建iPad协议二维码会话: {session_id}")
+            print(f"[QRLogin] 创建二维码会话成功: {session_id}")
             return session_id, f"data:image/png;base64,{img_base64}"
             
         except Exception as e:
             print(f"[QRLogin] 创建二维码异常: {e}")
+            import traceback
+            traceback.print_exc()
             
             # 失败时仍生成模拟二维码
             session.ticket = self._generate_ticket()
-            qrcode_url = f"{self.IPAD_LOGIN_URL}?type=wwclient&ticket={session.ticket}"
+            qrcode_url = f"https://wx.work.weixin.qq.com/wwlogin/login?type=wwclient&ticket={session.ticket}"
             session.qrcode_url = qrcode_url
             
             qr = qrcode.QRCode(
@@ -225,35 +297,38 @@ class QRLoginService:
             return {'success': True, 'data': session.to_dict()}
         
         try:
-            # 使用iPad协议检查登录状态
-            check_response = self.session.get(
-                f'{self.IPAD_CHECK_LOGIN_URL}?ticket={session.ticket}',
-                timeout=10
-            )
-            
-            if check_response.status_code == 200:
+            if session.ticket:
+                # 使用企业微信iPad登录检查URL
                 try:
-                    result = check_response.json()
-                    if result.get('code') == 0:
-                        status = result.get('status', 0)
-                        
-                        if status == 1:
-                            session.status = SCAN_STATUS['SCANNED']
-                            session.scanned_at = datetime.now()
-                        elif status == 2:
+                    params = {
+                        'ticket': session.ticket,
+                        'type': 'wwclient',
+                        't': str(int(time.time() * 1000)),
+                    }
+                    
+                    response = self.session.get(
+                        'https://work.weixin.qq.com/wework_admin/checklogin',
+                        params=params,
+                        timeout=10
+                    )
+                    
+                    print(f"[QRLogin] 检查登录状态 - 响应码: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        content = response.text
+                        if '"ret":0' in content or '"code":0' in content or '登录成功' in content:
                             session.status = SCAN_STATUS['CONFIRMED']
                             session.confirmed_at = datetime.now()
                             session.user_info = {'name': '企业微信用户', 'corp_name': '企业'}
-                            
-                            print(f"[QRLogin] iPad协议登录成功: {session.session_id}")
-                            return {
-                                'success': True,
-                                'data': session.to_dict(),
-                                'message': '登录成功'
-                            }
-                except:
-                    # 如果不是JSON格式，尝试解析其他格式
-                    pass
+                            print(f"[QRLogin] ✅ 登录成功")
+                        
+                        # 更新会话状态
+                        with self.session_lock:
+                            self.sessions[session_id] = session
+                        
+                        return {'success': True, 'data': session.to_dict()}
+                except Exception as req_e:
+                    print(f"[QRLogin] 检查登录状态请求失败: {req_e}")
             
             # 更新会话状态
             with self.session_lock:
@@ -263,6 +338,8 @@ class QRLoginService:
             
         except Exception as e:
             print(f"[QRLogin] 检查扫码状态异常: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'message': str(e)}
     
     def get_login_result(self, session_id: str) -> Optional[Dict]:
