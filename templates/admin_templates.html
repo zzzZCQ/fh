@@ -424,7 +424,7 @@
                             </button>
                             {% endif %}
                             {% if ct.import_template %}
-                            <button type="button" class="btn btn-outline-success btn-edit-import" data-id="{{ ct.import_template.id }}" data-cat-id="{{ ct.import_template.category_id }}" data-cat-name="{{ ct.import_template.category.name }}" data-mapping="{{ ct.import_template.field_mapping | e }}" data-express="{{ ct.import_template.default_express_type or '' }}" title="编辑导入模板">
+                            <button type="button" class="btn btn-outline-success btn-edit-import" data-id="{{ ct.import_template.id }}" data-cat-id="{{ ct.import_template.category_id }}" data-cat-name="{{ ct.import_template.category.name }}" data-mapping="{{ ct.import_template.field_mapping | e }}" data-express="{{ ct.import_template.default_express_type or '' }}" data-preprocessing="{{ ct.import_template.column_preprocessing if ct.import_template.column_preprocessing else '{}' | e }}" title="编辑导入模板">
                                 <i class="bi bi-pencil"></i>
                             </button>
                             <button type="button" class="btn btn-outline-secondary btn-copy-import" data-id="{{ ct.import_template.id }}" data-cat-id="{{ ct.import_template.category_id }}" data-cat-name="{{ ct.import_template.category.name }}" data-mapping="{{ ct.import_template.field_mapping | e }}" title="复制导入模板">
@@ -723,6 +723,16 @@
                     <div class="mb-3">
                         <label class="form-label">默认快递种类</label>
                         <input type="text" class="form-control" name="default_express_type" id="edit_import_default_express">
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label">列数据预处理 <small class="text-muted">(用于处理导出/导入时数据格式不一致，如去掉前缀KS14)</small></label>
+                            <button type="button" class="btn btn-link btn-sm" onclick="addEditImportPPRow()">添加规则</button>
+                        </div>
+                        <div id="editImportPreprocessingRows" class="mt-2"></div>
+                        <div class="form-text small text-muted">
+                            支持：<code>去掉前缀</code>、<code>去掉后缀</code>、<code>正则替换</code>、<code>字符串替换</code>、<code>去空格</code>、<code>转大写</code>、<code>转小写</code>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -2031,6 +2041,7 @@ document.addEventListener('click', function(e) {
     const categoryName = btn.dataset.catName;
     const fieldMapping = JSON.parse(btn.dataset.mapping);
     const defaultExpress = btn.dataset.express || '';
+    const preprocessing = JSON.parse(btn.dataset.preprocessing || '{}');
 
     document.getElementById('edit_import_template_id').value = templateId;
     document.getElementById('edit_import_category_name').value = categoryName;
@@ -2046,9 +2057,112 @@ document.addEventListener('click', function(e) {
         }
     }
 
+    // 加载预处理配置
+    const ppContainer = document.getElementById('editImportPreprocessingRows');
+    ppContainer.innerHTML = '';
+    editImportPPIndex = 0;
+    for (const [col, config] of Object.entries(preprocessing)) {
+        addEditImportPPRow(col, config);
+    }
+
     const modal = new bootstrap.Modal(document.getElementById('editImportModal'));
     modal.show();
 });
+let editImportPPIndex = 0;
+
+function addEditImportPPRow(col = '', config = {}) {
+    const container = document.getElementById('editImportPreprocessingRows');
+    const idx = editImportPPIndex;
+    const ppType = config.type || '';
+    const ppPattern = config.pattern || '';
+    const ppReplacement = config.replacement || '';
+    const ppPrefix = config.prefix || '';
+    const ppSuffix = config.suffix || '';
+    const ppChars = config.chars || '';
+    const ppOld = config.old || '';
+    const ppNew = config.new || '';
+
+    const row = document.createElement('div');
+    row.className = 'card mb-2';
+    row.innerHTML = `
+        <div class="card-body p-2">
+            <div class="row align-items-center g-2">
+                <div class="col-md-3">
+                    <input type="text" class="form-control form-control-sm" placeholder="列名(如客户姓名)" name="pp_col_${idx}" value="${col}">
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select form-select-sm" name="pp_type_${idx}" onchange="togglePPExtraFields(this)">
+                        <option value="">不处理</option>
+                        <option value="regex_replace" ${ppType === 'regex_replace' ? 'selected' : ''}>正则替换</option>
+                        <option value="prefix_remove" ${ppType === 'prefix_remove' ? 'selected' : ''}>去掉前缀</option>
+                        <option value="suffix_remove" ${ppType === 'suffix_remove' ? 'selected' : ''}>去掉后缀</option>
+                        <option value="strip_chars" ${ppType === 'strip_chars' ? 'selected' : ''}>去除字符</option>
+                        <option value="replace" ${ppType === 'replace' ? 'selected' : ''}>字符串替换</option>
+                        <option value="trim" ${ppType === 'trim' ? 'selected' : ''}>去空格</option>
+                        <option value="upper" ${ppType === 'upper' ? 'selected' : ''}>转大写</option>
+                        <option value="lower" ${ppType === 'lower' ? 'selected' : ''}>转小写</option>
+                    </select>
+                </div>
+                <div class="col-md-5 extra-fields" style="display:${ppType && ppType !== 'trim' && ppType !== 'upper' && ppType !== 'lower' ? 'flex' : 'none'};gap:4px;">
+                    <input type="text" class="form-control form-control-sm" placeholder="参数1" name="pp_pattern_${idx}" value="${ppPattern}" style="display:${ppType === 'regex_replace' || ppType === 'strip_chars' ? 'block' : 'none'}">
+                    <input type="text" class="form-control form-control-sm" placeholder="替换为" name="pp_replacement_${idx}" value="${ppReplacement}" style="display:${ppType === 'regex_replace' ? 'block' : 'none'}">
+                    <input type="text" class="form-control form-control-sm" placeholder="前缀" name="pp_prefix_${idx}" value="${ppPrefix}" style="display:${ppType === 'prefix_remove' ? 'block' : 'none'}">
+                    <input type="text" class="form-control form-control-sm" placeholder="后缀" name="pp_suffix_${idx}" value="${ppSuffix}" style="display:${ppType === 'suffix_remove' ? 'block' : 'none'}">
+                    <input type="text" class="form-control form-control-sm" placeholder="旧字符串" name="pp_old_${idx}" value="${ppOld}" style="display:${ppType === 'replace' ? 'block' : 'none'}">
+                    <input type="text" class="form-control form-control-sm" placeholder="新字符串" name="pp_new_${idx}" value="${ppNew}" style="display:${ppType === 'replace' ? 'block' : 'none'}">
+                </div>
+                <div class="col-md-1">
+                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.card').remove()"><i class="bi bi-x"></i></button>
+                </div>
+            </div>
+            <div class="small text-muted mt-1 pp-hint" style="display:${ppType ? 'block' : 'none'}">
+                ${getPPHint(ppType)}
+            </div>
+        </div>
+    `;
+    container.appendChild(row);
+    editImportPPIndex++;
+}
+
+function togglePPExtraFields(sel) {
+    const card = sel.closest('.card');
+    const extraFields = card.querySelector('.extra-fields');
+    const hint = card.querySelector('.pp-hint');
+    const ppType = sel.value;
+
+    const showExtra = ppType && ppType !== 'trim' && ppType !== 'upper' && ppType !== 'lower';
+    extraFields.style.display = showExtra ? 'flex' : 'none';
+    hint.style.display = ppType ? 'block' : 'none';
+    hint.textContent = getPPHint(ppType);
+
+    // 隐藏不需要的字段
+    extraFields.querySelectorAll('input').forEach(input => {
+        const name = input.name;
+        if (name.includes('pattern') || name.includes('replacement')) {
+            input.style.display = ppType === 'regex_replace' ? 'block' : 'none';
+        } else if (name.includes('prefix')) {
+            input.style.display = ppType === 'prefix_remove' ? 'block' : 'none';
+        } else if (name.includes('suffix')) {
+            input.style.display = ppType === 'suffix_remove' ? 'block' : 'none';
+        } else if (name.includes('old') || name.includes('new')) {
+            input.style.display = ppType === 'replace' ? 'block' : 'none';
+        }
+    });
+}
+
+function getPPHint(ppType) {
+    const hints = {
+        'regex_replace': '正则替换：如 pattern=KS\\d+ replacement= 可去掉KS加数字前缀',
+        'prefix_remove': '去掉前缀：如填写KS14会从开头删除KS14',
+        'suffix_remove': '去掉后缀：如填写_CRM会从结尾删除_CRM',
+        'strip_chars': '去除字符：删除首尾指定的字符集，如填写+-会删除首尾的+和-',
+        'replace': '字符串替换：old填KS14，new留空，可去掉中间的前缀',
+        'trim': '去空格：自动删除首尾空格',
+        'upper': '转大写：ABC123',
+        'lower': '转小写：abc123'
+    };
+    return hints[ppType] || '';
+}
 
 function addEditImportMappingRow(excelCol = '', orderField = '') {
     const container = document.getElementById('editImportMappingRows');

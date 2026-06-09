@@ -275,6 +275,9 @@ class ImportTemplate(db.Model):
     filepath = db.Column(db.String(500), nullable=False)  # 存储路径
     field_mapping = db.Column(db.Text, default='{}')  # 字段映射JSON: {"组别":"group_name","快递单号":"tracking_number",...}
     default_express_type = db.Column(db.String(50))  # 默认快递种类（Excel中没有时使用）
+    # 列预处理配置JSON: {"客户姓名":{"type":"regex_replace","pattern":"KS\\d+","replacement":""},"手机号":{"type":"trim"}}
+    column_preprocessing = db.Column(db.Text, default='{}')
+    skip_rows = db.Column(db.Integer, default=0)  # 跳过前 N 行（用于第一行非表头的情况）
     create_time = db.Column(db.DateTime, default=_now_bj)
     
     category = db.relationship('Category', backref=db.backref('import_templates', lazy=True))

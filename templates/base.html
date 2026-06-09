@@ -333,7 +333,7 @@
         <div class="menu-group">
             <div class="menu-label">企业微信</div>
             <nav class="nav flex-column">
-                <a class="nav-link {% if request.endpoint == 'wecom_scrm.index' %}active{% endif %}" href="{{ url_for('wecom_scrm.index') }}">
+                <a class="nav-link {% if request.endpoint == 'wecom_scrm.index_page' %}active{% endif %}" href="{{ url_for('wecom_scrm.index_page') }}">
                     <i class="bi bi-robot"></i> SCRM管理
                 </a>
             </nav>
@@ -345,7 +345,7 @@
         <div class="menu-group">
             <div class="menu-label">客户运营</div>
             <nav class="nav flex-column">
-                <a class="nav-link {% if request.endpoint == 'wecom_scrm.index' %}active{% endif %}" href="{{ url_for('wecom_scrm.index') }}">
+                <a class="nav-link {% if request.endpoint == 'wecom_scrm.index_page' %}active{% endif %}" href="{{ url_for('wecom_scrm.index_page') }}">
                     <i class="bi bi-chat-dots"></i> 企业微信SCRM
                 </a>
             </nav>

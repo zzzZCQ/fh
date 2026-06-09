@@ -1,960 +1,852 @@
 {% extends "base.html" %}
 
-{% block title %}企业微信SCRM - 发货通知系统{% endblock %}
+{% block title %}企业微信账号托管{% endblock %}
 
 {% block content %}
 <style>
-    .account-card {
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 12px;
+    /* 布局 */
+    .wecom-layout {
+        display: grid;
+        grid-template-columns: 320px 1fr 1fr;
+        gap: 16px;
+        height: calc(100vh - 80px);
+        min-height: 600px;
+    }
+    .wecom-panel {
         background: #fff;
-        transition: all 0.2s;
-        cursor: pointer;
-    }
-    .account-card:hover {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        border-color: #cbd5e1;
-    }
-    .account-card.selected {
-        border-color: #0ea5e9;
-        box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
-    }
-    .status-badge {
-        font-size: 11px;
-        padding: 2px 8px;
+        border: 1px solid #e5e7eb;
         border-radius: 12px;
-    }
-    .status-online { background: #d1fae5; color: #059669; }
-    .status-offline { background: #f1f5f9; color: #64748b; }
-    .status-logging { background: #fef3c7; color: #d97706; }
-    .customer-item {
-        padding: 12px 16px;
-        border-bottom: 1px solid #f1f5f9;
-        cursor: pointer;
-        transition: background 0.15s;
-    }
-    .customer-item:hover {
-        background: #f8fafc;
-    }
-    .customer-item.selected {
-        background: #eff6ff;
-    }
-    .avatar-placeholder {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-weight: 600;
-        font-size: 14px;
-    }
-    .chat-bubble {
-        max-width: 70%;
-        padding: 10px 14px;
-        border-radius: 12px;
-        margin-bottom: 8px;
-        word-break: break-word;
-    }
-    .chat-bubble.sent {
-        background: #0ea5e9;
-        color: white;
-        margin-left: auto;
-    }
-    .chat-bubble.received {
-        background: #f1f5f9;
-        color: #334155;
-    }
-    .chat-input-area {
-        position: sticky;
-        bottom: 0;
-        background: #fff;
-        padding: 16px;
-        border-top: 1px solid #e2e8f0;
-    }
-    .panel {
-        background: #fff;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        height: calc(100vh - 120px);
         display: flex;
         flex-direction: column;
+        overflow: hidden;
     }
     .panel-header {
-        padding: 16px;
-        border-bottom: 1px solid #e2e8f0;
+        padding: 14px 18px;
+        border-bottom: 1px solid #f1f5f9;
         display: flex;
-        justify-content: space-between;
         align-items: center;
+        justify-content: space-between;
+        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+    }
+    .panel-header h6 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        color: #1e293b;
     }
     .panel-body {
         flex: 1;
         overflow-y: auto;
         padding: 12px;
     }
-    .empty-state {
-        text-align: center;
-        padding: 60px 20px;
-        color: #94a3b8;
-    }
-    .empty-state i {
-        font-size: 64px;
-        margin-bottom: 16px;
-        color: #cbd5e1;
-    }
-    .tab-btn {
-        border: none;
-        background: transparent;
-        padding: 8px 16px;
+
+    /* 账号卡片 */
+    .account-card {
+        padding: 12px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        margin-bottom: 10px;
         cursor: pointer;
-        border-bottom: 2px solid transparent;
-        transition: all 0.2s;
-        color: #64748b;
+        transition: all .15s;
+        background: #fff;
     }
-    .tab-btn:hover {
+    .account-card:hover { border-color: #3b82f6; box-shadow: 0 2px 8px rgba(59,130,246,.12); }
+    .account-card.selected {
+        border-color: #3b82f6;
+        background: #eff6ff;
+    }
+    .account-name {
+        font-weight: 600;
+        color: #1e293b;
+        font-size: 14px;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .account-meta { font-size: 12px; color: #64748b; }
+    .status-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        display: inline-block;
+    }
+    .status-online { background: #10b981; }
+    .status-offline { background: #94a3b8; }
+    .status-pending { background: #f59e0b; }
+    .status-scanned { background: #3b82f6; }
+
+    /* 按钮 */
+    .btn {
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        border: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .btn-primary { background: #3b82f6; color: #fff; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: #e2e8f0; color: #334155; }
+    .btn-secondary:hover { background: #cbd5e1; }
+    .btn-danger { background: #ef4444; color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-outline {
+        background: #fff;
+        color: #3b82f6;
+        border: 1px solid #3b82f6;
+    }
+    .btn-outline:hover { background: #eff6ff; }
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+
+    /* 二维码卡片 */
+    .qrcode-card {
+        text-align: center;
+        padding: 20px 16px;
+        border: 2px dashed #cbd5e1;
+        border-radius: 12px;
+        margin-bottom: 14px;
+        background: #f8fafc;
+    }
+    .qrcode-card img {
+        max-width: 220px;
+        border-radius: 8px;
+        background: #fff;
+        padding: 10px;
+    }
+    .qrcode-status {
+        margin-top: 12px;
+        font-size: 13px;
+        font-weight: 500;
+    }
+    .status-waiting { color: #f59e0b; }
+    .status-scanned-info { color: #3b82f6; }
+    .status-success-info { color: #10b981; }
+    .status-failed-info { color: #ef4444; }
+
+    /* 联系人/群 */
+    .contact-item {
+        padding: 10px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 4px;
+    }
+    .contact-item:hover { background: #f1f5f9; }
+    .contact-item.selected { background: #dbeafe; }
+    .contact-avatar {
+        width: 36px; height: 36px; border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-weight: 600; font-size: 14px;
+        flex-shrink: 0;
+    }
+    .contact-info { flex: 1; min-width: 0; }
+    .contact-name {
+        font-weight: 500; font-size: 14px; color: #1e293b;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .contact-sub { font-size: 12px; color: #64748b; }
+
+    /* 聊天气泡 */
+    .chat-bubble {
+        max-width: 80%;
+        padding: 8px 12px;
+        border-radius: 10px;
+        margin-bottom: 8px;
+        word-break: break-word;
+        font-size: 14px;
+    }
+    .chat-bubble.sent {
+        background: #3b82f6;
+        color: #fff;
+        margin-left: auto;
+    }
+    .chat-bubble.received {
+        background: #f1f5f9;
         color: #334155;
     }
-    .tab-btn.active {
-        color: #0ea5e9;
-        border-bottom-color: #0ea5e9;
-    }
-    .lib-info-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+    .chat-input {
         padding: 12px;
+        border-top: 1px solid #e5e7eb;
+        background: #fff;
+        display: flex;
+        gap: 8px;
+    }
+    .chat-input input {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        font-size: 14px;
+        outline: none;
+    }
+    .chat-input input:focus { border-color: #3b82f6; }
+
+    /* 标签页 */
+    .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        background: #f1f5f9;
         border-radius: 8px;
         margin-bottom: 12px;
     }
-    .lib-tag {
+    .tab {
+        flex: 1;
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        text-align: center;
+        color: #64748b;
+    }
+    .tab.active {
+        background: #fff;
+        color: #1e293b;
+        box-shadow: 0 1px 3px rgba(0,0,0,.08);
+        font-weight: 500;
+    }
+
+    /* 协议信息 */
+    .protocol-badge {
         display: inline-block;
         padding: 2px 8px;
-        border-radius: 12px;
-        font-size: 10px;
-        margin-right: 4px;
-        margin-bottom: 4px;
+        border-radius: 10px;
+        font-size: 11px;
+        background: #e0e7ff;
+        color: #4338ca;
+        font-weight: 500;
     }
-    .lib-tag.available {
-        background: rgba(255,255,255,0.3);
+
+    /* 空状态 */
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #94a3b8;
     }
-    .lib-tag.unavailable {
-        background: rgba(0,0,0,0.2);
+    .empty-state i {
+        font-size: 48px;
+        display: block;
+        margin-bottom: 10px;
+        opacity: .5;
     }
-    .list-item {
-        padding: 12px;
-        border-bottom: 1px solid #f1f5f9;
+
+    /* 响应式 */
+    @media (max-width: 1200px) {
+        .wecom-layout { grid-template-columns: 280px 1fr 1fr; }
     }
-    .list-item:hover {
-        background: #f8fafc;
+    @media (max-width: 900px) {
+        .wecom-layout { grid-template-columns: 1fr; height: auto; }
     }
 </style>
 
-<div class="container-fluid">
-    <div class="row g-3 mb-3">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h5 class="card-title mb-0"><i class="bi bi-wechat me-2"></i>企业微信超级封装</h5>
-                            <p class="text-muted small mb-0">基于 wxwork_pc_api 和 ntwork</p>
-                        </div>
-                        <button class="btn btn-sm btn-outline-primary" onclick="refreshLibsInfo()">
-                            <i class="bi bi-info-circle me-1"></i> 查看库信息
-                        </button>
-                    </div>
-                </div>
-            </div>
+<div class="container-fluid py-3">
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h4 class="mb-0"><i class="bi bi-wechat text-primary me-2"></i>企业微信账号托管</h4>
+        <div>
+            <span class="protocol-badge" id="protocolBadge">检测中...</span>
+            <button class="btn btn-outline btn-sm ms-2" onclick="showProtocolInfo()">
+                <i class="bi bi-info-circle"></i> 协议信息
+            </button>
         </div>
     </div>
 
-    <div class="row g-3">
-        <!-- 左侧：账号管理 -->
-        <div class="col-2">
-            <div class="panel">
-                <div class="panel-header">
-                    <h6 class="mb-0"><i class="bi bi-robot me-2"></i>托管账号</h6>
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-primary" onclick="showAddAccountModal()">
-                            <i class="bi bi-plus-lg"></i>
-                        </button>
-                        <button class="btn btn-sm btn-success" onclick="quickAddAccount()">
-                            <i class="bi bi-qr-code-scan"></i> 扫码添加
-                        </button>
-                    </div>
-                </div>
-                <div class="panel-body" id="accountList">
-                    <div class="text-center py-4">
-                        <div class="spinner-border text-primary"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 中间：多功能面板 -->
-        <div class="col-4">
-            <div class="panel">
-                <div class="panel-header" style="padding: 0;">
-                    <div class="d-flex">
-                        <button class="tab-btn active" onclick="switchTab('customers')" id="tab-customers">
-                            <i class="bi bi-people me-1"></i>客户
-                        </button>
-                        <button class="tab-btn" onclick="switchTab('inner-contacts')" id="tab-inner-contacts">
-                            <i class="bi bi-person-workspace me-1"></i>内部
-                        </button>
-                        <button class="tab-btn" onclick="switchTab('external-contacts')" id="tab-external-contacts">
-                            <i class="bi bi-person-lines-fill me-1"></i>外部
-                        </button>
-                        <button class="tab-btn" onclick="switchTab('rooms')" id="tab-rooms">
-                            <i class="bi bi-people-fill me-1"></i>群聊
-                        </button>
-                    </div>
-                    <button class="btn btn-sm btn-outline-secondary me-2" onclick="refreshCurrentTab()">
+    <div class="wecom-layout">
+        <!-- 左：账号管理 -->
+        <div class="wecom-panel">
+            <div class="panel-header">
+                <h6><i class="bi bi-robot me-1"></i>托管账号</h6>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary btn-sm" onclick="startNewLogin()">
+                        <i class="bi bi-plus-lg"></i> 添加账号
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="loadAccounts()">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
                 </div>
-                <div class="panel-body" id="panelBody">
-                    <div class="empty-state">
-                        <i class="bi bi-person-lines-fill"></i>
-                        <div>请先选择一个账号</div>
-                    </div>
+            </div>
+            <div class="panel-body" id="accountsPanel">
+                <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+            </div>
+        </div>
+
+        <!-- 中：二维码/联系人 -->
+        <div class="wecom-panel">
+            <div class="panel-header">
+                <h6 id="middlePanelTitle"><i class="bi bi-qr-code me-1"></i>扫码登录</h6>
+                <span class="protocol-badge" id="sessionBadge" style="display:none;"></span>
+            </div>
+            <div class="panel-body" id="middlePanel">
+                <div class="empty-state">
+                    <i class="bi bi-qr-code"></i>
+                    <div style="font-size: 14px;">点击「添加账号」开始托管</div>
+                    <div style="font-size: 12px; margin-top: 6px;">模拟 iPad 企微 APP 扫码登录</div>
                 </div>
             </div>
         </div>
 
-        <!-- 右侧：聊天区域 -->
-        <div class="col-6">
-            <div class="panel">
-                <div class="panel-header" id="chatHeader">
-                    <h6 class="mb-0"><i class="bi bi-chat-dots me-2"></i>聊天</h6>
-                </div>
-                <div class="panel-body" id="chatArea" style="display: flex; flex-direction: column;">
-                    <div class="empty-state" id="chatEmptyState">
-                        <i class="bi bi-chat-dots"></i>
-                        <div>请选择一个客户开始聊天</div>
-                    </div>
-                    <div id="chatMessages" style="display: none; flex: 1; overflow-y: auto; padding: 16px;"></div>
-                    <div class="chat-input-area" id="chatInputArea" style="display: none;">
-                        <div class="input-group">
-                            <input type="text" class="form-control" id="messageInput" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
-                            <button class="btn btn-primary" onclick="sendMessage()">发送</button>
-                        </div>
-                    </div>
+        <!-- 右：消息/聊天 -->
+        <div class="wecom-panel">
+            <div class="panel-header">
+                <h6 id="chatPanelTitle"><i class="bi bi-chat-dots me-1"></i>消息</h6>
+            </div>
+            <div class="panel-body" id="chatPanel" style="display: flex; flex-direction: column;">
+                <div class="empty-state" style="flex: 1;">
+                    <i class="bi bi-chat-dots"></i>
+                    <div style="font-size: 14px;">请选择联系人开始聊天</div>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 添加账号模态框 -->
-<div class="modal fade" id="addAccountModal" tabindex="-1">
+<!-- 协议信息 Modal -->
+<div class="modal fade" id="protocolModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">添加企业微信账号</h5>
+                <h5 class="modal-title">协议信息</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label">账号名称 *</label>
-                    <input type="text" class="form-control" id="accountName" placeholder="给这个账号起个名字，例如：客服1号">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">真实姓名</label>
-                    <input type="text" class="form-control" id="realName" placeholder="企业微信上的真实姓名">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">备注</label>
-                    <input type="text" class="form-control" id="accountAlias" placeholder="其他备注信息">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="addAccount()">添加</button>
+            <div class="modal-body" id="protocolModalBody">
+                <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 扫码登录模态框 -->
-<div class="modal fade" id="loginModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-qr-code-scan me-2"></i>企业微信扫码登录</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="stopLoginPolling()"></button>
-            </div>
-            <div class="modal-body text-center">
-                <div class="mb-3">
-                    <div id="qrCodeContainer" style="width: 256px; height: 256px; margin: 0 auto; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
-                        <div class="spinner-border text-primary"></div>
-                    </div>
-                </div>
-                <div id="loginStatus" class="mb-2">
-                    <span class="spinner-border spinner-border-sm text-primary me-2"></span>
-                    正在生成二维码...
-                </div>
-                <div id="loginTip" class="text-muted small">
-                    请使用企业微信扫描二维码登录
-                </div>
-                <div id="loginUserInfo" class="mt-3" style="display: none;">
-                    <div class="alert alert-success">
-                        <i class="bi bi-check-circle me-2"></i>
-                        <span id="loginUserName"></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 库信息模态框 -->
-<div class="modal fade" id="libsInfoModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-cpu me-2"></i>超级封装信息</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="libsInfoContent">
-                <div class="text-center py-4">
-                    <div class="spinner-border text-primary"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-{% endblock %}
-
-{% block scripts %}
 <script>
-let currentAccount = null;
-let currentCustomer = null;
-let currentTab = 'customers';
-let accounts = [];
-let addAccountModal = null;
-let loginModal = null;
-let libsInfoModal = null;
-let libsInfo = null;
+// ============================================================
+// 状态管理
+// ============================================================
+let state = {
+    accounts: [],
+    currentAccountId: null,
+    currentSession: null,     // { session_id, qrcode, protocol, status, account_id?, contacts?, rooms? }
+    pollingInterval: null,
+    pollingSessionId: null,
+    currentTab: 'contacts',   // contacts | rooms
+    currentContact: null,     // 当前选中联系人
+    messages: {},             // conversation_id -> [ {type, content} ]
+    protocols: null,
+    defaultProtocol: 'mock',
+};
 
+// ============================================================
+// 初始化
+// ============================================================
 $(document).ready(function() {
-    addAccountModal = new bootstrap.Modal(document.getElementById('addAccountModal'));
-    loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
-    libsInfoModal = new bootstrap.Modal(document.getElementById('libsInfoModal'));
+    loadProtocolInfo();
     loadAccounts();
-    loadLibsInfo();
 });
 
-function switchTab(tab) {
-    currentTab = tab;
-    
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    document.getElementById(`tab-${tab}`).classList.add('active');
-    
-    refreshCurrentTab();
+// ============================================================
+// 协议信息
+// ============================================================
+function loadProtocolInfo() {
+    $.get('/admin/wecom-scrm/api/protocols', function(res) {
+        if (res && res.success) {
+            state.protocols = res.data.protocols;
+            state.defaultProtocol = res.data.default;
+            updateProtocolBadge();
+        }
+    });
+}
+function updateProtocolBadge() {
+    const name = state.defaultProtocol;
+    const label = { 'ipad': 'iPad 协议（推荐）', 'mock': '模拟协议（未安装 playwright）', 'hook': 'Hook 协议（单账号）' }[name] || name;
+    $('#protocolBadge').text(label);
+}
+function showProtocolInfo() {
+    $('#protocolModal').modal('show');
+    $.get('/admin/wecom-scrm/api/protocols', function(res) {
+        if (!res || !res.success) return;
+        const items = res.data.protocols;
+        let html = '<div class="alert alert-info small mb-3">';
+        html += '<i class="bi bi-lightbulb me-2"></i>';
+        html += '<strong>推荐使用 iPad 协议</strong>：纯代码模拟 iPad 浏览器扫码登录，支持无限并发账号，';
+        html += '无需安装企业微信客户端。需要 <code>pip install playwright && playwright install chromium</code>。';
+        html += '</div>';
+        items.forEach(function(p) {
+            html += '<div class="card mb-2"><div class="card-body">';
+            html += '<div class="d-flex justify-content-between align-items-center">';
+            html += '<div><strong>' + p.label + '</strong>';
+            html += p.available ? ' <span class="badge bg-success ms-1">可用</span>' : ' <span class="badge bg-secondary">不可用</span>';
+            html += '</div></div>';
+            html += '<div class="small text-muted mt-1">' + p.description + '</div>';
+            html += '</div></div>';
+        });
+        html += '<div class="small text-muted mt-2">系统统计：' + JSON.stringify(res.data.stats || {}) + '</div>';
+        $('#protocolModalBody').html(html);
+    });
 }
 
-function refreshCurrentTab() {
-    switch(currentTab) {
-        case 'customers':
-            loadCustomers();
-            break;
-        case 'inner-contacts':
-            loadInnerContacts();
-            break;
-        case 'external-contacts':
-            loadExternalContacts();
-            break;
-        case 'rooms':
-            loadRooms();
-            break;
-    }
-}
-
+// ============================================================
+// 账号列表
+// ============================================================
 function loadAccounts() {
-    $.get('/admin/wecom-scrm/api/accounts', function(data) {
-        if (data.success) {
-            accounts = data.data;
+    $.get('/admin/wecom-scrm/api/accounts', function(res) {
+        if (res && res.success) {
+            state.accounts = res.data || [];
             renderAccounts();
         }
     });
 }
-
 function renderAccounts() {
-    const container = document.getElementById('accountList');
-    if (accounts.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state" style="padding: 40px 16px;">
-                <i class="bi bi-robot"></i>
-                <div class="mt-3">还没有托管账号</div>
-                <button class="btn btn-primary btn-sm mt-2" onclick="showAddAccountModal()">添加账号</button>
-            </div>
-        `;
+    const container = document.getElementById('accountsPanel');
+    if (!state.accounts || state.accounts.length === 0) {
+        container.innerHTML = '<div class="empty-state">'
+            + '<i class="bi bi-robot"></i>'
+            + '<div style="font-size: 14px;">还没有托管账号</div>'
+            + '<button class="btn btn-primary btn-sm mt-3" onclick="startNewLogin()">'
+            + '<i class="bi bi-plus-lg me-1"></i>添加账号</button>'
+            + '</div>';
         return;
     }
-
-    container.innerHTML = accounts.map(account => `
-        <div class="account-card ${currentAccount && currentAccount.id === account.id ? 'selected' : ''}" 
-             onclick="selectAccount(${account.id})">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-                <div>
-                    <div class="fw-semibold">${escapeHtml(account.account_name)}</div>
-                    ${account.real_name ? `<div class="text-muted small">${escapeHtml(account.real_name)}</div>` : ''}
+    container.innerHTML = state.accounts.map(function(acc) {
+        const status = acc.status || 'offline';
+        const statusText = {
+            'online': '已在线', 'offline': '离线', 'pending': '扫码中',
+            'scanned': '已扫码', 'success': '登录成功', 'failed': '失败'
+        }[status] || status;
+        const statusCls = {
+            'online': 'status-online', 'pending': 'status-pending',
+            'scanned': 'status-scanned'
+        }[status] || 'status-offline';
+        const isSelected = state.currentAccountId === acc.id;
+        return `
+            <div class="account-card ${isSelected ? 'selected' : ''}" onclick="selectAccount(${acc.id})">
+                <div class="account-name">
+                    <span class="status-dot ${statusCls}"></span>
+                    ${escapeHtml(acc.account_name)}
                 </div>
-                <span class="status-badge status-${account.status}">
-                    ${account.status === 'online' ? '在线' : account.status === 'logging' ? '登录中' : '离线'}
-                </span>
-            </div>
-            <div class="d-flex gap-2 justify-content-between align-items-center">
-                <div class="small text-muted">
-                    <span><i class="bi bi-person-check me-1"></i>${account.customer_count || 0}</span>
-                    <span class="ms-2"><i class="bi bi-chat-text me-1"></i>${account.message_count || 0}</span>
-                </div>
-                <div class="d-flex gap-1">
-                    ${account.status !== 'online' ? `
-                        <button class="btn btn-sm btn-success" onclick="event.stopPropagation(); startLogin(${account.id})">
-                            <i class="bi bi-play-circle"></i> 登录
-                        </button>
-                    ` : ''}
-                    <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); deleteAccount(${account.id})">
+                <div class="account-meta">${escapeHtml(acc.real_name || acc.wecom_alias || '—')}</div>
+                <div class="d-flex gap-1 mt-2">
+                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); selectAccount(${acc.id}); reloadAccountData(${acc.id})">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteAccount(${acc.id})">
                         <i class="bi bi-trash"></i>
                     </button>
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
-function selectAccount(accountId) {
-    currentAccount = accounts.find(a => a.id === accountId);
-    renderAccounts();
-    refreshCurrentTab();
-    currentCustomer = null;
-    resetChatArea();
-}
-
-function loadCustomers() {
-    if (!currentAccount) {
-        showEmptyState('请先选择一个账号');
-        return;
-    }
-    
-    const container = document.getElementById('panelBody');
-    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
-    
-    $.get(`/admin/wecom-scrm/api/accounts/${currentAccount.id}/customers`, function(data) {
-        if (data.success) {
-            const customers = data.data;
-            renderCustomerList(customers);
-        }
-    });
-}
-
-function renderCustomerList(customers) {
-    const container = document.getElementById('panelBody');
-    if (customers.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state" style="padding: 40px 16px;">
-                <i class="bi bi-person-lines-fill"></i>
-                <div>暂无客户</div>
-            </div>
-        `;
-        return;
-    }
-
-    container.innerHTML = customers.map(customer => {
-        const initial = (customer.name || '?').charAt(0).toUpperCase();
-        return `
-            <div class="customer-item ${currentCustomer && currentCustomer.id === customer.id ? 'selected' : ''}"
-                 onclick="selectCustomer(${customer.id})">
-                <div class="d-flex gap-3 align-items-center">
-                    <div class="avatar-placeholder">${initial}</div>
-                    <div class="flex-grow-1 overflow-hidden">
-                        <div class="fw-semibold text-truncate">${escapeHtml(customer.name)}</div>
-                        <div class="text-muted small text-truncate">
-                            ${customer.corp_name || customer.position || '暂无信息'}
-                        </div>
-                    </div>
                 </div>
             </div>
         `;
     }).join('');
 }
+function selectAccount(id) {
+    state.currentAccountId = id;
+    renderAccounts();
+    // 显示账号信息 + 尝试加载联系人（如果有活跃 session）
+    const acc = state.accounts.find(function(a) { return a.id === id; });
+    if (!acc) return;
+    $('#middlePanelTitle').html('<i class="bi bi-person-circle me-1"></i>' + escapeHtml(acc.account_name));
+    $('#sessionBadge').text(acc.status || 'offline').show();
 
-function loadInnerContacts() {
-    const container = document.getElementById('panelBody');
-    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
-    
-    $.get('/admin/wecom-scrm/api/super/contacts/inner', function(data) {
-        if (data.success) {
-            const contacts = data.data;
-            renderSimpleList(contacts, '内部联系人', 'person-workspace');
-        }
-    });
-}
-
-function loadExternalContacts() {
-    const container = document.getElementById('panelBody');
-    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
-    
-    $.get('/admin/wecom-scrm/api/super/contacts/external', function(data) {
-        if (data.success) {
-            const contacts = data.data;
-            renderSimpleList(contacts, '外部联系人', 'person-lines-fill');
-        }
-    });
-}
-
-function loadRooms() {
-    const container = document.getElementById('panelBody');
-    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
-    
-    $.get('/admin/wecom-scrm/api/super/rooms', function(data) {
-        if (data.success) {
-            const rooms = data.data;
-            renderSimpleList(rooms, '群聊', 'people-fill');
-        }
-    });
-}
-
-function renderSimpleList(items, title, icon) {
-    const container = document.getElementById('panelBody');
-    if (items.length === 0) {
-        showEmptyState(`暂无${title}`);
-        return;
-    }
-
-    container.innerHTML = items.map(item => `
-        <div class="list-item">
-            <div class="d-flex gap-3 align-items-center">
-                <div class="avatar-placeholder" style="width: 32px; height: 32px; font-size: 12px;">
-                    <i class="bi bi-${icon}"></i>
-                </div>
-                <div class="flex-grow-1 overflow-hidden">
-                    <div class="fw-semibold text-truncate">${escapeHtml(item.name || item.title || '未知')}</div>
-                    <div class="text-muted small text-truncate">
-                        ${item.corp_name || item.user_id || item.member_count ? `${item.member_count || ''}人` : '暂无信息'}
-                    </div>
-                </div>
+    if (acc.has_active_session && acc.session_id) {
+        // 已有活跃 session，直接加载联系人
+        state.currentSession = { session_id: acc.session_id, account_id: acc.id };
+        loadContactsForSession(acc.session_id);
+    } else {
+        // 没有活跃 session，显示重新登录按钮
+        $('#middlePanel').html(`
+            <div class="empty-state">
+                <i class="bi bi-person-lock"></i>
+                <div style="font-size: 14px;">账号：${escapeHtml(acc.account_name)}</div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 6px;">当前状态：${escapeHtml(acc.status || '离线')}</div>
+                <button class="btn btn-primary btn-sm mt-3" onclick="startNewLoginForAccount(${acc.id})">
+                    <i class="bi bi-qr-code me-1"></i>重新扫码登录
+                </button>
             </div>
-        </div>
-    `).join('');
-}
-
-function showEmptyState(message) {
-    const container = document.getElementById('panelBody');
-    container.innerHTML = `
-        <div class="empty-state">
-            <i class="bi bi-inbox"></i>
-            <div>${message}</div>
-        </div>
-    `;
-}
-
-function selectCustomer(customerId) {
-    if (currentTab !== 'customers') return;
-    
-    const customers = []; 
-    currentCustomer = customers.find(c => c.id === customerId);
-    refreshCurrentTab();
-    renderChat();
-}
-
-function renderChat() {
-    if (!currentCustomer) {
-        resetChatArea();
-        return;
+        `);
     }
-
-    document.getElementById('chatHeader').innerHTML = `
-        <h6 class="mb-0"><i class="bi bi-person-circle me-2"></i>${escapeHtml(currentCustomer.name)}</h6>
-    `;
-    document.getElementById('chatEmptyState').style.display = 'none';
-    document.getElementById('chatMessages').style.display = 'block';
-    document.getElementById('chatInputArea').style.display = 'block';
-
-    const chatArea = document.getElementById('chatMessages');
-    chatArea.innerHTML = `
-        <div class="empty-state" style="padding: 40px 16px;">
-            <i class="bi bi-chat-quote"></i>
-            <div class="mt-2 text-muted small">开始和 ${escapeHtml(currentCustomer.name)} 对话</div>
-        </div>
-    `;
+    clearChat();
 }
-
-function resetChatArea() {
-    document.getElementById('chatHeader').innerHTML = `
-        <h6 class="mb-0"><i class="bi bi-chat-dots me-2"></i>聊天</h6>
-    `;
-    document.getElementById('chatEmptyState').style.display = 'block';
-    document.getElementById('chatMessages').style.display = 'none';
-    document.getElementById('chatInputArea').style.display = 'none';
-}
-
-function handleKeyPress(e) {
-    if (e.key === 'Enter') {
-        sendMessage();
-    }
-}
-
-function sendMessage() {
-    if (!currentCustomer) return;
-    
-    const input = document.getElementById('messageInput');
-    const content = input.value.trim();
-    if (!content) return;
-
-    safeAjax({
-        url: `/admin/wecom-scrm/api/customers/${currentCustomer.id}/messages`,
-        method: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify({ content: content }),
-        success: function(data) {
-            if (data.success) {
-                input.value = '';
-                addChatMessage(content, 'sent');
-                showToast('消息发送成功', 'success');
-            } else {
-                showToast(data.message || '发送失败', 'danger');
-            }
-        }
-    });
-}
-
-function addChatMessage(content, type) {
-    const chatArea = document.getElementById('chatMessages');
-    if (chatArea.querySelector('.empty-state')) {
-        chatArea.innerHTML = '';
-    }
-
-    const bubble = document.createElement('div');
-    bubble.className = `chat-bubble ${type}`;
-    bubble.textContent = content;
-    chatArea.appendChild(bubble);
-    chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-function showAddAccountModal() {
-    document.getElementById('accountName').value = '';
-    document.getElementById('realName').value = '';
-    document.getElementById('accountAlias').value = '';
-    addAccountModal.show();
-}
-
-function addAccount() {
-    const accountName = document.getElementById('accountName').value.trim();
-    if (!accountName) {
-        showToast('请填写账号名称', 'warning');
-        return;
-    }
-
-    safeAjax({
-        url: '/admin/wecom-scrm/api/accounts',
-        method: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify({
-            account_name: accountName,
-            real_name: document.getElementById('realName').value.trim(),
-            wecom_alias: document.getElementById('accountAlias').value.trim()
-        }),
-        success: function(data) {
-            if (data.success) {
-                addAccountModal.hide();
-                loadAccounts();
-                showToast('账号添加成功', 'success');
-            } else {
-                showToast(data.message || '添加失败', 'danger');
-            }
-        }
-    });
-}
-
-function deleteAccount(accountId) {
+function deleteAccount(id) {
     if (!confirm('确定要删除这个账号吗？')) return;
-
-    safeAjax({
-        url: `/admin/wecom-scrm/api/accounts/${accountId}`,
+    $.ajax({
+        url: '/admin/wecom-scrm/api/accounts/' + id,
         method: 'DELETE',
-        success: function(data) {
-            if (data.success) {
-                if (currentAccount && currentAccount.id === accountId) {
-                    currentAccount = null;
-                    currentCustomer = null;
-                    resetChatArea();
+        success: function(res) {
+            if (res && res.success) {
+                if (state.currentAccountId === id) {
+                    state.currentAccountId = null;
+                    clearChat();
                 }
                 loadAccounts();
-                showToast('账号已删除', 'success');
+                showToast('已删除', 'success');
             } else {
-                showToast(data.message || '删除失败', 'danger');
+                showToast(res.message || '删除失败', 'danger');
             }
         }
     });
 }
 
-function startLogin(accountId) {
-    const account = accounts.find(a => a.id === accountId);
-    if (!account) return;
+// ============================================================
+// 扫码登录流程
+// ============================================================
+function startNewLogin() {
+    startNewLoginForAccount(null);
+}
+function startNewLoginForAccount(accountId) {
+    stopPolling();
+    $('#middlePanelTitle').html('<i class="bi bi-qr-code me-1"></i>扫码登录');
+    $('#sessionBadge').hide();
+    $('#middlePanel').html(`
+        <div class="qrcode-card">
+            <div style="padding: 40px 0;"><div class="spinner-border text-primary"></div></div>
+            <div class="qrcode-status status-waiting">正在生成二维码...</div>
+        </div>
+    `);
 
-    loginModal.show();
-    document.getElementById('qrCodeContainer').innerHTML = '<div class="spinner-border text-primary"></div>';
-    document.getElementById('loginStatus').textContent = '正在准备登录...';
+    const body = { protocol: state.defaultProtocol };
+    if (accountId) body.account_id = accountId;
 
-    safeAjax({
-        url: `/admin/wecom-scrm/api/accounts/${accountId}/start-login`,
+    $.ajax({
+        url: '/admin/wecom-scrm/api/login/start',
         method: 'POST',
-        success: function(data) {
-            if (data.success) {
-                if (data.data.libs_info) {
-                    libsInfo = data.data.libs_info;
-                }
-                document.getElementById('loginStatus').textContent = '请在企业微信中登录';
-                document.getElementById('qrCodeContainer').innerHTML = `
-                    <div class="text-center">
-                        <i class="bi bi-wechat" style="font-size: 80px; color: #07c160;"></i>
-                        <div class="mt-3 text-muted">请打开企业微信客户端进行登录</div>
-                        ${data.data.mode ? `<div class="small text-muted mt-2">当前模式: ${data.data.mode}</div>` : ''}
+        contentType: 'application/json',
+        data: JSON.stringify(body),
+        success: function(res) {
+            if (!res || !res.success) {
+                $('#middlePanel').html(`
+                    <div class="empty-state">
+                        <i class="bi bi-exclamation-triangle text-warning"></i>
+                        <div style="font-size: 14px;">${escapeHtml(res && res.message ? res.message : '登录失败')}</div>
+                        <button class="btn btn-primary btn-sm mt-3" onclick="startNewLogin()">重试</button>
                     </div>
-                `;
-                pollLoginStatus(accountId);
-            } else {
-                document.getElementById('loginStatus').textContent = data.message || '启动登录失败';
-                showToast(data.message || '启动登录失败', 'danger');
+                `);
+                return;
             }
+            const sid = res.data.session_id;
+            const qrcode = res.data.qrcode;
+            const protocol = res.data.protocol;
+            state.currentSession = {
+                session_id: sid,
+                qrcode: qrcode,
+                protocol: protocol,
+                status: 'pending',
+                contacts: [],
+                rooms: [],
+            };
+
+            // 展示二维码
+            if (qrcode) {
+                $('#middlePanel').html(`
+                    <div class="qrcode-card">
+                        <img src="${qrcode}" alt="扫码登录" style="max-width: 220px;">
+                        <div class="qrcode-status status-waiting" id="qrStatus">请使用企业微信扫码登录</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
+                            协议：${escapeHtml(protocol)} · Session: ${escapeHtml(sid.substring(0, 8))}...
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-center">
+                        <button class="btn btn-secondary btn-sm" onclick="cancelLogin()">取消</button>
+                    </div>
+                `);
+            } else {
+                // hook 协议没有二维码，直接提示
+                $('#middlePanel').html(`
+                    <div class="qrcode-card">
+                        <i class="bi bi-wechat" style="font-size: 80px; color: #07c160;"></i>
+                        <div class="qrcode-status status-waiting mt-3">请在企业微信客户端完成登录</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Hook 协议 · Session: ${escapeHtml(sid.substring(0, 8))}...</div>
+                    </div>
+                    <div class="d-flex justify-content-center">
+                        <button class="btn btn-secondary btn-sm" onclick="cancelLogin()">取消</button>
+                    </div>
+                `);
+            }
+
+            // 开始轮询
+            startPolling(sid);
+        },
+        error: function() {
+            $('#middlePanel').html('<div class="empty-state"><i class="bi bi-exclamation-triangle text-warning"></i><div style="font-size: 14px;">网络错误</div></div>');
         }
     });
 }
-
-function quickAddAccount() {
-    loginModal.show();
-    document.getElementById('qrCodeContainer').innerHTML = '<div class="spinner-border text-primary"></div>';
-    document.getElementById('loginStatus').innerHTML = '<span class="spinner-border spinner-border-sm text-primary me-2"></span>正在生成二维码...';
-    document.getElementById('loginTip').style.display = 'block';
-    document.getElementById('loginUserInfo').style.display = 'none';
-
-    // 使用真实的扫码登录API
-    safeAjax({
-        url: '/admin/wecom-scrm/api/qrlogin/create',
-        method: 'GET',
-        success: function(data) {
-            if (data.success) {
-                // 显示二维码
-                document.getElementById('qrCodeContainer').innerHTML = `<img src="${data.data.qrcode}" alt="登录二维码" style="max-width: 240px; border-radius: 8px;">`;
-                document.getElementById('loginStatus').innerHTML = '请使用企业微信扫描二维码';
-                document.getElementById('loginTip').textContent = '二维码有效期5分钟';
-                
-                // 开始轮询扫码状态
-                startLoginPolling(data.data.session_id);
-            } else {
-                document.getElementById('loginStatus').textContent = data.message || '生成二维码失败';
-                showToast(data.message || '生成二维码失败', 'danger');
+function startPolling(sid) {
+    state.pollingSessionId = sid;
+    state.pollingInterval = setInterval(function() {
+        if (state.pollingSessionId !== sid) return;
+        $.get('/admin/wecom-scrm/api/login/status/' + sid, function(res) {
+            if (!res || !res.success) return;
+            const status = res.data.status;
+            const info = res.data.login_info || {};
+            if (state.currentSession && state.currentSession.session_id === sid) {
+                state.currentSession.status = status;
             }
-        }
-    });
-}
 
-let loginPollingInterval = null;
-let currentLoginSessionId = null;
-
-function startLoginPolling(sessionId) {
-    currentLoginSessionId = sessionId;
-    
-    if (loginPollingInterval) {
-        clearInterval(loginPollingInterval);
-    }
-    
-    loginPollingInterval = setInterval(function() {
-        if (!currentLoginSessionId) return;
-        
-        safeAjax({
-            url: '/admin/wecom-scrm/api/qrlogin/status/' + currentLoginSessionId,
-            method: 'GET',
-            success: function(data) {
-                if (data.success) {
-                    var status = data.data.status;
-                    var statusText = data.data.status_text;
-                    
-                    switch(status) {
-                        case 0: // 等待扫码
-                            document.getElementById('loginStatus').innerHTML = '请使用企业微信扫描二维码';
-                            break;
-                        case 1: // 已扫码
-                            document.getElementById('loginStatus').innerHTML = '<span class="text-warning"><i class="bi bi-check-circle me-2"></i>已扫码，请在手机确认登录</span>';
-                            break;
-                        case 2: // 登录成功
-                            document.getElementById('loginStatus').innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill me-2"></i>登录成功！</span>';
-                            stopLoginPolling();
-                            
-                            // 获取登录结果并创建账号
-                            getLoginResult(currentLoginSessionId);
-                            break;
-                        case 3: // 已过期
-                            document.getElementById('loginStatus').innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-2"></i>二维码已过期</span>';
-                            document.getElementById('loginTip').innerHTML = '<button class="btn btn-sm btn-primary" onclick="quickAddAccount()">刷新二维码</button>';
-                            stopLoginPolling();
-                            break;
-                        case 4: // 登录失败
-                            document.getElementById('loginStatus').innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-2"></i>登录失败</span>';
-                            document.getElementById('loginTip').innerHTML = '<button class="btn btn-sm btn-primary" onclick="quickAddAccount()">重新登录</button>';
-                            stopLoginPolling();
-                            break;
+            if (status === 'pending') {
+                $('#qrStatus').text('请使用企业微信扫码登录').attr('class', 'qrcode-status status-waiting');
+            } else if (status === 'scanned') {
+                $('#qrStatus').text('已扫码，等待确认...').attr('class', 'qrcode-status status-scanned-info');
+            } else if (status === 'success' || status === 'online') {
+                stopPolling();
+                const accName = info.name || info.user_id || '企微账号';
+                $('#qrStatus').text('登录成功：' + accName).attr('class', 'qrcode-status status-success-info');
+                setTimeout(function() {
+                    // 登录成功后切换到数据视图
+                    if (state.currentSession) {
+                        state.currentSession.status = status;
                     }
-                }
+                    loadAccounts();
+                    loadContactsForSession(sid);
+                }, 800);
+            } else if (status === 'expired') {
+                stopPolling();
+                $('#qrStatus').text('二维码已过期').attr('class', 'qrcode-status status-failed-info');
+            } else if (status === 'failed') {
+                stopPolling();
+                $('#qrStatus').text('登录失败：' + (res.data.error_msg || '')).attr('class', 'qrcode-status status-failed-info');
             }
         });
     }, 2000);
 }
-
-function stopLoginPolling() {
-    if (loginPollingInterval) {
-        clearInterval(loginPollingInterval);
-        loginPollingInterval = null;
+function stopPolling() {
+    if (state.pollingInterval) {
+        clearInterval(state.pollingInterval);
+        state.pollingInterval = null;
     }
+    state.pollingSessionId = null;
 }
-
-function getLoginResult(sessionId) {
-    safeAjax({
-        url: '/admin/wecom-scrm/api/qrlogin/result/' + sessionId,
-        method: 'GET',
-        success: function(data) {
-            if (data.success) {
-                var account = data.data.account;
-                var userInfo = data.data.user_info;
-                
-                // 显示成功信息
-                document.getElementById('loginUserInfo').style.display = 'block';
-                document.getElementById('loginUserName').textContent = '登录成功：' + (userInfo.name || '企业微信用户');
-                document.getElementById('loginTip').style.display = 'none';
-                
-                showToast('登录成功！账号已创建', 'success');
-                
-                // 3秒后关闭模态框并刷新账号列表
-                setTimeout(function() {
-                    loginModal.hide();
-                    loadAccounts();
-                }, 2000);
-            } else {
-                showToast(data.message || '获取登录结果失败', 'danger');
-            }
-        }
-    });
-}
-
-function pollLoginStatus(accountId) {
-    const interval = setInterval(() => {
-        safeAjax({
-            url: `/admin/wecom-scrm/api/accounts/${accountId}/login-status`,
-            method: 'GET',
-            success: function(data) {
-                if (data.success) {
-                    if (data.data.status === 'online') {
-                        clearInterval(interval);
-                        loginModal.hide();
-                        loadAccounts();
-                        showToast('登录成功', 'success');
-                    } else if (data.data.status === 'failed') {
-                        clearInterval(interval);
-                        document.getElementById('loginStatus').textContent = '登录失败: ' + (data.data.message || '未知错误');
-                    }
-                }
-            }
+function cancelLogin() {
+    const sid = state.pollingSessionId || (state.currentSession && state.currentSession.session_id);
+    stopPolling();
+    if (sid) {
+        $.ajax({
+            url: '/admin/wecom-scrm/api/login/close/' + sid,
+            method: 'POST',
         });
-    }, 3000);
+    }
+    $('#middlePanel').html(`
+        <div class="empty-state">
+            <i class="bi bi-qr-code"></i>
+            <div style="font-size: 14px;">已取消</div>
+            <button class="btn btn-primary btn-sm mt-3" onclick="startNewLogin()">重新开始</button>
+        </div>
+    `);
 }
 
-function pollQuickAddStatus() {
-    const interval = setInterval(() => {
-        safeAjax({
-            url: '/admin/wecom-scrm/api/accounts/quick-add/status',
-            method: 'GET',
-            success: function(data) {
-                if (data.success) {
-                    if (data.data.status === 'success') {
-                        clearInterval(interval);
-                        loginModal.hide();
-                        loadAccounts();
-                        showToast('账号添加成功', 'success');
-                    } else if (data.data.status === 'failed') {
-                        clearInterval(interval);
-                        document.getElementById('loginStatus').textContent = '添加失败: ' + (data.data.message || '未知错误');
-                    }
-                }
-            }
-        });
-    }, 3000);
-}
+// ============================================================
+// 联系人/群数据
+// ============================================================
+function loadContactsForSession(sid) {
+    if (!sid) return;
+    $('#middlePanelTitle').html('<i class="bi bi-people me-1"></i>联系人 / 群聊');
+    $('#sessionBadge').text('online').show();
+    $('#middlePanel').html('<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>');
 
-function loadLibsInfo() {
-    $.get('/admin/wecom-scrm/api/super/libs-info', function(data) {
-        if (data.success) {
-            libsInfo = data.data;
+    // 并行拉取联系人 + 群
+    $.when(
+        $.get('/admin/wecom-scrm/api/sessions/' + sid + '/contacts'),
+        $.get('/admin/wecom-scrm/api/sessions/' + sid + '/rooms')
+    ).done(function(contactsRes, roomsRes) {
+        const contacts = (contactsRes[0] && contactsRes[0].success && contactsRes[0].data) || [];
+        const rooms = (roomsRes[0] && roomsRes[0].success && roomsRes[0].data) || [];
+        if (state.currentSession) {
+            state.currentSession.contacts = contacts;
+            state.currentSession.rooms = rooms;
         }
+        renderContactList();
+    }).fail(function() {
+        // 可能 cookie 过期，或 mock 模式
+        if (state.currentSession) {
+            state.currentSession.contacts = [];
+            state.currentSession.rooms = [];
+        }
+        renderContactList();
     });
 }
+function reloadAccountData(accountId) {
+    // 对已有账号重新登录获取新 session
+    startNewLoginForAccount(accountId);
+}
+function renderContactList() {
+    const contacts = (state.currentSession && state.currentSession.contacts) || [];
+    const rooms = (state.currentSession && state.currentSession.rooms) || [];
+    const container = document.getElementById('middlePanel');
 
-function refreshLibsInfo() {
-    libsInfoModal.show();
-    const content = document.getElementById('libsInfoContent');
-    content.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
-    
-    $.get('/admin/wecom-scrm/api/super/libs-info', function(data) {
-        if (data.success) {
-            libsInfo = data.data;
-            renderLibsInfo(libsInfo);
+    let tabsHtml = '<div class="tabs">';
+    tabsHtml += '<div class="tab ' + (state.currentTab === 'contacts' ? 'active' : '') + '" onclick="switchTab(\'contacts\')">联系人 (' + contacts.length + ')</div>';
+    tabsHtml += '<div class="tab ' + (state.currentTab === 'rooms' ? 'active' : '') + '" onclick="switchTab(\'rooms\')">群聊 (' + rooms.length + ')</div>';
+    tabsHtml += '</div>';
+
+    let listHtml = '';
+    if (state.currentTab === 'contacts') {
+        if (contacts.length === 0) {
+            listHtml = '<div class="empty-state"><i class="bi bi-person-x"></i><div style="font-size: 13px;">暂无联系人</div><div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">可能需要先扫码登录</div></div>';
+        } else {
+            listHtml = contacts.map(function(c, idx) {
+                const name = c.name || c.user_id || c.conversation_id || ('联系人' + (idx + 1));
+                const initial = String(name).charAt(0).toUpperCase();
+                const convId = c.conversation_id || c.user_id || c.id || name;
+                const isSel = state.currentContact && state.currentContact.conversation_id === convId;
+                return `
+                    <div class="contact-item ${isSel ? 'selected' : ''}" onclick="selectContact('${escapeJs(convId)}', '${escapeJs(name)}')">
+                        <div class="contact-avatar">${escapeHtml(initial)}</div>
+                        <div class="contact-info">
+                            <div class="contact-name">${escapeHtml(name)}</div>
+                            <div class="contact-sub">${escapeHtml(c.corp_name || c.title || '企业微信')}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
-    });
+    } else {
+        if (rooms.length === 0) {
+            listHtml = '<div class="empty-state"><i class="bi bi-people"></i><div style="font-size: 13px;">暂无群聊</div></div>';
+        } else {
+            listHtml = rooms.map(function(r, idx) {
+                const name = r.name || ('群聊' + (idx + 1));
+                const initial = String(name).charAt(0).toUpperCase();
+                const convId = r.conversation_id || r.room_id || r.id || name;
+                const isSel = state.currentContact && state.currentContact.conversation_id === convId;
+                return `
+                    <div class="contact-item ${isSel ? 'selected' : ''}" onclick="selectContact('${escapeJs(convId)}', '${escapeJs(name)}')">
+                        <div class="contact-avatar" style="background: linear-gradient(135deg, #10b981, #059669);">${escapeHtml(initial)}</div>
+                        <div class="contact-info">
+                            <div class="contact-name">${escapeHtml(name)}</div>
+                            <div class="contact-sub">${r.member_count ? r.member_count + ' 人' : '群聊'}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    container.innerHTML = tabsHtml + listHtml;
+}
+function switchTab(tab) {
+    state.currentTab = tab;
+    renderContactList();
+}
+function selectContact(convId, name) {
+    state.currentContact = { conversation_id: convId, name: name };
+    renderContactList();
+    renderChat();
 }
 
-function renderLibsInfo(info) {
-    const content = document.getElementById('libsInfoContent');
-    content.innerHTML = `
-        <div class="lib-info-card">
-            <h6 class="mb-2"><i class="bi bi-magic me-2"></i>超级封装</h6>
-            <div class="mb-2">
-                <small>当前使用: <strong>${info.current || '未初始化'}</strong></small>
-            </div>
-            <div>
-                <span class="lib-tag ${info.available['wxwork_pc_api'] ? 'available' : 'unavailable'}">
-                    wxwork_pc_api ${info.available['wxwork_pc_api'] ? '✓' : '✗'}
-                </span>
-                <span class="lib-tag ${info.available['ntwork'] ? 'available' : 'unavailable'}">
-                    ntwork ${info.available['ntwork'] ? '✓' : '✗'}
-                </span>
-                <span class="lib-tag available">
-                    mock ✓
-                </span>
-            </div>
+// ============================================================
+// 聊天
+// ============================================================
+function renderChat() {
+    if (!state.currentContact) {
+        clearChat();
+        return;
+    }
+    const name = state.currentContact.name;
+    const convId = state.currentContact.conversation_id;
+    const msgs = state.messages[convId] || [];
+
+    let bubbleHtml = '';
+    if (msgs.length === 0) {
+        bubbleHtml = '<div class="empty-state" style="padding: 30px 20px;"><i class="bi bi-chat-quote"></i><div style="font-size: 13px;">开始和 ' + escapeHtml(name) + ' 对话</div></div>';
+    } else {
+        bubbleHtml = msgs.map(function(m) {
+            return '<div class="chat-bubble ' + m.type + '">' + escapeHtml(m.content) + '</div>';
+        }).join('');
+    }
+
+    const chatPanel = document.getElementById('chatPanel');
+    chatPanel.innerHTML = `
+        <div style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; font-weight: 600; font-size: 14px;">
+            <i class="bi bi-person-circle me-1"></i>${escapeHtml(name)}
         </div>
-        
-        <div class="card mt-3">
-            <div class="card-body">
-                <h6 class="card-title"><i class="bi bi-info-circle me-2"></i>使用说明</h6>
-                <ul class="mb-0 small">
-                    <li><strong>wxwork_pc_api:</strong> 功能最强大，需要下载 DLL 文件</li>
-                    <li><strong>ntwork:</strong> 成熟稳定，可通过 pip install ntwork 安装</li>
-                    <li><strong>mock:</strong> 模拟数据，用于开发和测试</li>
-                </ul>
-            </div>
-        </div>
-        
-        <div class="card mt-3">
-            <div class="card-body">
-                <h6 class="card-title"><i class="bi bi-box-arrow-down me-2"></i>安装提示</h6>
-                <div class="small text-muted">
-                    <code>pip install ntwork</code>
-                </div>
-            </div>
+        <div style="flex: 1; overflow-y: auto; padding: 16px;" id="chatMessages">${bubbleHtml}</div>
+        <div class="chat-input">
+            <input type="text" id="msgInput" placeholder="输入消息，回车发送..." onkeypress="handleSendKey(event)">
+            <button class="btn btn-primary" onclick="sendMessage()">发送</button>
         </div>
     `;
+    scrollChatToBottom();
+}
+function clearChat() {
+    const chatPanel = document.getElementById('chatPanel');
+    chatPanel.innerHTML = `
+        <div class="empty-state" style="flex: 1;">
+            <i class="bi bi-chat-dots"></i>
+            <div style="font-size: 14px;">请选择联系人开始聊天</div>
+        </div>
+    `;
+    state.currentContact = null;
+}
+function handleSendKey(e) {
+    if (e.key === 'Enter') sendMessage();
+}
+function sendMessage() {
+    if (!state.currentContact || !state.currentSession) {
+        showToast('请先选择账号和联系人', 'warning');
+        return;
+    }
+    const input = document.getElementById('msgInput');
+    if (!input) return;
+    const content = input.value.trim();
+    if (!content) return;
+
+    const convId = state.currentContact.conversation_id;
+    const sid = state.currentSession.session_id;
+
+    input.value = '';
+
+    // 先本地追加气泡
+    if (!state.messages[convId]) state.messages[convId] = [];
+    state.messages[convId].push({ type: 'sent', content: content });
+    renderChat();
+
+    $.ajax({
+        url: '/admin/wecom-scrm/api/sessions/' + sid + '/send',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            conversation_id: convId,
+            content: content,
+            msg_type: 'text'
+        }),
+        success: function(res) {
+            if (!res || !res.success) {
+                showToast(res && res.message ? res.message : '发送失败', 'danger');
+                // 将发送的消息标记为失败
+                state.messages[convId][state.messages[convId].length - 1].content += '（发送失败）';
+                renderChat();
+            } else {
+                showToast('已发送', 'success');
+            }
+        },
+        error: function() {
+            showToast('网络错误', 'danger');
+        }
+    });
+}
+function scrollChatToBottom() {
+    const el = document.getElementById('chatMessages');
+    if (el) el.scrollTop = el.scrollHeight;
 }
 
+// ============================================================
+// 工具
+// ============================================================
 function escapeHtml(text) {
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = String(text);
     return div.innerHTML;
+}
+function escapeJs(text) {
+    return String(text).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+function showToast(message, type) {
+    const colors = { success: '#10b981', warning: '#f59e0b', danger: '#ef4444', info: '#3b82f6' };
+    const toast = $('<div></div>').css({
+        position: 'fixed', top: '20px', right: '20px', zIndex: 9999,
+        background: colors[type] || colors.info, color: 'white',
+        padding: '8px 16px', borderRadius: '6px', fontSize: '13px',
+        boxShadow: '0 4px 12px rgba(0,0,0,.15)',
+    }).text(message);
+    $('body').append(toast);
+    setTimeout(function() { toast.fadeOut(300, function() { $(this).remove(); }); }, 2000);
 }
 </script>
 {% endblock %}

@@ -17,6 +17,76 @@ bp = Blueprint('import_routes', __name__)
 from routes_templates import UPLOAD_FOLDER, allowed_file
 
 
+# ============ 列数据预处理函数 ============
+
+def apply_column_preprocessing(value, preprocessing_config):
+    """
+    对列值应用预处理配置
+    
+    Args:
+        value: 原始值
+        preprocessing_config: 预处理配置，支持以下类型：
+            - regex_replace: {"type":"regex_replace","pattern":"正则","replacement":"替换"}
+            - prefix_remove: {"type":"prefix_remove","prefix":"要去掉的前缀"}
+            - suffix_remove: {"type":"suffix_remove","suffix":"要去掉的后缀"}
+            - trim: {"type":"trim"}（可省略其他参数）
+            - strip_chars: {"type":"strip_chars","chars":"要去掉的字符集"}
+            - replace: {"type":"replace","old":"旧字符串","new":"新字符串"}
+            - upper: {"type":"upper"}
+            - lower: {"type":"lower"}
+    
+    Returns:
+        处理后的值
+    """
+    if not value or not preprocessing_config:
+        return value
+    
+    value = str(value) if value is not None else ''
+    ptype = preprocessing_config.get('type', '')
+    
+    try:
+        if ptype == 'regex_replace':
+            pattern = preprocessing_config.get('pattern', '')
+            replacement = preprocessing_config.get('replacement', '')
+            if pattern:
+                value = re.sub(pattern, replacement, value)
+        
+        elif ptype == 'prefix_remove':
+            prefix = preprocessing_config.get('prefix', '')
+            if prefix and value.startswith(prefix):
+                value = value[len(prefix):]
+        
+        elif ptype == 'suffix_remove':
+            suffix = preprocessing_config.get('suffix', '')
+            if suffix and value.endswith(suffix):
+                value = value[:-len(suffix)]
+        
+        elif ptype == 'strip_chars':
+            chars = preprocessing_config.get('chars', '')
+            if chars:
+                value = value.strip(chars)
+        
+        elif ptype == 'replace':
+            old_str = preprocessing_config.get('old', '')
+            new_str = preprocessing_config.get('new', '')
+            if old_str:
+                value = value.replace(old_str, new_str)
+        
+        elif ptype == 'upper':
+            value = value.upper()
+        
+        elif ptype == 'lower':
+            value = value.lower()
+        
+        elif ptype == 'trim':
+            value = value.strip()
+    
+    except Exception as e:
+        print(f"[预处理] 应用预处理失败: {e}")
+    
+    return value
+
+
 # ============ 批量导入快递信息 ============
 @bp.route('/batch_import')
 @role_required('shipper', 'admin')
@@ -163,6 +233,33 @@ def edit_import_template():
 
     template.field_mapping = json.dumps(field_mapping, ensure_ascii=False)
     template.default_express_type = request.form.get('default_express_type', '').strip() or None
+    
+    # 收集列预处理配置
+    column_preprocessing = {}
+    idx = 0
+    while True:
+        pp_col = request.form.get(f'pp_col_{idx}', '').strip()
+        pp_type = request.form.get(f'pp_type_{idx}', '').strip()
+        if not pp_col:
+            break
+        if pp_type:
+            config = {'type': pp_type}
+            if pp_type == 'regex_replace':
+                config['pattern'] = request.form.get(f'pp_pattern_{idx}', '')
+                config['replacement'] = request.form.get(f'pp_replacement_{idx}', '')
+            elif pp_type == 'prefix_remove':
+                config['prefix'] = request.form.get(f'pp_prefix_{idx}', '')
+            elif pp_type == 'suffix_remove':
+                config['suffix'] = request.form.get(f'pp_suffix_{idx}', '')
+            elif pp_type == 'strip_chars':
+                config['chars'] = request.form.get(f'pp_chars_{idx}', '')
+            elif pp_type == 'replace':
+                config['old'] = request.form.get(f'pp_old_{idx}', '')
+                config['new'] = request.form.get(f'pp_new_{idx}', '')
+            column_preprocessing[pp_col] = config
+        idx += 1
+    template.column_preprocessing = json.dumps(column_preprocessing, ensure_ascii=False)
+    
     db.session.commit()
     flash(f'导入模板 "{template.category.name}" 更新成功！', 'success')
     return redirect(url_for('templates.admin_templates'))
@@ -353,6 +450,117 @@ def _find_tracking_from_row(row_data):
     return ''
 
 
+# ============ 自动检测表头行 (V2) ============
+
+def _auto_detect_header_row_v2(ws, mapping, is_xls):
+    """
+    自动检测 Excel 中哪一行是真正的表头行（0-based 索引）
+
+    策略：
+      1. 列号映射模式：直接返回 0
+      2. 列名映射模式：扫描前10行，找与 mapping 中列名匹配度最高的行
+         - 优先排除只有少数非空单元格的行（如日期标题行）
+         - 优先排除纯数字行
+         - 优先选择与 mapping 列名精确匹配/部分匹配的行
+    """
+    if is_col_letter_mapping(mapping):
+        return 0
+
+    target_cols = set(mapping.keys())
+    if not target_cols:
+        return 0
+
+    max_rows = ws.nrows if is_xls else ws.max_row
+    total_cols = ws.ncols if is_xls else ws.max_column
+    scan_limit = min(10, max_rows)
+
+    best_idx = 1
+    best_score = -1
+    best_debug = {}
+
+    for r in range(scan_limit):
+        cells = []
+        for c in range(total_cols):
+            try:
+                if is_xls:
+                    v = ws.cell(r, c).value
+                else:
+                    v = ws.cell(row=r + 1, column=c + 1).value
+                cells.append(str(v).strip() if v is not None else '')
+            except Exception:
+                cells.append('')
+
+        non_empty = [c for c in cells if c]
+        if not non_empty:
+            continue
+
+        score = 0
+        matched = set()
+
+        for val in non_empty:
+            if val in target_cols:
+                score += 100
+                matched.add(val)
+                continue
+            simplified = ''.join(val.split())
+            for t in target_cols:
+                ts = ''.join(t.split())
+                if simplified == ts:
+                    score += 90
+                    matched.add(t)
+                    break
+            stripped = re.sub(r'\d+$', '', simplified)
+            if stripped in target_cols:
+                score += 70
+                matched.add(stripped)
+
+        # 惩罚：只有第一列有值的行（如日期标题）
+        first_col_only = (cells[0] and all(c == '' for c in cells[1:]))
+        if first_col_only:
+            score -= 200
+
+        # 惩罚：全数字内容（非表头特征）
+        has_digit = sum(1 for c in non_empty if re.match(r'^[\d\.\-]+$', c))
+        if has_digit == len(non_empty) and len(non_empty) > 1:
+            score -= 150
+
+        # 惩罚：含 "日期/报表/时间/统计" 等标题关键词
+        title_keywords = ('日期', '报表', '统计', '汇总', '时间', '序号', '总表', '部门')
+        if len(non_empty) <= 2 and any(k in cells[0] for k in title_keywords if cells[0]):
+            score -= 100
+
+        # 没匹配到任何列的行
+        if len(matched) <= 0:
+            score -= 50
+
+        # 轻偏好前几行
+        if r <= 1:
+            score += 5
+
+        debug_line = f"行{r+1}: score={score}, 匹配={matched}, 内容={non_empty[:8]}"
+        best_debug[r] = debug_line
+
+        if score > best_score:
+            best_score = score
+            best_idx = r
+
+    print(f"[DEBUG] === 表头自动检测结果 ===")
+    for line in best_debug.values():
+        print(f"[DEBUG]   {line}")
+    print(f"[DEBUG]   最终选: 第 {best_idx + 1} 行 (index={best_idx}, score={best_score})")
+
+    if best_score <= 0:
+        best_idx = 1
+        print(f"[DEBUG]   无高分匹配，退回第 2 行作为表头")
+
+    return best_idx
+
+
+def _auto_detect_header_row(ws, mapping, is_xls, no_header):
+    """旧接口兼容"""
+    return _auto_detect_header_row_v2(ws, mapping, is_xls)
+
+
 @bp.route('/batch_import/execute', methods=['POST'])
 @role_required('shipper', 'admin')
 def execute_batch_import():
@@ -373,6 +581,8 @@ def execute_batch_import():
         return redirect(url_for('import_routes.batch_import_page'))
 
     mapping = json.loads(template.field_mapping) if template.field_mapping else {}
+    preprocessing = json.loads(template.column_preprocessing) if template.column_preprocessing else {}
+    skip_rows = template.skip_rows or 0
     if not mapping:
         flash('导入模板未配置字段映射！', 'danger')
         return redirect(url_for('import_routes.batch_import_page'))
@@ -392,100 +602,117 @@ def execute_batch_import():
             print(f"[DEBUG] === Excel文件信息 (xls) ===")
             print(f"[DEBUG] 总行数: {ws.nrows}, 总列数: {ws.ncols}")
             
-            # 建立列名->列号映射
+            # 1) 先确定表头行位置（从检测到的行建立 header_map）
+            if skip_rows > 0:
+                header_row_index = skip_rows
+            elif no_header:
+                header_row_index = 0
+            else:
+                header_row_index = _auto_detect_header_row_v2(ws, mapping, is_xls)
+            print(f"[DEBUG] skip_rows={skip_rows}, no_header={no_header}, 表头行索引={header_row_index} (Excel行号={header_row_index+1})")
+
+            # 2) 从检测到的表头行建立 header_map
             header_map = {}
-            print(f"[DEBUG] 读取的表头（第一行）:")
-            for col in range(ws.ncols):
-                cell_value = ws.cell(0, col).value
-                col_letter = chr(ord('A') + col)
-                print(f"[DEBUG]   列 {col_letter} (索引 {col}): {repr(cell_value)}")
-                if cell_value is not None:
-                    # 标准化列名：去除空格、换行等
-                    cleaned_value = str(cell_value).strip()
-                    # 去除换行、制表符等
-                    cleaned_value = ''.join(cleaned_value.split())
-                    if cleaned_value:
-                        header_map[cleaned_value] = col
-                        # 同时也保留原始值
-                        header_map[str(cell_value).strip()] = col
+            if not no_header:
+                print(f"[DEBUG] 从第 {header_row_index + 1} 行读取列名:")
+                for col in range(ws.ncols):
+                    cell_value = ws.cell(header_row_index, col).value
+                    col_letter = chr(ord('A') + col)
+                    print(f"[DEBUG]   列 {col_letter}: {repr(cell_value)}")
+                    if cell_value is not None:
+                        cleaned_value = str(cell_value).strip()
+                        cleaned_value = ''.join(cleaned_value.split())
+                        if cleaned_value:
+                            header_map[cleaned_value] = col
+                            header_map[str(cell_value).strip()] = col
+                print(f"[DEBUG] 建立的header_map: {header_map}")
 
-            print(f"[DEBUG] 建立的header_map: {header_map}")
+            # 3) 从表头行的下一行开始读取数据
+            start_row = header_row_index + 1
+            print(f"[DEBUG] 数据从第 {start_row + 1} 行开始读取")
 
-            # 读取数据行（列号模式从第1行开始，列名模式从第2行开始）
-            start_row = 0 if no_header else 1
-            print(f"[DEBUG] no_header={no_header}, start_row={start_row}")
-            
             rows_data = []
             for row in range(start_row, ws.nrows):
                 row_data = {}
                 for excel_col, field in mapping.items():
                     col_idx = resolve_col_index(excel_col, header_map)
                     if col_idx is not None:
-                        row_data[field] = ws.cell(row, col_idx).value
+                        raw_value = ws.cell(row, col_idx).value
+                        if excel_col in preprocessing:
+                            raw_value = apply_column_preprocessing(raw_value, preprocessing[excel_col])
+                        row_data[field] = raw_value
                 rows_data.append(row_data)
-                # 输出前几行的详细数据
                 if len(rows_data) <= 5:
                     print(f"[DEBUG]   读取第 {row+1} 行数据: {row_data}")
-            
+
             print(f"[DEBUG] 从Excel共读取了 {len(rows_data)} 行原始数据")
         else:
             import openpyxl
-            # 重置文件指针
             file.seek(0)
             wb = openpyxl.load_workbook(file, read_only=False, data_only=True)
-            
+
             print(f"[DEBUG] === Excel文件信息 (xlsx) ===")
             print(f"[DEBUG] Workbook工作表: {wb.sheetnames}")
-            
+
             ws = wb.active
             print(f"[DEBUG] 当前工作表: {ws.title}")
             print(f"[DEBUG] 工作表总行数: {ws.max_row}, 总列数: {ws.max_column}")
-            
-            # 调试：遍历前10行前15列，看看实际内容
+
+            # 调试：遍历前10行前15列
             print(f"[DEBUG] 查看前10行前15列的内容:")
             for row in range(1, min(11, ws.max_row + 1)):
                 row_content = []
                 for col in range(1, min(16, ws.max_column + 1)):
                     cell = ws.cell(row=row, column=col)
                     val = cell.value
-                    row_content.append(f"{chr(ord('A')+col-1)}{row}={repr(val)}")
+                    col_letter = chr(ord('A') + col - 1)
+                    row_content.append(f"{col_letter}{row}={repr(val)}")
                 print(f"[DEBUG]   行 {row}: {' | '.join(row_content)}")
-            
-            # 建立列名->列号映射
+
+            # 1) 先确定表头行位置
+            if skip_rows > 0:
+                header_row_index = skip_rows
+            elif no_header:
+                header_row_index = 0
+            else:
+                header_row_index = _auto_detect_header_row_v2(ws, mapping, is_xls)
+            print(f"[DEBUG] skip_rows={skip_rows}, no_header={no_header}, 表头行索引={header_row_index} (Excel行号={header_row_index+1})")
+
+            # 2) 从检测到的表头行建立 header_map（xlsx 行号是 1-based）
             header_map = {}
-            print(f"[DEBUG] 读取的表头（第一行）:")
-            for col in range(1, ws.max_column + 1):
-                cell_value = ws.cell(row=1, column=col).value
-                col_letter = chr(ord('A') + col - 1)
-                print(f"[DEBUG]   列 {col_letter} (索引 {col}): {repr(cell_value)}")
-                if cell_value is not None:
-                    # 标准化列名：去除空格、换行等
-                    cleaned_value = str(cell_value).strip()
-                    # 去除换行、制表符等
-                    cleaned_value = ''.join(cleaned_value.split())
-                    if cleaned_value:
-                        header_map[cleaned_value] = col
-                        # 同时也保留原始值
-                        header_map[str(cell_value).strip()] = col
+            if not no_header:
+                header_row_1based = header_row_index + 1
+                print(f"[DEBUG] 从第 {header_row_1based} 行读取列名:")
+                for col in range(1, ws.max_column + 1):
+                    cell_value = ws.cell(row=header_row_1based, column=col).value
+                    col_letter = chr(ord('A') + col - 1)
+                    print(f"[DEBUG]   列 {col_letter}: {repr(cell_value)}")
+                    if cell_value is not None:
+                        cleaned_value = str(cell_value).strip()
+                        cleaned_value = ''.join(cleaned_value.split())
+                        if cleaned_value:
+                            header_map[cleaned_value] = col
+                            header_map[str(cell_value).strip()] = col
+                print(f"[DEBUG] 建立的header_map: {header_map}")
 
-            print(f"[DEBUG] 建立的header_map: {header_map}")
+            # 3) 从表头行的下一行开始读取数据
+            start_row_1based = header_row_index + 2
+            print(f"[DEBUG] 数据从第 {start_row_1based} 行开始读取")
 
-            # 读取数据行（列号模式从第1行开始，列名模式从第2行开始）
-            start_row = 1 if no_header else 2
-            print(f"[DEBUG] no_header={no_header}, start_row={start_row}")
-            
             rows_data = []
-            for row in range(start_row, ws.max_row + 1):
+            for row in range(start_row_1based, ws.max_row + 1):
                 row_data = {}
                 for excel_col, field in mapping.items():
                     col_idx = resolve_col_index(excel_col, header_map)
                     if col_idx:
-                        row_data[field] = ws.cell(row=row, column=col_idx).value
+                        raw_value = ws.cell(row=row, column=col_idx).value
+                        if excel_col in preprocessing:
+                            raw_value = apply_column_preprocessing(raw_value, preprocessing[excel_col])
+                        row_data[field] = raw_value
                 rows_data.append(row_data)
-                # 输出前几行的详细数据
                 if len(rows_data) <= 5:
                     print(f"[DEBUG]   读取第 {row} 行数据: {row_data}")
-            
+
             print(f"[DEBUG] 从Excel共读取了 {len(rows_data)} 行原始数据")
             wb.close()
 
