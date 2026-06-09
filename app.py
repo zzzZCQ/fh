@@ -174,6 +174,22 @@ def run_migrations():
     except Exception:
         pass  # tool_file表可能不存在
     
+    # behavior_tracking_record表迁移：添加is_rejected列
+    try:
+        bt_columns = [col['name'] for col in inspector.get_columns('behavior_tracking_record')]
+        if 'is_rejected' not in bt_columns:
+            db.session.execute(text("ALTER TABLE behavior_tracking_record ADD COLUMN is_rejected TINYINT(1) DEFAULT 0"))
+            # 迁移旧数据：play_status=4表示拒接
+            db.session.execute(text("""
+                UPDATE behavior_tracking_record 
+                SET is_rejected = 1, play_status = 0 
+                WHERE play_status = 4
+            """))
+            db.session.commit()
+            print('[迁移] 已添加behavior_tracking_record.is_rejected列，旧数据已迁移')
+    except Exception as e:
+        print(f'[迁移] behavior_tracking_record表检查/迁移: {e}')
+    
     # 创建order_reminder表（MySQL语法兼容）
     try:
         db.session.execute(text("""

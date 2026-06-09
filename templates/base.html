@@ -231,9 +231,10 @@
                     <i class="bi bi-eye"></i> 客户跟踪
                 </a>
                 {% if current_user.has_role('admin') and current_user.group and current_user.group.level == 1 %}
-                <a class="nav-link {% if request.endpoint == 'wework.dashboard' %}active{% endif %}" href="{{ url_for('wework.dashboard') }}">
+                <!-- 企微通话记录菜单已隐藏，避免卡死问题 -->
+                <!-- <a class="nav-link {% if request.endpoint == 'wework.dashboard' %}active{% endif %}" href="{{ url_for('wework.dashboard') }}">
                     <i class="bi bi-telephone-inbound"></i> 企微通话记录
-                </a>
+                </a> -->
                 {% endif %}
             </nav>
         </div>

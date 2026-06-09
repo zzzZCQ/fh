@@ -3,167 +3,303 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>企业微信SCRM</title>
+    <title>企业微信扫码登录</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+        .qr-card { max-width: 420px; margin: 0 auto; }
+        .qr-img-box {
+            display: inline-block;
+            background: #fff;
+            padding: 16px;
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            margin: 0 auto;
+        }
+        .qr-img-box img { display: block; max-width: 280px; height: auto; }
+        .status-pill {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 999px;
+            font-size: 14px;
+        }
+        .step-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #2563eb;
+            color: #fff;
+            font-size: 12px;
+            margin-right: 8px;
+        }
+        .countdown { font-variant-numeric: tabular-nums; color: #64748b; font-size: 13px; }
+        .action-btn { min-width: 160px; }
+        .hint-list li { margin-bottom: 8px; line-height: 1.6; }
+    </style>
 </head>
 <body>
     <div class="container-fluid p-4">
         <div class="row mb-3">
-            <div class="col">
-                <h4><i class="bi bi-wechat me-2"></i>企业微信扫码登录</h4>
-                <p class="text-muted mb-0">使用企业微信扫码登录系统</p>
+            <div class="col text-center">
+                <h4 class="mb-1"><i class="bi bi-wechat text-success me-2"></i>企业微信扫码登录</h4>
+                <p class="text-muted mb-0">使用企业微信扫描下方二维码，在手机上确认登录</p>
             </div>
         </div>
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <i class="bi bi-qr-code me-2"></i>扫码登录
-                    </div>
+
+        <div class="row justify-content-center">
+            <!-- 左侧：二维码 -->
+            <div class="col-md-5">
+                <div class="card qr-card shadow-sm">
                     <div class="card-body text-center">
-                        <div id="qrcode-area" class="mb-3">
-                            <div class="spinner-border text-primary"></div>
-                            <p class="text-muted mt-2">正在生成二维码...</p>
+                        <div id="qrcode-area" class="mb-3" style="min-height: 320px; display:flex; align-items:center; justify-content:center;">
+                            <div>
+                                <div class="spinner-border text-primary mb-2"></div>
+                                <p class="text-muted mb-0">正在从企业微信获取二维码...</p>
+                            </div>
                         </div>
-                        <div id="status-area" class="alert alert-info">
-                            请使用企业微信扫描上方二维码
+
+                        <div id="status-area" class="mb-3">
+                            <span class="status-pill bg-info text-white">
+                                <i class="bi bi-hourglass-split me-1"></i>正在生成二维码
+                            </span>
                         </div>
-                        <button class="btn btn-primary" id="refresh-btn" onclick="refreshQRCode()">
-                            <i class="bi bi-arrow-clockwise me-2"></i>刷新二维码
-                        </button>
+
+                        <div id="countdown-area" class="countdown mb-3">
+                            <span id="expire-tip">二维码将在 <b id="expire-sec">300</b> 秒后过期</span>
+                        </div>
+
+                        <div class="d-flex gap-2 justify-content-center">
+                            <button class="btn btn-primary action-btn" id="refresh-btn" onclick="refreshQRCode()">
+                                <i class="bi bi-arrow-clockwise me-1"></i>刷新二维码
+                            </button>
+                            <button class="btn btn-outline-secondary action-btn" onclick="openWeWorkLogin()">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>打开企微网页版
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
-            
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <i class="bi bi-info-circle me-2"></i>登录说明
+
+            <!-- 右侧：操作说明 -->
+            <div class="col-md-5">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-transparent">
+                        <i class="bi bi-info-circle me-1"></i>操作步骤
                     </div>
                     <div class="card-body">
-                        <ol class="mb-0">
-                            <li class="mb-2">点击上方"刷新二维码"按钮获取登录二维码</li>
-                            <li class="mb-2">打开企业微信手机客户端</li>
-                            <li class="mb-2">使用"扫一扫"功能扫描二维码</li>
-                            <li class="mb-2">在手机上确认登录</li>
-                            <li>登录成功后即可使用系统功能</li>
+                        <ol class="hint-list mb-0 list-unstyled">
+                            <li><span class="step-badge">1</span>等待左侧生成企业微信二维码</li>
+                            <li><span class="step-badge">2</span>打开手机 <b>企业微信</b> 客户端</li>
+                            <li><span class="step-badge">3</span>点击右上角「+」→「扫一扫」扫描二维码</li>
+                            <li><span class="step-badge">4</span>在手机上确认登录</li>
+                            <li><span class="step-badge">5</span>本页面将自动检测并提示登录成功</li>
                         </ol>
                     </div>
                 </div>
-                
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <i class="bi bi-exclamation-triangle me-2"></i>注意事项
+
+                <div class="card shadow-sm mt-3">
+                    <div class="card-header bg-transparent">
+                        <i class="bi bi-lightbulb me-1"></i>如果扫码没反应？
                     </div>
-                    <div class="card-body">
-                        <ul class="mb-0 small">
-                            <li>二维码有效期为5分钟，超时需要刷新</li>
-                            <li>请确保企业微信已登录且可正常使用</li>
-                            <li>扫码后需在手机上确认登录</li>
+                    <div class="card-body small">
+                        <ul class="mb-0 hint-list list-unstyled">
+                            <li>• 确认手机企业微信处于登录状态</li>
+                            <li>• 确认网络正常，刷新二维码重试</li>
+                            <li>• 点击右侧「打开企微网页版」在浏览器中扫码登录</li>
+                            <li>• 如需管理端扫码：请访问 <a href="https://work.weixin.qq.com/wework_admin/loginpage_wx" target="_blank">企业微信管理端</a></li>
                         </ul>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm mt-3">
+                    <div class="card-header bg-transparent">
+                        <i class="bi bi-shield-check me-1"></i>安全说明
+                    </div>
+                    <div class="card-body small">
+                        <p class="mb-0 text-muted">
+                            二维码由企业微信官方接口实时生成，每次刷新都唯一。
+                            扫码过程仅用于确认登录，本系统不会上传、保存或分享你的账号凭据。
+                        </p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <script>
         let currentSessionId = null;
         let pollingInterval = null;
-        
+        let countdownInterval = null;
+        let secondsLeft = 0;
+
         $(document).ready(function() {
             refreshQRCode();
         });
-        
+
+        function openWeWorkLogin() {
+            window.open('https://work.weixin.qq.com/wework_admin/loginpage_wx', '_blank');
+        }
+
+        function startCountdown(seconds) {
+            if (countdownInterval) clearInterval(countdownInterval);
+            secondsLeft = seconds;
+            $('#expire-sec').text(secondsLeft);
+            countdownInterval = setInterval(function() {
+                secondsLeft--;
+                if (secondsLeft <= 0) {
+                    clearInterval(countdownInterval);
+                    $('#expire-tip').html('二维码已过期，请点击刷新');
+                } else {
+                    $('#expire-sec').text(secondsLeft);
+                }
+            }, 1000);
+        }
+
+        function stopCountdown() {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
+        }
+
         function refreshQRCode() {
-            $('#qrcode-area').html('<div class="spinner-border text-primary"></div><p class="text-muted mt-2">正在生成二维码...</p>');
-            $('#status-area').attr('class', 'alert alert-info').text('正在生成二维码...');
-            
+            stopPolling();
+            stopCountdown();
+            currentSessionId = '';
+
+            $('#qrcode-area').html(
+                '<div>' +
+                '<div class="spinner-border text-primary mb-2"></div>' +
+                '<p class="text-muted mb-0">正在从企业微信获取二维码...</p>' +
+                '</div>'
+            );
+            $('#status-area').html(
+                '<span class="status-pill bg-info text-white"><i class="bi bi-hourglass-split me-1"></i>正在生成二维码</span>'
+            );
+
             $.ajax({
                 url: '/admin/wecom-scrm/api/qrlogin/create',
                 method: 'GET',
+                data: { 'login_type': 'wwclient' },
+                timeout: 30000,
                 success: function(data) {
                     if (data.success) {
                         currentSessionId = data.data.session_id;
-                        $('#qrcode-area').html('<img src="' + data.data.qrcode + '" alt="登录二维码" style="max-width: 256px; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 10px;">');
-                        $('#status-area').attr('class', 'alert alert-info').text('请使用企业微信扫描上方二维码');
+                        $('#qrcode-area').html(
+                            '<div class="qr-img-box">' +
+                            '<img src="' + data.data.qrcode + '" alt="企业微信登录二维码" />' +
+                            '</div>'
+                        );
+                        $('#status-area').html(
+                            '<span class="status-pill bg-primary text-white"><i class="bi bi-qr-code me-1"></i>请使用企业微信扫一扫</span>'
+                        );
+                        startCountdown(300);
                         startPolling();
                     } else {
-                        $('#qrcode-area').html('<div class="text-danger"><i class="bi bi-x-circle me-2"></i>生成二维码失败</div>');
-                        $('#status-area').attr('class', 'alert alert-danger').text('生成二维码失败: ' + data.message);
+                        $('#qrcode-area').html(
+                            '<div class="text-danger">' +
+                            '<i class="bi bi-x-circle fs-3 me-2"></i>' +
+                            '<p class="mb-0">生成二维码失败</p>' +
+                            '</div>'
+                        );
+                        $('#status-area').html(
+                            '<span class="status-pill bg-danger text-white">错误：' + (data.message || '请重试') + '</span>'
+                        );
                     }
                 },
-                error: function() {
-                    $('#qrcode-area').html('<div class="text-danger"><i class="bi bi-x-circle me-2"></i>生成二维码失败</div>');
-                    $('#status-area').attr('class', 'alert alert-danger').text('生成二维码失败，请刷新重试');
+                error: function(xhr, status) {
+                    $('#qrcode-area').html(
+                        '<div class="text-danger">' +
+                        '<i class="bi bi-x-circle fs-3 me-2"></i>' +
+                        '<p class="mb-0">网络异常，请稍后刷新重试</p>' +
+                        '</div>'
+                    );
+                    $('#status-area').html(
+                        '<span class="status-pill bg-danger text-white">请求失败</span>'
+                    );
                 }
             });
         }
-        
+
         function startPolling() {
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-            }
-            
+            stopPolling();
             pollingInterval = setInterval(function() {
                 if (!currentSessionId) return;
-                
+
                 $.ajax({
                     url: '/admin/wecom-scrm/api/qrlogin/status/' + currentSessionId,
                     method: 'GET',
                     success: function(data) {
-                        if (data.success) {
-                            var status = data.data.status;
-                            var statusText = data.data.status_text;
-                            
-                            switch(status) {
-                                case 0: // 等待扫码
-                                    $('#status-area').attr('class', 'alert alert-info').text('请使用企业微信扫描上方二维码');
-                                    break;
-                                case 1: // 已扫码
-                                    $('#status-area').attr('class', 'alert alert-warning').text('已扫码，请在手机企业微信中确认登录');
-                                    break;
-                                case 2: // 登录成功
-                                    $('#status-area').attr('class', 'alert alert-success').text('登录成功！');
-                                    stopPolling();
-                                    
-                                    // 获取登录结果
-                                    getLoginResult();
-                                    break;
-                                case 3: // 已过期
-                                    $('#status-area').attr('class', 'alert alert-danger').text('二维码已过期，请刷新重试');
-                                    stopPolling();
-                                    break;
-                                case 4: // 登录失败
-                                    $('#status-area').attr('class', 'alert alert-danger').text('登录失败，请刷新重试');
-                                    stopPolling();
-                                    break;
-                            }
+                        if (!data.success) return;
+
+                        var status = data.data.status;
+
+                        if (status === 'pending') {
+                            $('#status-area').html(
+                                '<span class="status-pill bg-primary text-white"><i class="bi bi-qr-code me-1"></i>请使用企业微信扫一扫</span>'
+                            );
+                        } else if (status === 'scanned') {
+                            $('#status-area').html(
+                                '<span class="status-pill bg-warning text-white"><i class="bi bi-check2-circle me-1"></i>已扫码，请在手机上确认</span>'
+                            );
+                        } else if (status === 'success') {
+                            $('#status-area').html(
+                                '<span class="status-pill bg-success text-white"><i class="bi bi-check-lg me-1"></i>登录成功</span>'
+                            );
+                            stopPolling();
+                            stopCountdown();
+                            getLoginResult();
+                        } else if (status === 'expired') {
+                            $('#status-area').html(
+                                '<span class="status-pill bg-secondary text-white"><i class="bi bi-clock-history me-1"></i>二维码已过期，请刷新</span>'
+                            );
+                            stopPolling();
+                            stopCountdown();
+                        } else if (status === 'failed') {
+                            $('#status-area').html(
+                                '<span class="status-pill bg-danger text-white"><i class="bi bi-x-circle me-1"></i>登录已取消</span>'
+                            );
+                            stopPolling();
+                            stopCountdown();
                         }
                     }
                 });
             }, 2000);
         }
-        
+
         function stopPolling() {
             if (pollingInterval) {
                 clearInterval(pollingInterval);
                 pollingInterval = null;
             }
         }
-        
+
         function getLoginResult() {
             if (!currentSessionId) return;
-            
+
             $.ajax({
                 url: '/admin/wecom-scrm/api/qrlogin/result/' + currentSessionId,
                 method: 'GET',
                 success: function(data) {
                     if (data.success) {
-                        alert('登录成功！账号：' + (data.data.account ? data.data.account.account_name : '未知'));
-                        // 可以跳转到其他页面或刷新页面
-                        location.reload();
+                        var account_name = (data.data && data.data.account) ? data.data.account.account_name : '企业微信账号';
+                        $('#status-area').html(
+                            '<span class="status-pill bg-success text-white"><i class="bi bi-person-check me-1"></i>登录成功：' + account_name + '</span>'
+                        );
+                        setTimeout(function() { location.reload(); }, 1500);
+                    } else {
+                        // 接口未创建账号也正常提示
+                        $('#status-area').html(
+                            '<span class="status-pill bg-success text-white"><i class="bi bi-check-lg me-1"></i>扫码完成</span>'
+                        );
                     }
+                },
+                error: function() {
+                    $('#status-area').html(
+                        '<span class="status-pill bg-success text-white"><i class="bi bi-check-lg me-1"></i>已确认登录</span>'
+                    );
                 }
             });
         }

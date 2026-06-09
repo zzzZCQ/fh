@@ -146,34 +146,34 @@
     <!-- 客户明细数据表格 -->
     <div class="card">
         <div class="card-header">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <span>客户跟踪明细（共 {{ rows_data|length }} 条记录）</span>
-                <div class="d-flex align-items-center gap-2">
-                    <form method="get" action="{{ url_for('behavior.customer_tracking') }}" class="d-flex align-items-center gap-2">
-                        <input type="hidden" name="group_id" value="{{ selected_group or '' }}">
-                        <input type="hidden" name="salesman_id" value="{{ selected_salesman or '' }}">
-                        <input type="hidden" name="page_size" value="{{ page_size }}">
-                        <input type="text" name="nickname" class="form-control form-control-sm" 
-                               value="{{ selected_nickname or '' }}" placeholder="输入客户昵称..." style="width: 180px;">
-                        <select name="is_followed" class="form-select form-select-sm" style="width: 100px;">
-                            <option value="">全部</option>
-                            <option value="1" {% if selected_followed == '1' %}selected{% endif %}>已跟进</option>
-                            <option value="0" {% if selected_followed == '0' %}selected{% endif %}>未跟进</option>
-                        </select>
-                        <button type="submit" class="btn btn-primary btn-sm">筛选</button>
-                        {% if selected_nickname or selected_followed %}
-                        <a href="{{ url_for('behavior.customer_tracking', group_id=selected_group, salesman_id=selected_salesman, page_size=page_size) }}" 
-                           class="btn btn-outline-secondary btn-sm">清除</a>
-                        {% endif %}
-                    </form>
-                    <div class="small text-muted ms-3">
-                        <span class="me-3"><i class="bi bi-square-fill" style="color:#32CD32;"></i> 完播（1）</span>
-                        <span class="me-3"><i class="bi bi-square-fill" style="color:#FFFF00;"></i> 未完播（2）</span>
-                        <span><i class="bi bi-square-fill" style="color:#FF0000;"></i> 未观看（3）</span>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span>客户跟踪明细（共 {{ rows_data|length }} 条记录）</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <form method="get" action="{{ url_for('behavior.customer_tracking') }}" class="d-flex align-items-center gap-2">
+                            <input type="hidden" name="group_id" value="{{ selected_group or '' }}">
+                            <input type="hidden" name="salesman_id" value="{{ selected_salesman or '' }}">
+                            <input type="hidden" name="page_size" value="{{ page_size }}">
+                            <input type="text" name="nickname" class="form-control form-control-sm" 
+                                   value="{{ selected_nickname or '' }}" placeholder="输入客户昵称..." style="width: 180px;">
+                            <select name="is_followed" class="form-select form-select-sm" style="width: 100px;">
+                                <option value="">全部</option>
+                                <option value="1" {% if selected_followed == '1' %}selected{% endif %}>已跟进</option>
+                                <option value="0" {% if selected_followed == '0' %}selected{% endif %}>未跟进</option>
+                            </select>
+                            <button type="submit" class="btn btn-primary btn-sm">筛选</button>
+                            {% if selected_nickname or selected_followed %}
+                            <a href="{{ url_for('behavior.customer_tracking', group_id=selected_group, salesman_id=selected_salesman, page_size=page_size) }}" 
+                               class="btn btn-outline-secondary btn-sm">清除</a>
+                            {% endif %}
+                        </form>
+                        <div class="small text-muted ms-3">
+                            <span class="me-3"><i class="bi bi-square-fill" style="color:#32CD32;"></i> 完播（1）</span>
+                            <span class="me-3"><i class="bi bi-square-fill" style="color:#FFFF00;"></i> 未完播（2）</span>
+                            <span><i class="bi bi-square-fill" style="color:#FF0000;"></i> 未观看（3）</span>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
         <div class="card-body">
             {% if not show_data %}
             <div class="text-center py-10">
@@ -207,9 +207,9 @@
                                 {% endif %}
                             </td>
                             {% for date in dates %}
-                            <td style="text-align: center; {% if row.dates.get(date) and row.dates[date].play_status == 1 %}background-color: #32CD32; color: white;{% elif row.dates.get(date) and row.dates[date].play_status == 2 %}background-color: #FFFF00;{% elif row.dates.get(date) %}background-color: #FF0000; color: white;{% endif %}">
+                            <td style="text-align: center; {% if row.dates.get(date) and row.dates[date].play_status == 1 %}background-color: #32CD32; color: white;{% elif row.dates.get(date) and row.dates[date].play_status == 2 %}background-color: #FFFF00;{% elif row.dates.get(date) and row.dates[date].play_status == 3 %}background-color: #FF0000; color: white;{% endif %}">
                                 {% if row.dates.get(date) %}
-                                {% if row.dates[date].call_duration > 0 %}{{ row.dates[date].play_status }}（{{ (row.dates[date].call_duration // 60) }}分{{ row.dates[date].call_duration % 60 }}秒）{% else %}{{ row.dates[date].play_status }}{% endif %}
+                                {% if row.dates[date].is_rejected and row.dates[date].call_duration > 0 %}{{ row.dates[date].play_status }}（{{ (row.dates[date].call_duration // 60) }}分{{ row.dates[date].call_duration % 60 }}秒）{% elif row.dates[date].is_rejected %}{{ row.dates[date].play_status }}（拒）{% elif row.dates[date].call_duration > 0 %}{{ row.dates[date].play_status }}（{{ (row.dates[date].call_duration // 60) }}分{{ row.dates[date].call_duration % 60 }}秒）{% else %}{{ row.dates[date].play_status }}{% endif %}
                                 {% else %}
                                 -
                                 {% endif %}
@@ -600,6 +600,7 @@ function showCustomerDetail(rowIndex) {
         <div class="card">
             <div class="card-header">
                 <span><i class="bi bi-list me-2"></i>行为轨迹记录</span>
+                <span class="small text-muted ms-2">可编辑观看状态和通话时长</span>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -608,7 +609,7 @@ function showCustomerDetail(rowIndex) {
                             <tr>
                                 <th>日期</th>
                                 <th>观看状态</th>
-                                <th>通话时长</th>
+                                <th>通话时长（分钟）</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -617,30 +618,43 @@ function showCustomerDetail(rowIndex) {
     // 添加每日记录
     dates.forEach(date => {
         const record = row.dates[date];
-        let statusHtml = '';
-        let durationHtml = '-';
+        let currentPlayStatus = record?.play_status || 0;
+        let durationMinutes = record?.call_duration ? Math.round(record.call_duration / 60) : 0;
         
-        if (record) {
-            if (record.play_status === 1) {
-                statusHtml = '<span class="badge" style="background-color: #32cd32; color: white;">完播</span>';
-            } else if (record.play_status === 2) {
-                statusHtml = '<span class="badge bg-warning text-dark">未完播</span>';
-            } else {
-                statusHtml = '<span class="badge bg-danger">未观看</span>';
-            }
-            
-            if (record.call_duration > 0) {
-                durationHtml = `${Math.floor(record.call_duration / 60)}分${record.call_duration % 60}秒`;
-            }
-        } else {
-            statusHtml = '<span class="badge bg-secondary">无记录</span>';
-        }
+        // 使用独立的 is_rejected 字段
+        let isRejected = record?.is_rejected || false;
         
         content += `
             <tr>
                 <td>${date}</td>
-                <td>${statusHtml}</td>
-                <td>${durationHtml}</td>
+                <td>
+                    <select class="form-select form-select-sm play-status-select" 
+                            data-date="${date}" 
+                            data-original-value="${currentPlayStatus}"
+                            data-original-rejected="${isRejected}"
+                            style="width: 120px;">
+                        <option value="0" ${currentPlayStatus === 0 ? 'selected' : ''}>无记录</option>
+                        <option value="1" ${currentPlayStatus === 1 ? 'selected' : ''}>完播</option>
+                        <option value="2" ${currentPlayStatus === 2 ? 'selected' : ''}>未完播</option>
+                        <option value="3" ${currentPlayStatus === 3 ? 'selected' : ''}>未观看</option>
+                    </select>
+                </td>
+                <td>
+                    <div class="d-flex gap-2">
+                        <div class="form-check">
+                            <input class="form-check-input rejected-checkbox" type="checkbox" 
+                                   data-date="${date}"
+                                   ${isRejected ? 'checked' : ''}>
+                            <label class="form-check-label small">拒接</label>
+                        </div>
+                        <input type="number" class="form-control form-control-sm call-duration-input" 
+                               data-date="${date}" 
+                               data-original-value="${durationMinutes}"
+                               value="${durationMinutes}" 
+                               min="0" max="999"
+                               style="width: 80px;">
+                    </div>
+                </td>
             </tr>
         `;
     });
@@ -666,6 +680,9 @@ function saveCustomerInfo() {
     const row = window.currentCustomerData;
     const rowIndex = window.currentCustomerRowIndex;
     
+    // 获取日期列表
+    const dates = JSON.parse(document.getElementById('datesData').textContent);
+    
     // 获取表单值
     const customer_name = document.getElementById('edit_customer_name').value;
     const gender = document.getElementById('edit_gender').value;
@@ -674,6 +691,38 @@ function saveCustomerInfo() {
     const address = document.getElementById('edit_address').value;
     const health_condition = document.getElementById('edit_health_condition').value;
     const medication_status = document.getElementById('edit_medication_status').value;
+    
+    // 获取观看状态和通话时长修改
+    const recordChanges = [];
+    
+    // 获取观看状态和拒接状态修改
+    dates.forEach(date => {
+        const select = document.querySelector(`.play-status-select[data-date="${date}"]`);
+        const checkbox = document.querySelector(`.rejected-checkbox[data-date="${date}"]`);
+        const input = document.querySelector(`.call-duration-input[data-date="${date}"]`);
+        
+        if (select) {
+            const originalPlayStatus = parseInt(select.dataset.originalValue);
+            const currentPlayStatus = parseInt(select.value);
+            const originalRejected = select.dataset.originalRejected === 'true';
+            const currentRejected = checkbox ? checkbox.checked : false;
+            const originalMinutes = parseInt(input?.dataset.originalValue || 0);
+            const currentMinutes = parseInt(input?.value || 0);
+            
+            // 检查是否有变化
+            if (currentPlayStatus !== originalPlayStatus || 
+                currentRejected !== originalRejected || 
+                currentMinutes !== originalMinutes) {
+                
+                recordChanges.push({
+                    date: date,
+                    play_status: currentPlayStatus,
+                    is_rejected: currentRejected,
+                    minutes: currentMinutes
+                });
+            }
+        }
+    });
     
     const formData = {
         user_id: row.user_id,
@@ -684,7 +733,8 @@ function saveCustomerInfo() {
         phone: phone,
         address: address,
         health_condition: health_condition,
-        medication_status: medication_status
+        medication_status: medication_status,
+        record_changes: recordChanges
     };
     
     console.log('[DEBUG] 发送的数据:', formData);
@@ -733,14 +783,25 @@ function saveCustomerInfo() {
             // 更新列表显示
             updateRowFollowStatus(rowIndex, true);
             
-            alert('保存成功！');
+            showToast('保存成功！', 'success');
+            
+            // 关闭详情弹窗
+            const modal = bootstrap.Modal.getInstance(document.getElementById('customerDetailModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // 刷新页面显示最新数据
+            setTimeout(() => {
+                location.reload();
+            }, 500);
         } else {
-            alert('保存失败：' + (data.message || '未知错误'));
+            showToast('保存失败：' + (data.message || '未知错误'), 'danger');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('保存失败，请重试：' + error.message);
+        showToast('保存失败，请重试', 'danger');
     });
 }
 

@@ -1,0 +1,39 @@
+# 项目核心依赖
+Flask==2.3.3
+Flask-Login==0.6.3
+Flask-SQLAlchemy==3.1.1
+Flask-SocketIO==5.3.6
+
+# 数据库
+SQLAlchemy==2.0.23
+
+# Excel处理
+openpyxl==3.1.2
+
+# 图像处理（PIL）
+Pillow==10.1.0
+
+# 二维码生成
+qrcode[pil]==7.4.2
+
+# 网络请求
+requests==2.31.0
+
+# 定时任务
+apscheduler==3.10.4
+
+# 企业微信自动化
+playwright==1.43.0
+
+# 环境变量
+python-dotenv==1.0.1
+
+# 版本解析
+packaging==23.2
+
+# 事件驱动
+eventlet==0.33.3
+gevent==23.9.1
+
+# 其他
+pywin32==306

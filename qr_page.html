@@ -1,0 +1,148 @@
+<html><head><title></title><meta charset="utf-8"><style>
+body,dl,dd,h1,h2,h3,h4,h5,h6,p,pre,form,fieldset,legend {margin: 0;}
+ul,ol,fieldset {margin:0;padding:0;}
+th, td {padding: 0;}
+table {font-size:inherit;}
+fieldset, img {border:none;}
+ul,ol,li {list-style:none;}
+body {font-size:12px;line-height:1.5; color: #000;}
+h1,h2,h3,h4{font-size:18px; font-weight:normal;}
+body,input,textarea,select,button {font-family:"Helvetica Neue", "Arial", "PingFang SC", "Hiragino Sans GB", "STHeiti", "Microsoft YaHei", sans-serif;; outline:none; -webkit-text-size-adjust:none;}
+input, textarea, select, button {
+font-size: inherit;
+-webkit-tap-highlight-color:rgba(0,0,0,0);
+}
+a {color: #0C4C7F;text-decoration:none;-webkit-tap-highlight-color:#0C4C7F;}
+:focus {outline: none;}
+.qrcode_login_content {
+width: 300px;
+height: 400px;
+margin: 0 auto;
+}
+.qrcode_login_img {
+display: block;
+margin: auto;
+padding: 20px;
+margin-top: 15px;
+width: 241px;
+height: 241px;
+border-radius: 14px;
+border: 1px solid var(--ww_base_gray_007, rgba(6, 15, 26, 0.07));
+background: var(--ww_base_white_100, #FFF);
+}
+.qrcode_login_info {
+margin: 0 18px;
+padding-top: 14px;
+font-size: 13px;
+text-align: center;
+overflow: hidden;
+}
+.qrcode_login .status_txt {
+text-align: left;
+padding-left: 64px;
+}
+.ww_commonImg {
+float: left;
+margin: 6px 12px 0 14px;
+display: inline-block;
+overflow: hidden;
+font-size: 0;
+line-height: 0;
+width: 38px;
+height: 38px;
+background-size: 38px 38px;
+background-repeat: no-repeat;
+}
+.qrcode_login_rl_bg {
+width: 100%;
+height: 100%;
+position: absolute;
+top: 0;
+left: 0;
+}
+.qrcode_login_rl_mask {
+width: 286px;
+height: 285px;
+position: absolute;
+top: 15px;
+left: 50%;
+margin-left: -143px;
+background: rgba(255, 255, 255, .9);
+border-radius: 14px;
+}
+.qrcode_login_rl_info {
+position: absolute;
+top: 123px;
+width: 100%;
+text-align: center;
+z-index: 2;
+font-size: 14px;
+}
+.qrcode_login_rl_label {
+margin-top: 10px;
+}
+.qrcode_login_rl_info .ww_commonImg_Alert {
+float: none;
+margin: auto;
+display: block;
+}
+.qrcode_login_reload {
+color: #0C4C7F;
+text-decoration: none;
+}
+.qrcode_login_reload:hover {
+text-decoration: underline;
+}
+.qrcode_login_rl_btn {
+cursor: pointer;
+background-image: -webkit-gradient(linear,left top,left bottom,from(#fff),to(#F8F8F8));
+background-image: -webkit-linear-gradient(top,#fff 0,#F8F8F8 100%);
+background-image: -o-linear-gradient(top,#fff 0,#F8F8F8 100%);
+background-image: linear-gradient(to bottom,#fff 0,#F8F8F8 100%);
+filter: progid:DXImageTransform.Microsoft.gradient(startColorstr="#FFFFFFFF", endColorstr="#FFF8F8F8", GradientType=0);
+border-radius: 2px;
+vertical-align: middle;
+border: 1px solid #AAA;
+display: inline-block;
+margin: 0;
+-webkit-box-sizing: content-box;
+box-sizing: content-box;
+min-width: 24px;
+height: 24px;
+padding: 0 12px;
+background: #F5F5F5;
+line-height: 24px;
+outline: 0;
+text-align: center;
+font-size: 12px;
+color: #222;
+-webkit-user-select: none;
+-moz-user-select: none;
+-ms-user-select: none;
+user-select: none;
+text-decoration: none;
+}
+.ww_commonImg_Succ {
+background-image: url("//wwcdn.weixin.qq.com/node/wwmng/wwmng/style/images/independent/icons/GreenBigSucc$4ac8dd50.png");
+}
+.ww_commonImg_Alert {
+background-image: url("//wwcdn.weixin.qq.com/node/wwmng/wwmng/style/images/independent/icons/Alert$0ae85eb8.png");
+}
+@media (-webkit-min-device-pixel-ratio: 2), (min--moz-device-pixel-ratio: 2), (-o-min-device-pixel-ratio: 2), (min-device-pixel-ratio: 2), (min-resolution: 2dppx), (min-resolution: 192dpi) {
+.ww_commonImg_Succ{
+background-image: url("//wwcdn.weixin.qq.com/node/wwmng/wwmng/style/images/independent/icons/GreenBigSucc_2x$b66cbc17.png");
+}
+.ww_commonImg_Alert {
+background-image: url("//wwcdn.weixin.qq.com/node/wwmng/wwmng/style/images/independent/icons/Alert_2x$f0cd6b02.png");
+}
+}</style>  </head><body><div class="qrcode_login"><div class="qrcode_login_main"><div class="qrcode_login_title"></div><div class="qrcode_login_content"><div class="qrcode_wrap"><img class="qrcode_login_img js_qrcode_img" src="" style="display: none"><div class="qrcode_login_rl_bg" id="qrcode_login_timeout_tips" style="display: none"><div class="qrcode_login_rl_mask"></div><div class="qrcode_login_rl_info"><i class="ww_commonImg ww_commonImg_Alert"></i><div class="qrcode_login_rl_label"> 二维码已过期 <a class="qrcode_login_reload" href="javascript:window.location.reload()">刷新</a></div></div></div></div><div class="qrcode_login_info"><div class="info_status_succ js_status_succ" style="display: none"><div class="ww_commonImg ww_commonImg_Succ"></div><div class="status_txt"><h4>扫描成功</h4><p>请在微信中点击确认即可</p></div></div><div class="info_status_cancel js_status_cancel" style="display: none"><div class="ww_commonImg ww_commonImg_Alert"></div><div class="status_txt"><h4>你已取消此次操作</h4><p>你可再次扫描，或关闭窗口</p></div></div><div class="info_status_cancel js_status_not_admin" style="display: none"><div class="ww_commonImg ww_commonImg_Alert"></div><div class="status_txt"><h4>扫码账号不是企业管理员</h4><p>请重新扫描二维码</p></div></div></div></div></div></div></body> <script src="//wwcdn.weixin.qq.com/node/wwmng/wwmng/js/_$$_3rd/es5-shim.min$2c42a1e1.js,3rd/promise$6e4c44e4.js,modules/jquery/jquery/1.11.3/jquery.min$b3c48411.js" type="text/javascript"></script> <script type="text/javascript"  crossorigin="anonymous"  src="//wwcdn.weixin.qq.com/node/wwmng/wwmng/js/ww_qrcode_login/login_mng$2ee3da37.js"></script>  <script eslint-disable>var login_type = "login_admin";
+var check_admin = "false";
+var redirect_uri = "";
+var callback = "";
+var mode = "";
+var target = "";
+var query = {"login_type":"login_admin"}</script><script src="https://cdn-go.cn/aegis/aegis-sdk/1.35.21/aegis.min.js"></script><script eslint-disable>window.aegis = new Aegis({
+id: '8lQJ4Io7v4nljLRmrn',
+reportApiSpeed: true,
+reportAssetSpeed: false
+})</script></html>

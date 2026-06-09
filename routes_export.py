@@ -48,64 +48,113 @@ def _get_order_field_value(order, order_field, default_zero=False):
     2. 正则表达式: /regex/ 或 /field_name/regex/
     3. 固定文本: {"type": "fixed", "value": "文本内容"}
     4. 条件匹配: {"type": "condition", "field": "字段名", "conditions": [{"match": "值1", "result": "结果1"}, ...], "default": "默认值"}
+    5. 字段组合: "姓名: {customer_name}, 电话: {phone}" （支持 {字段名} 占位符）
 
     参数:
         default_zero: 正则未匹配时是否返回'0'（导出Excel时使用）
     """
     import json as _json
+    import re as _re
 
-    # 处理JSON对象格式（固定文本、条件匹配）
-    if isinstance(order_field, dict) or (isinstance(order_field, str) and order_field.startswith('{')):
+    if not order_field:
+        return ''
+
+    # ========== 第一步：检查是否是真正的 JSON 配置 ==========
+    # JSON 配置必须满足：以 { 开头、包含 type 关键字、解析成功
+    is_json_config = False
+    config = None
+    if isinstance(order_field, str) and order_field.strip().startswith('{') and order_field.strip().endswith('}'):
         try:
-            config = _json.loads(order_field) if isinstance(order_field, str) else order_field
-            config_type = config.get('type', '')
-
-            # 固定文本
-            if config_type == 'fixed':
-                return config.get('value', '')
-
-            # 条件匹配
-            elif config_type == 'condition':
-                source_field = config.get('field', 'product_info')
-                source_value = getattr(order, source_field, '') or ''
-                if not isinstance(source_value, str):
-                    source_value = str(source_value)
-
-                conditions = config.get('conditions', [])
-                for cond in conditions:
-                    match = cond.get('match', '')
-                    result = cond.get('result', '')
-                    # * 表示匹配所有
-                    if match == '*' or match == '':
-                        return result
-                    # 支持包含匹配
-                    if match in source_value:
-                        return result
-
-                return config.get('default', '')
-        except _json.JSONDecodeError:
+            test_config = _json.loads(order_field)
+            if isinstance(test_config, dict) and 'type' in test_config:
+                is_json_config = True
+                config = test_config
+        except (ValueError, TypeError):
             pass
+    elif isinstance(order_field, dict):
+        if 'type' in order_field:
+            is_json_config = True
+            config = order_field
 
-    # 正则表达式提取
+    # 如果是 JSON 配置，处理它
+    if is_json_config and config:
+        config_type = config.get('type', '')
+
+        # 固定文本
+        if config_type == 'fixed':
+            return config.get('value', '')
+
+        # 条件匹配
+        elif config_type == 'condition':
+            source_field = config.get('field', 'product_info')
+            source_value = getattr(order, source_field, '') or ''
+
+            # 特殊处理：数值字段使用数值比较
+            numeric_fields = ['collect_amount', 'paid_amount', 'has_gift']
+
+            conditions = config.get('conditions', [])
+            for cond in conditions:
+                match = cond.get('match', '')
+                result = cond.get('result', '')
+                operator = cond.get('operator', '==')
+
+                # * 表示匹配所有（作为默认值）
+                if match == '*' or match == '':
+                    return result
+
+                # 数值字段支持各种比较操作符
+                if source_field in numeric_fields:
+                    try:
+                        source_num = float(source_value) if source_value else 0
+                        match_num = float(match)
+
+                        if operator == '==':
+                            if source_num == match_num:
+                                return result
+                        elif operator == '!=':
+                            if source_num != match_num:
+                                return result
+                        elif operator == '>':
+                            if source_num > match_num:
+                                return result
+                        elif operator == '>=':
+                            if source_num >= match_num:
+                                return result
+                        elif operator == '<':
+                            if source_num < match_num:
+                                return result
+                        elif operator == '<=':
+                            if source_num <= match_num:
+                                return result
+                    except (ValueError, TypeError):
+                        if str(source_value) == match:
+                            return result
+                else:
+                    # 普通字段只支持相等和包含匹配
+                    if operator == '==':
+                        if str(source_value) == match:
+                            return result
+                    else:
+                        if match in str(source_value):
+                            return result
+
+            return config.get('default', '')
+
+    # ========== 第二步：处理正则表达式格式 ==========
     if isinstance(order_field, str) and order_field.startswith('/') and order_field.endswith('/'):
-        import re as _re
         expr = order_field[1:-1]
 
-        # 判断是否指定了源字段：/字段名/正则/组号
-        # 已知的字段名列表
+        # 判断是否指定了源字段：/field_name/regex/group
         known_fields = ['product_info', 'address', 'phone', 'customer_name', 'remark',
                        'group_name', 'gift_info', 'paid_amount', 'collect_amount']
 
-        # 尝试解析：/field_name/regex/group
-        source_field = 'product_info'  # 默认从产品信息提取
+        source_field = 'product_info'
         parts = expr.split('/')
 
         if len(parts) >= 3 and parts[0] in known_fields:
-            # 格式: /field_name/regex 或 /field_name/regex/group
             source_field = parts[0]
             regex_part = '/'.join(parts[1:])
         else:
-            # 格式: /regex 或 /regex/group（默认从product_info提取）
             regex_part = expr
 
         # 解析组号
@@ -120,25 +169,39 @@ def _get_order_field_value(order, order_field, default_zero=False):
         if not isinstance(source_value, str):
             source_value = str(source_value)
 
-        print(f"[DEBUG] 正则提取: pattern={pattern}, source_field={source_field}, source_value={source_value[:50]}...")
-
         try:
             m = _re.search(pattern, source_value)
             if m:
                 result = m.group(group_idx) if group_idx <= len(m.groups()) else (m.group(0) if group_idx == 0 else '')
-                print(f"[DEBUG] 正则匹配成功: groups={m.groups()}, result={result}")
                 return result
             else:
-                print(f"[DEBUG] 正则未匹配到")
-                # 导出Excel时，正则未匹配且是数字提取模式，返回'0'
                 if default_zero and (r'\d' in pattern or any(c.isdigit() for c in pattern)):
-                    print(f"[DEBUG] 导出模式，数字提取未匹配返回0")
                     return '0'
         except _re.error as e:
             print(f"[WARN] 正则表达式错误: {order_field}, 错误: {e}")
         return ''
 
-    # 处理字符串格式的字段名
+    # ========== 第三步：处理模板字符串格式（支持 {字段名} 占位符） ==========
+    # 这不是 JSON 配置，而是模板字符串
+    if isinstance(order_field, str) and '{' in order_field and '}' in order_field:
+        template = str(order_field)
+
+        # 查找所有 {字段名} 格式的占位符
+        # 只匹配：{英文字母/中文开头，后面是字母/数字/下划线}
+        placeholders = _re.findall(r'\{([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_]*)\}', template)
+
+        if placeholders:
+            result = template
+            for placeholder in placeholders:
+                # 递归获取字段值
+                field_value = _get_order_field_value(order, placeholder, default_zero)
+                if field_value is not None and field_value != '':
+                    result = result.replace('{' + placeholder + '}', str(field_value))
+                else:
+                    result = result.replace('{' + placeholder + '}', '')
+            return result
+
+    # ========== 第四步：处理字符串格式的字段名（简单字段） ==========
     order_field_str = str(order_field) if order_field else ''
 
     if order_field_str == 'customer_name':
@@ -169,8 +232,8 @@ def _get_order_field_value(order, order_field, default_zero=False):
         return datetime.now().strftime('%Y-%m-%d')
     elif order_field_str == '__seq__':
         return ''
-    return ''
 
+    return ''
 
 @bp.route('/export/preview')
 @role_required('shipper', 'admin')
@@ -658,23 +721,15 @@ def batch_toggle_export():
         except ValueError:
             return jsonify({'success': False, 'message': '订单ID格式错误'})
     
-    # 如果没有标记任何订单，则不处理
-    if not marked_ids:
-        return jsonify({'success': True, 'message': '没有需要保存的导出标记'})
+    # 查询已标记的订单（如果有）
+    orders = []
+    if marked_ids:
+        orders = Order.query.filter(Order.id.in_(marked_ids)).all()
     
-    # 查询已标记的订单
-    orders = Order.query.filter(Order.id.in_(marked_ids)).all()
-    
-    if not orders:
-        return jsonify({'success': False, 'message': '未找到相关订单'})
-    
-    # 权限检查
-    if current_user.username != 'admin' and current_user.group_id:
+    # 权限检查（仅对选中的订单）
+    if current_user.username != 'admin' and current_user.group_id and orders:
         managed_group_ids = current_user.get_managed_group_ids()
         orders = [o for o in orders if o.group_id in managed_group_ids]
-    
-    if not orders:
-        return jsonify({'success': False, 'message': '无权限操作这些订单'})
     
     # 标记为已导出
     for order in orders:
@@ -683,7 +738,7 @@ def batch_toggle_export():
             order.export_mark_time = datetime.now()
     
     # 如果提供了所有ID列表，则取消未选中的订单的导出标记
-    if all_submitted_ids and action == 'mark':
+    if all_submitted_ids:
         # 找出需要取消标记的订单
         ids_to_unmark = [id for id in all_submitted_ids if id not in marked_ids]
         if ids_to_unmark:

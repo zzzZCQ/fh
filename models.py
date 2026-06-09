@@ -419,7 +419,8 @@ class BehaviorTrackingRecord(db.Model):
     nickname = db.Column(db.String(200), nullable=False)
     month = db.Column(db.Integer, nullable=False)
     day = db.Column(db.Integer, nullable=False)
-    play_status = db.Column(db.Integer, nullable=False, default=3)
+    play_status = db.Column(db.Integer, nullable=False, default=0)  # 0=无记录,1=完播,2=未完播,3=未观看
+    is_rejected = db.Column(db.Boolean, default=False)  # 是否拒接
     call_duration_seconds = db.Column(db.Integer, default=0)
     play_order = db.Column(db.Integer, default=0)
     create_time = db.Column(db.DateTime, default=_now_bj)

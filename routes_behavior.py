@@ -184,9 +184,17 @@ def clear_behavior_all():
     if os.path.exists(user_dir):
         shutil.rmtree(user_dir)
         os.makedirs(user_dir, exist_ok=True)
-        flash('已清空所有文件，可以开始新一期了', 'success')
-    else:
-        flash('没有文件需要清空', 'info')
+    
+    # 同时清空数据库中的行为轨迹记录
+    try:
+        deleted_count = BehaviorTrackingRecord.query.filter_by(
+            user_id=current_user.id
+        ).delete(synchronize_session=False)
+        db.session.commit()
+        flash(f'已清空所有文件和数据库记录（{deleted_count}条），可以开始新一期了', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'清空文件成功，但数据库清空失败：{str(e)}', 'warning')
 
     return redirect(url_for('behavior.behavior_tracking_page'))
 
@@ -1022,11 +1030,26 @@ def customer_tracking():
         else:
             salesmen = []
     
-    # 获取可选的日期
-    dates = db.session.query(
+    # 获取可选的日期（根据数据权限过滤）
+    dates_query = db.session.query(
         BehaviorTrackingRecord.month,
         BehaviorTrackingRecord.day
-    ).distinct().order_by(BehaviorTrackingRecord.month, BehaviorTrackingRecord.day).all()
+    ).distinct()
+    
+    # 如果是业务员，只能看到自己的数据
+    if is_salesman_only:
+        dates_query = dates_query.filter(BehaviorTrackingRecord.user_id == current_user.id)
+    elif salesman_id:
+        dates_query = dates_query.filter(BehaviorTrackingRecord.user_id == salesman_id)
+    elif group_id:
+        group = Group.query.get(group_id)
+        if group:
+            child_groups = group.get_all_children_ids() + [group_id]
+            dates_query = dates_query.join(User).filter(User.group_id.in_(child_groups))
+    elif user_groups:
+        dates_query = dates_query.join(User).filter(User.group_id.in_(user_groups))
+    
+    dates = dates_query.order_by(BehaviorTrackingRecord.month, BehaviorTrackingRecord.day).all()
     
     # 根据筛选条件查询数据
     query = BehaviorTrackingRecord.query
@@ -1100,14 +1123,27 @@ def customer_tracking():
                 'address': customer_info.address if customer_info else '',
                 'health_condition': customer_info.health_condition if customer_info else '',
                 'medication_status': customer_info.medication_status if customer_info else '',
-                'is_followed': customer_info is not None
+                'is_followed': customer_info is not None and (
+                    (customer_info.customer_name or customer_info.gender or 
+                     customer_info.age > 0 or customer_info.phone or 
+                     customer_info.address or customer_info.health_condition or 
+                     customer_info.medication_status)
+                )
             }
         date_key = f"{record.month:02d}{record.day:02d}"
+        # 处理旧数据迁移：play_status=4 表示拒接，需要转换
+        play_status = record.play_status
+        is_rejected = record.is_rejected if hasattr(record, 'is_rejected') else False
+        if play_status == 4:
+            play_status = 0
+            is_rejected = True
+        
         data[key]['dates'][date_key] = {
-            'play_status': record.play_status,
+            'play_status': play_status,
+            'is_rejected': is_rejected,
             'call_duration': record.call_duration_seconds
         }
-        if record.play_status == 1:
+        if play_status == 1:
             data[key]['completed_days'] += 1
     
     # 按完播天数降序排序
@@ -1124,6 +1160,28 @@ def customer_tracking():
         rows_data = [row for row in rows_data if not row['is_followed']]
     
     date_list = [f"{m:02d}{d:02d}" for m, d in dates]
+    
+    # 自动往后扩展一天的日期
+    if dates:
+        # 获取最后一个日期
+        last_month, last_day = dates[-1]
+        
+        # 计算下一个日期
+        from datetime import datetime, timedelta
+        try:
+            # 假设是当前年份
+            current_year = datetime.now().year
+            last_date = datetime(current_year, last_month, last_day)
+            next_date = last_date + timedelta(days=1)
+            
+            # 添加上下一个日期
+            dates.append((next_date.month, next_date.day))
+            date_list.append(f"{next_date.month:02d}{next_date.day:02d}")
+        except:
+            # 如果计算失败，简单地假设 +1 天
+            if last_day < 28:
+                dates.append((last_month, last_day + 1))
+                date_list.append(f"{last_month:02d}{last_day + 1:02d}")
     
     # 分页处理
     page = request.args.get('page', 1, type=int)
@@ -1396,6 +1454,59 @@ def save_customer_info():
     print(f'  phone: {repr(customer_info.phone)}')
     print(f'  address: {repr(customer_info.address)}')
     
+    # 保存观看状态和通话时长修改
+    record_changes = data.get('record_changes', [])
+    if record_changes:
+        print(f'[DEBUG] 记录修改: {len(record_changes)} 条')
+        for change in record_changes:
+            date_str = change.get('date')
+            
+            if date_str:
+                try:
+                    month = int(date_str[:2])
+                    day = int(date_str[2:])
+                    
+                    # 查找或创建行为轨迹记录
+                    record = BehaviorTrackingRecord.query.filter_by(
+                        user_id=user_id,
+                        nickname=nickname,
+                        month=month,
+                        day=day
+                    ).first()
+                    
+                    if not record:
+                        # 如果没有记录，创建一条新记录
+                        record = BehaviorTrackingRecord(
+                            user_id=user_id,
+                            nickname=nickname,
+                            month=month,
+                            day=day,
+                            play_status=0,
+                            is_rejected=False,
+                            call_duration_seconds=0,
+                            play_order=0
+                        )
+                        db.session.add(record)
+                        print(f'[DEBUG] 创建新记录: {date_str}')
+                    
+                    # 更新观看状态
+                    if 'play_status' in change:
+                        record.play_status = change['play_status']
+                        print(f'[DEBUG] 更新观看状态: {date_str} -> {change["play_status"]}')
+                    
+                    # 更新拒接状态
+                    if 'is_rejected' in change:
+                        record.is_rejected = change['is_rejected']
+                        print(f'[DEBUG] 更新拒接状态: {date_str} -> {change["is_rejected"]}')
+                    
+                    # 更新通话时长
+                    if 'minutes' in change:
+                        record.call_duration_seconds = change['minutes'] * 60
+                        print(f'[DEBUG] 更新通话时长: {date_str} -> {change["minutes"]}分钟')
+                    
+                except Exception as e:
+                    print(f'[DEBUG] 处理记录修改失败: {e}')
+    
     try:
         db.session.add(customer_info)
         db.session.commit()
@@ -1404,4 +1515,61 @@ def save_customer_info():
     except Exception as e:
         db.session.rollback()
         print('[DEBUG] 数据库错误:', str(e))
+        return {'success': False, 'message': str(e)}
+
+
+@bp.route('/admin/customer_tracking/save_records', methods=['POST'])
+@role_required('admin', 'salesman')
+def save_tracking_records():
+    """保存客户跟踪记录（可编辑观看状态）"""
+    data = request.get_json()
+    records = data.get('records', [])
+    
+    updated_count = 0
+    
+    for record in records:
+        user_id = record.get('user_id')
+        nickname = record.get('nickname')
+        date_str = record.get('date')
+        play_status = record.get('play_status')
+        
+        if not user_id or not nickname or not date_str or play_status is None:
+            continue
+        
+        # 解析日期
+        try:
+            month = int(date_str[:2])
+            day = int(date_str[2:])
+        except:
+            continue
+        
+        # 查找或创建记录
+        existing_record = BehaviorTrackingRecord.query.filter_by(
+            user_id=user_id,
+            nickname=nickname,
+            month=month,
+            day=day
+        ).first()
+        
+        if existing_record:
+            existing_record.play_status = play_status
+        else:
+            new_record = BehaviorTrackingRecord(
+                user_id=user_id,
+                nickname=nickname,
+                month=month,
+                day=day,
+                play_status=play_status,
+                call_duration_seconds=0,
+                play_order=0
+            )
+            db.session.add(new_record)
+        
+        updated_count += 1
+    
+    try:
+        db.session.commit()
+        return {'success': True, 'updated_count': updated_count}
+    except Exception as e:
+        db.session.rollback()
         return {'success': False, 'message': str(e)}

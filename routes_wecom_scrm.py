@@ -10,7 +10,7 @@ from flask import Blueprint, render_template, request, jsonify, send_from_direct
 from flask_login import login_required, current_user
 from models import db, WecomAccount, WecomCustomer
 from wecom_super_wrapper import WeComSuperWrapper, get_super_wrapper
-from wecom_qrlogin_service import get_qrlogin_service
+# 企微APP扫码登录服务已在下方导入 (from wecom_app_login_service import ...)
 from datetime import datetime
 import json
 import os
@@ -333,20 +333,37 @@ def _monitor_quick_add_background(user_id):
 
 
 # ==================== 扫码登录 API ====================
+# 使用 wecom_app_login_service - 模拟 iPad 企微APP扫码登录
+# login_type: wwclient (企微APP客户端) / login_admin (管理后台)
+
+from wecom_app_login_service import get_wecom_app_login_service
+
 
 @wecom_scrm_bp.route('/api/qrlogin/create')
 @login_required
 def create_qrcode():
-    """创建扫码登录二维码"""
+    """创建企微APP扫码登录二维码
+    query参数:
+      - login_type: wwclient (默认, 企微APP客户端) / login_admin (管理后台)
+    """
     try:
-        qrlogin_service = get_qrlogin_service()
-        session_id, qrcode_data = qrlogin_service.create_qrcode()
-        
+        login_type = request.args.get('login_type', 'wwclient')
+        service = get_wecom_app_login_service()
+        session_id, err = service.create_session(login_type=login_type)
+
+        if err:
+            return jsonify({'success': False, 'message': err})
+
+        qrcode_b64 = service.get_qrcode_b64(session_id)
+        if not qrcode_b64:
+            return jsonify({'success': False, 'message': '二维码生成失败'})
+
         return jsonify({
             'success': True,
             'data': {
                 'session_id': session_id,
-                'qrcode': qrcode_data,
+                'qrcode': 'data:image/png;base64,' + qrcode_b64,
+                'login_type': login_type,
             }
         })
     except Exception as e:
@@ -356,12 +373,25 @@ def create_qrcode():
 @wecom_scrm_bp.route('/api/qrlogin/status/<session_id>')
 @login_required
 def check_qrlogin_status(session_id):
-    """检查扫码登录状态"""
+    """检查企微扫码登录状态"""
     try:
-        qrlogin_service = get_qrlogin_service()
-        result = qrlogin_service.check_scan_status(session_id)
-        
-        return jsonify(result)
+        service = get_wecom_app_login_service()
+        status = service.get_status(session_id)
+
+        if not status:
+            return jsonify({'success': False, 'message': '会话不存在'})
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'session_id': session_id,
+                'status': status.get('status', 'pending'),
+                'login_type': status.get('login_type', ''),
+                'message': status.get('error', ''),
+                'auth_source': status.get('auth_source', ''),
+                'elapsed_seconds': status.get('elapsed_seconds', 0),
+            }
+        })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -371,31 +401,42 @@ def check_qrlogin_status(session_id):
 def get_qrlogin_result(session_id):
     """获取扫码登录结果"""
     try:
-        qrlogin_service = get_qrlogin_service()
-        result = qrlogin_service.get_login_result(session_id)
-        
+        service = get_wecom_app_login_service()
+        result = service.get_result(session_id)
+
         if not result:
             return jsonify({'success': False, 'message': '登录未完成'})
-        
-        # 创建账号
-        user_info = result.get('user_info', {})
+
+        if not result.get('success'):
+            return jsonify({
+                'success': False,
+                'message': result.get('message', '登录失败'),
+                'status': result.get('status')
+            })
+
+        # 创建账号记录
+        auth_code = result.get('auth_code', '')
+        auth_source = result.get('auth_source', '')
+
         with current_app.app_context():
             account = WecomAccount(
                 user_id=current_user.id,
-                account_name=user_info.get('name', '企业微信账号'),
-                real_name=user_info.get('name', ''),
-                wecom_alias=user_info.get('corp_name', ''),
+                account_name='企业微信账号',
+                real_name='',
+                wecom_alias=auth_source,
                 status='online'
             )
+            account.auth_code = auth_code
             db.session.add(account)
             db.session.commit()
-            
+
             return jsonify({
                 'success': True,
                 'message': '登录成功，账号已创建',
                 'data': {
                     'account': account.to_dict(),
-                    'user_info': user_info,
+                    'auth_code': auth_code,
+                    'auth_source': auth_source,
                 }
             })
     except Exception as e:
@@ -404,6 +445,21 @@ def get_qrlogin_result(session_id):
         except:
             pass
         return jsonify({'success': False, 'message': str(e)})
+
+
+@wecom_scrm_bp.route('/api/qrlogin/image/<session_id>.png')
+@login_required
+def get_qrlogin_image(session_id):
+    """返回二维码图片 PNG (供 <img> 标签引用)"""
+    try:
+        service = get_wecom_app_login_service()
+        qr_bytes = service.get_qrcode_bytes(session_id)
+        if not qr_bytes:
+            return jsonify({'success': False, 'message': '二维码不存在'}), 404
+        from flask import Response
+        return Response(qr_bytes, mimetype='image/png')
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ==================== 客户管理 ====================

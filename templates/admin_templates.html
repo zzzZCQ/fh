@@ -757,6 +757,7 @@ const exportPresetMappings = [
 function getFillType(orderField) {
     if (!orderField) return 'field';
     if (orderField.startsWith('/') && orderField.endsWith('/')) return 'regex';
+    // 模板字符串格式：包含 {字段名} 占位符（但不是 JSON 配置）
     if (orderField.startsWith('{')) {
         try {
             const config = JSON.parse(orderField);
@@ -764,6 +765,8 @@ function getFillType(orderField) {
             if (config.type === 'condition') return 'condition';
         } catch (e) {}
     }
+    // 不是 JSON 格式但包含 { 和 }，视为字段组合模板
+    if (orderField.includes('{') && orderField.includes('}')) return 'composite';
     return 'field';
 }
 
@@ -793,6 +796,7 @@ function addExportMappingRow(excelCol = '', orderField = '') {
                 <div class="col-3">
                     <select class="form-select form-select-sm fill-type-select" onchange="handleExportFillTypeChange(this)">
                         <option value="field" ${fillType === 'field' ? 'selected' : ''}>直接字段</option>
+                        <option value="composite" ${fillType === 'composite' ? 'selected' : ''}>字段组合</option>
                         <option value="regex" ${fillType === 'regex' ? 'selected' : ''}>正则提取</option>
                         <option value="fixed" ${fillType === 'fixed' ? 'selected' : ''}>固定文本</option>
                         <option value="condition" ${fillType === 'condition' ? 'selected' : ''}>条件匹配</option>
@@ -820,6 +824,10 @@ function addExportMappingRow(excelCol = '', orderField = '') {
                     <div class="field-config" data-type="regex" style="display:none;">
                         <input type="text" class="form-control form-control-sm" placeholder='/product_info/固本回元\*(\d+)/' oninput="updateExportFinalInput(this)">
                     </div>
+                    <div class="field-config" data-type="composite" style="display:none;">
+                        <input type="text" class="form-control form-control-sm composite-input" placeholder="如: {customer_name} ({phone})" oninput="updateExportFinalInput(this)">
+                        <small class="form-text text-muted">使用 {字段名} 占位符，例如：{customer_name} ({phone}) 或 {address} 备注:{remark}</small>
+                    </div>
                     <div class="field-config" data-type="fixed" style="display:none;">
                         <input type="text" class="form-control form-control-sm" placeholder='填入的固定文本内容' oninput="updateExportFinalInput(this)">
                     </div>
@@ -845,31 +853,40 @@ function addExportMappingRow(excelCol = '', orderField = '') {
     const select = row.querySelector('.fill-type-select');
     handleExportFillTypeChange(select);
     
-    // 设置直接字段的选中值
-    if (fillType === 'field' && orderField && !orderField.startsWith('/') && !orderField.startsWith('{')) {
-        row.querySelector('[data-type="field"] select').value = orderField;
+    // 设置字段组合的值（优先处理，因为它可能是 { 开头的）
+    if (fillType === 'composite') {
+        row.querySelector('[data-type="composite"] input').value = orderField;
         row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="composite"]').style.display = '';
     }
     // 设置正则表达式的值
-    if (fillType === 'regex' && orderField.startsWith('/')) {
+    else if (fillType === 'regex' && orderField.startsWith('/')) {
         row.querySelector('[data-type="regex"] input').value = orderField;
         row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="regex"]').style.display = '';
     }
     // 设置固定文本的值
-    if (fillType === 'fixed' && configData.value) {
+    else if (fillType === 'fixed' && configData.value) {
         row.querySelector('[data-type="fixed"] input').value = configData.value;
         row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="fixed"]').style.display = '';
     }
     // 设置条件匹配按钮状态
-    if (fillType === 'condition') {
+    else if (fillType === 'condition') {
         const btn = row.querySelector('[data-type="condition"] button');
         if (configData.conditions && configData.conditions.length > 0) {
             btn.innerHTML = `<i class="bi bi-gear"></i> 已配置${configData.conditions.length}个条件`;
             btn.classList.remove('btn-outline-primary');
             btn.classList.add('btn-success');
         }
-        // 无论条件是否为空，都设置 order-field-final
         row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="condition"]').style.display = '';
+    }
+    // 设置直接字段的选中值
+    else if (fillType === 'field' && orderField) {
+        row.querySelector('[data-type="field"] select').value = orderField;
+        row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="field"]').style.display = '';
     }
     
     exportMappingIndex++;
@@ -905,6 +922,14 @@ function handleExportFillTypeChange(select) {
             const regexInput = targetConfig.querySelector('input');
             if (regexInput && regexInput.value) {
                 finalInput.value = regexInput.value;
+            } else {
+                finalInput.value = '';
+            }
+        } else if (selectedType === 'composite') {
+            // 字段组合：直接使用模板字符串
+            const compositeInput = targetConfig.querySelector('input');
+            if (compositeInput && compositeInput.value) {
+                finalInput.value = compositeInput.value;
             } else {
                 finalInput.value = '';
             }
@@ -944,6 +969,9 @@ function updateExportFinalInput(element) {
     } else if (fillType === 'regex') {
         // 正则
         finalInput.value = element.value;
+    } else if (fillType === 'composite') {
+        // 字段组合：直接使用模板字符串
+        finalInput.value = element.value;
     } else if (fillType === 'fixed') {
         // 固定文本
         finalInput.value = JSON.stringify({type: 'fixed', value: element.value});
@@ -964,7 +992,7 @@ function openExportConditionEditor(btn) {
             config = JSON.parse(existingConfig.dataset.config);
             // 确保配置对象有正确的结构
             if (!config.field) config.field = 'product_info';
-            if (!Array.isArray(config.conditions)) config.conditions = [{match: '', result: ''}];
+            if (!Array.isArray(config.conditions)) config.conditions = [{match: '', result: '', operator: '=='}];
             if (config.default === undefined) config.default = '';
         } catch (e) {
             config = {field: 'product_info', conditions: [{match: '', result: ''}], default: ''};
@@ -1000,13 +1028,23 @@ function openExportConditionEditor(btn) {
     
     let conditionsHtml = '';
     if (config.conditions.length === 0) {
-        config.conditions = [{match: '', result: ''}];
+        config.conditions = [{match: '', result: '', operator: '=='}];
     }
     config.conditions.forEach((cond) => {
         conditionsHtml += `
             <div class="row mb-1 condition-item">
-                <div class="col-5">
-                    <input type="text" class="form-control form-control-sm" placeholder="匹配值（如：固本回元）" value="${cond.match}">
+                <div class="col-2">
+                    <select class="form-select form-select-sm operator-select">
+                        <option value="==" ${cond.operator === '==' ? 'selected' : ''}>==</option>
+                        <option value="!=" ${cond.operator === '!=' ? 'selected' : ''}>!=</option>
+                        <option value=">" ${cond.operator === '>' ? 'selected' : ''}>></option>
+                        <option value=">=" ${cond.operator === '>=' ? 'selected' : ''}>>=</option>
+                        <option value="<" ${cond.operator === '<' ? 'selected' : ''}><</option>
+                        <option value="<=" ${cond.operator === '<=' ? 'selected' : ''}><=</option>
+                    </select>
+                </div>
+                <div class="col-3">
+                    <input type="text" class="form-control form-control-sm" placeholder="匹配值" value="${cond.match}">
                 </div>
                 <div class="col-1 text-center">→</div>
                 <div class="col-5">
@@ -1081,8 +1119,18 @@ function addExportConditionItem() {
     const container = document.getElementById('exportConditionItems');
     const itemHtml = `
         <div class="row mb-1 condition-item">
-            <div class="col-5">
-                <input type="text" class="form-control form-control-sm" placeholder="匹配值（如：固本回元）">
+            <div class="col-2">
+                <select class="form-select form-select-sm operator-select">
+                    <option value="==" selected>==</option>
+                    <option value="!=">!=</option>
+                    <option value=">">></option>
+                    <option value=">=">>=</option>
+                    <option value="<"><</option>
+                    <option value="<="><=</option>
+                </select>
+            </div>
+            <div class="col-3">
+                <input type="text" class="form-control form-control-sm" placeholder="匹配值">
             </div>
             <div class="col-1 text-center">→</div>
             <div class="col-5">
@@ -1110,11 +1158,13 @@ function saveExportConditionConfig(btn) {
     };
     
     modal.querySelectorAll('.condition-item').forEach(item => {
+        const select = item.querySelector('.operator-select');
         const inputs = item.querySelectorAll('input');
+        const operator = select ? select.value : '==';
         const match = inputs[0].value.trim();
         const result = inputs[1].value.trim();
         if (match || result) {
-            config.conditions.push({match: match, result: result});
+            config.conditions.push({match: match, result: result, operator: operator});
         }
     });
     
@@ -1198,6 +1248,9 @@ function processExportMappingForm(form) {
             orderFieldValue = cardBody.querySelector('[data-type="field"] select').value;
         } else if (fillType === 'regex') {
             orderFieldValue = cardBody.querySelector('[data-type="regex"] input').value;
+        } else if (fillType === 'composite') {
+            // 字段组合：直接使用模板字符串
+            orderFieldValue = cardBody.querySelector('[data-type="composite"] input').value;
         } else if (fillType === 'fixed') {
             const fixedText = cardBody.querySelector('[data-type="fixed"] input').value;
             if (fixedText) {
@@ -1527,6 +1580,7 @@ function addEditExportMappingRow(excelCol = '', orderField = '') {
                 <div class="col-3">
                     <select class="form-select form-select-sm edit-fill-type-select" onchange="handleEditExportFillTypeChange(this)">
                         <option value="field" ${fillType === 'field' ? 'selected' : ''}>直接字段</option>
+                        <option value="composite" ${fillType === 'composite' ? 'selected' : ''}>字段组合</option>
                         <option value="regex" ${fillType === 'regex' ? 'selected' : ''}>正则提取</option>
                         <option value="fixed" ${fillType === 'fixed' ? 'selected' : ''}>固定文本</option>
                         <option value="condition" ${fillType === 'condition' ? 'selected' : ''}>条件匹配</option>
@@ -1554,6 +1608,10 @@ function addEditExportMappingRow(excelCol = '', orderField = '') {
                     <div class="field-config" data-type="regex" style="display:none;">
                         <input type="text" class="form-control form-control-sm" placeholder='/product_info/固本回元\*(\d+)/' oninput="updateEditExportFinalInput(this)">
                     </div>
+                    <div class="field-config" data-type="composite" style="display:none;">
+                        <input type="text" class="form-control form-control-sm composite-input" placeholder="如: {customer_name} ({phone})" oninput="updateEditExportFinalInput(this)">
+                        <small class="form-text text-muted">使用 {字段名} 占位符，例如：{customer_name} ({phone}) 或 {address} 备注:{remark}</small>
+                    </div>
                     <div class="field-config" data-type="fixed" style="display:none;">
                         <input type="text" class="form-control form-control-sm" placeholder='填入的固定文本内容' oninput="updateEditExportFinalInput(this)">
                     </div>
@@ -1579,31 +1637,40 @@ function addEditExportMappingRow(excelCol = '', orderField = '') {
     const select = row.querySelector('.edit-fill-type-select');
     handleEditExportFillTypeChange(select);
     
-    // 设置直接字段的选中值
-    if (fillType === 'field' && orderField && !orderField.startsWith('/') && !orderField.startsWith('{')) {
-        row.querySelector('[data-type="field"] select').value = orderField;
+    // 设置字段组合的值（优先处理，因为它可能是 { 开头的）
+    if (fillType === 'composite') {
+        row.querySelector('[data-type="composite"] input').value = orderField;
         row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="composite"]').style.display = '';
     }
     // 设置正则表达式的值
-    if (fillType === 'regex' && orderField.startsWith('/')) {
+    else if (fillType === 'regex' && orderField.startsWith('/')) {
         row.querySelector('[data-type="regex"] input').value = orderField;
         row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="regex"]').style.display = '';
     }
     // 设置固定文本的值
-    if (fillType === 'fixed' && configData.value) {
+    else if (fillType === 'fixed' && configData.value) {
         row.querySelector('[data-type="fixed"] input').value = configData.value;
         row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="fixed"]').style.display = '';
     }
     // 设置条件匹配按钮状态
-    if (fillType === 'condition') {
+    else if (fillType === 'condition') {
         const btn = row.querySelector('[data-type="condition"] button');
         if (configData.conditions && configData.conditions.length > 0) {
             btn.innerHTML = `<i class="bi bi-gear"></i> 已配置${configData.conditions.length}个条件`;
             btn.classList.remove('btn-outline-primary');
             btn.classList.add('btn-success');
         }
-        // 无论条件是否为空，都设置 order-field-final
         row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="condition"]').style.display = '';
+    }
+    // 设置直接字段的选中值
+    else if (fillType === 'field' && orderField) {
+        row.querySelector('[data-type="field"] select').value = orderField;
+        row.querySelector('.order-field-final').value = orderField;
+        row.querySelector('[data-type="field"]').style.display = '';
     }
     
     editExportMappingIndex++;
@@ -1639,6 +1706,14 @@ function handleEditExportFillTypeChange(select) {
             const regexInput = targetConfig.querySelector('input');
             if (regexInput && regexInput.value) {
                 finalInput.value = regexInput.value;
+            } else {
+                finalInput.value = '';
+            }
+        } else if (selectedType === 'composite') {
+            // 字段组合：直接使用模板字符串
+            const compositeInput = targetConfig.querySelector('input');
+            if (compositeInput && compositeInput.value) {
+                finalInput.value = compositeInput.value;
             } else {
                 finalInput.value = '';
             }
@@ -1678,6 +1753,9 @@ function updateEditExportFinalInput(element) {
     } else if (fillType === 'regex') {
         // 正则
         finalInput.value = element.value;
+    } else if (fillType === 'composite') {
+        // 字段组合：直接使用模板字符串
+        finalInput.value = element.value;
     } else if (fillType === 'fixed') {
         // 固定文本
         finalInput.value = JSON.stringify({type: 'fixed', value: element.value});
@@ -1698,7 +1776,7 @@ function openEditExportConditionEditor(btn) {
             config = JSON.parse(existingConfig.dataset.config);
             // 确保配置对象有正确的结构
             if (!config.field) config.field = 'product_info';
-            if (!Array.isArray(config.conditions)) config.conditions = [{match: '', result: ''}];
+            if (!Array.isArray(config.conditions)) config.conditions = [{match: '', result: '', operator: '=='}];
             if (config.default === undefined) config.default = '';
         } catch (e) {
             config = {field: 'product_info', conditions: [{match: '', result: ''}], default: ''};
@@ -1734,13 +1812,23 @@ function openEditExportConditionEditor(btn) {
     
     let conditionsHtml = '';
     if (config.conditions.length === 0) {
-        config.conditions = [{match: '', result: ''}];
+        config.conditions = [{match: '', result: '', operator: '=='}];
     }
     config.conditions.forEach((cond) => {
         conditionsHtml += `
             <div class="row mb-1 condition-item">
-                <div class="col-5">
-                    <input type="text" class="form-control form-control-sm" placeholder="匹配值（如：固本回元）" value="${cond.match}">
+                <div class="col-2">
+                    <select class="form-select form-select-sm operator-select">
+                        <option value="==" ${cond.operator === '==' ? 'selected' : ''}>==</option>
+                        <option value="!=" ${cond.operator === '!=' ? 'selected' : ''}>!=</option>
+                        <option value=">" ${cond.operator === '>' ? 'selected' : ''}>></option>
+                        <option value=">=" ${cond.operator === '>=' ? 'selected' : ''}>>=</option>
+                        <option value="<" ${cond.operator === '<' ? 'selected' : ''}><</option>
+                        <option value="<=" ${cond.operator === '<=' ? 'selected' : ''}><=</option>
+                    </select>
+                </div>
+                <div class="col-3">
+                    <input type="text" class="form-control form-control-sm" placeholder="匹配值" value="${cond.match}">
                 </div>
                 <div class="col-1 text-center">→</div>
                 <div class="col-5">
@@ -1844,11 +1932,13 @@ function saveEditExportConditionConfig(btn) {
     };
     
     modal.querySelectorAll('.condition-item').forEach(item => {
+        const select = item.querySelector('.operator-select');
         const inputs = item.querySelectorAll('input');
+        const operator = select ? select.value : '==';
         const match = inputs[0].value.trim();
         const result = inputs[1].value.trim();
         if (match || result) {
-            config.conditions.push({match: match, result: result});
+            config.conditions.push({match: match, result: result, operator: operator});
         }
     });
     
@@ -1911,6 +2001,9 @@ function processEditExportMappingForm(form) {
             orderFieldValue = cardBody.querySelector('[data-type="field"] select').value;
         } else if (fillType === 'regex') {
             orderFieldValue = cardBody.querySelector('[data-type="regex"] input').value;
+        } else if (fillType === 'composite') {
+            // 字段组合：直接使用模板字符串
+            orderFieldValue = cardBody.querySelector('[data-type="composite"] input').value;
         } else if (fillType === 'fixed') {
             const fixedText = cardBody.querySelector('[data-type="fixed"] input').value;
             if (fixedText) {

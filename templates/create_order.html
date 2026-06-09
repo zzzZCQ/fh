@@ -564,7 +564,7 @@ function parseSingleCustomer(text) {
     const addrKeywords = ['省','市','区','县','镇','村','乡','街道','路','巷','弄','号','栋','楼','室','单元','小区','花园','公寓','大厦','广场','中心','城','苑','庭','居','庄','园'];
     
     function isName(s) {
-        if (!s || s.length < 2 || s.length > 4) return false;
+        if (!s || s.length < 2 || s.length > 6) return false;
         const EXCLUDE = new Set(['收货','地址','电话','姓名','备注','产品','赠品','快递','代收','已付',
             '山东省','山西省','河南省','河北省','湖南省','湖北省','江苏省','江西省','浙江省',
             '福建省','广东省','海南省','四川省','贵州省','云南省','陕西省','甘肃省','青海省','台湾省',
@@ -584,6 +584,49 @@ function parseSingleCustomer(text) {
     }
     
     function isPhone(s) { return /^1[3-9]\d{9}$/.test(s); }
+    
+    // ========== 优先处理：姓名，电话，地址 格式 ==========
+    // 这种格式是最常见的，逗号分隔三个部分
+    const commaParts = text.split(/[，,]/).map(s => s.trim()).filter(s => s);
+    
+    if (commaParts.length >= 2) {
+        // 查找电话号码位置
+        let phoneIndex = -1;
+        for (let i = 0; i < commaParts.length; i++) {
+            const phoneMatch = commaParts[i].match(/1[3-9]\d{9}/);
+            if (phoneMatch) {
+                phone = phoneMatch[0];
+                phoneIndex = i;
+                break;
+            }
+        }
+        
+        if (phone) {
+            // 电话号码前面的部分作为姓名
+            for (let i = 0; i < phoneIndex; i++) {
+                const part = commaParts[i].replace(/\d+\s*岁?/g, '').trim();
+                if (part && isName(part)) {
+                    name = part;
+                    break;
+                }
+            }
+            
+            // 电话号码后面的所有部分作为地址
+            const addrParts = [];
+            for (let i = phoneIndex + 1; i < commaParts.length; i++) {
+                addrParts.push(commaParts[i]);
+            }
+            address = addrParts.join('').replace(phone, '').trim();
+            
+            // 如果成功识别到姓名和地址
+            if (name && address) {
+                console.log('智能识别 - 逗号分隔格式成功:', { name, phone, address });
+                return { name, phone, address };
+            }
+        }
+    }
+    
+    // ========== 通用解析逻辑 ==========
     
     // 第一步：优先从标签后面提取内容（姓名、电话、地址）
     let cleanText = text;
@@ -610,7 +653,7 @@ function parseSingleCustomer(text) {
     }
     
     // 如果已经提取到完整的姓名、电话、地址，直接返回
-    if (name && phone && address && name.length >= 2 && name.length <= 4) {
+    if (name && phone && address && name.length >= 2 && name.length <= 6) {
         console.log('智能识别 - 从标签提取成功:', { name, phone, address });
         return { name, phone, address };
     }
@@ -629,69 +672,50 @@ function parseSingleCustomer(text) {
     }
     
     // 清理特殊字符，只保留中文、字母、数字、#（路号）、-（门牌号分隔）和空格
-    cleanText = cleanText.replace(/[^\u4e00-\u9fffA-Za-z0-9#-\s]/g, '');
+    cleanText = cleanText.replace(/[^\u4e00-\u9fffA-Za-z0-9#-\s]/g, ' ');
     
     // 再清理单独出现的标签词（只有当它们是独立出现的，不是作为地址一部分的）
-    // 这些词列表：
     const tagWords = ['详细地址', '详细', '地址', '收货人', '收件人', '姓名', '名', '性名', '电话', '手机', '电话号', '手机号', '联系电话', '备注', '说明'];
     
     for (const word of tagWords) {
-        // 清理开头的独立标签词
         const startPattern = new RegExp('^' + word + '[，,；;、\\s]+', 'g');
         cleanText = cleanText.replace(startPattern, '');
-        // 清理中间的独立标签词
         const midPattern = new RegExp('([，,；;、\\s])' + word + '([，,；;、\\s])', 'g');
         cleanText = cleanText.replace(midPattern, '$1$2');
-        // 清理结尾的独立标签词
         const endPattern = new RegExp('([，,；;、\\s])' + word + '$', 'g');
         cleanText = cleanText.replace(endPattern, '');
     }
     
     console.log('智能识别 - 清理标签后:', cleanText);
     
-    // 第二步：先按逗号、分号、空格等多种分隔符分割
-    let rawParts = cleanText.split(/[，,；;、\s]+/).filter(s => s.trim());
+    // 第三步：提取电话号码
+    let extractedPhone = '';
+    const phoneRegex = /1[3-9]\d{9}/;
+    const phoneMatch2 = cleanText.match(phoneRegex);
+    if (phoneMatch2) {
+        extractedPhone = phoneMatch2[0];
+        phone = extractedPhone;
+        // 从文本中去掉电话，方便后续解析
+        cleanText = cleanText.replace(extractedPhone, ' ');
+    }
+    
+    console.log('智能识别 - 提取电话后:', { phone, cleanText });
+    
+    // 第四步：分割剩余文本
+    let rawParts = cleanText.split(/[，,；;、\s]+/).filter(s => s.trim() && s.trim().length >= 2);
     console.log('智能识别 - 分割后的部分:', rawParts);
     
-    // 第三步：对每个部分再单独清理标签，并过滤掉纯标签词
+    // 第五步：过滤掉纯标签词和年龄
     const pureTagWords = ['详细地址', '详细', '地址', '收货人', '收件人', '姓名', '名', '性名', '电话', '手机', '电话号', '手机号', '联系电话', '备注', '说明'];
-    rawParts = rawParts.map(part => {
-        let cleanPart = part;
-        for (const pattern of prefixPatterns) {
-            cleanPart = cleanPart.replace(pattern, '');
-        }
-        return cleanPart.trim();
-    }).filter(s => {
-        // 过滤掉纯标签词
-        if (pureTagWords.includes(s)) {
-            return false;
-        }
-        return s.trim().length > 0;
+    rawParts = rawParts.filter(s => {
+        if (pureTagWords.includes(s)) return false;
+        if (/^\d+\s*岁?$/.test(s)) return false;
+        return true;
     });
-    console.log('智能识别 - 清理单个部分标签后:', rawParts);
     
-    // 第四步：先提取电话
-    for (let i = 0; i < rawParts.length; i++) {
-        if (isPhone(rawParts[i])) {
-            phone = rawParts[i];
-            rawParts.splice(i, 1);
-            break;
-        }
-    }
+    console.log('智能识别 - 过滤后:', rawParts);
     
-    // 如果没找到，用正则再找
-    if (!phone) {
-        const phoneMatch = cleanText.match(/1[3-9]\d{9}/);
-        if (phoneMatch) {
-            phone = phoneMatch[0];
-            // 从清理后的文本中去掉电话，方便后续解析
-            const newText = cleanText.replace(phone, '');
-            rawParts.length = 0;
-            rawParts.push(...newText.split(/[，,；;、\s]+/).filter(s => s.trim()));
-        }
-    }
-    
-    // 第五步：从剩下的部分中找出姓名（优先找2-4个汉字且是姓氏开头的）
+    // 第六步：从剩下的部分中找出姓名
     let nameIndex = -1;
     for (let i = 0; i < rawParts.length; i++) {
         if (isName(rawParts[i])) {
@@ -701,7 +725,23 @@ function parseSingleCustomer(text) {
         }
     }
     
-    // 第六步：把剩下的部分（除了姓名）作为地址
+    // 如果没找到姓名，尝试从开头查找
+    if (!name) {
+        const namePattern = /^[\u4e00-\u9fff]{2,6}/;
+        const match = text.match(namePattern);
+        if (match && isName(match[0])) {
+            name = match[0];
+            // 找到姓名位置
+            for (let i = 0; i < rawParts.length; i++) {
+                if (rawParts[i] === name) {
+                    nameIndex = i;
+                    break;
+                }
+            }
+        }
+    }
+    
+    // 第七步：把剩下的部分（除了姓名）作为地址
     const addrParts = [];
     for (let i = 0; i < rawParts.length; i++) {
         if (i !== nameIndex) {
@@ -714,32 +754,27 @@ function parseSingleCustomer(text) {
         address = addrParts.join('');
     }
     
-    // 第七步：特殊情况兜底处理
+    // 第八步：特殊情况兜底处理
     if (!name || !address) {
-        // 尝试从文本中找姓名
-        const nameMatch = cleanText.match(/[\u4e00-\u9fff]{2,4}/g);
-        if (nameMatch) {
-            for (const candidate of nameMatch) {
+        const nameMatch2 = cleanText.match(/[\u4e00-\u9fff]{2,6}/g);
+        if (nameMatch2) {
+            for (const candidate of nameMatch2) {
                 if (isName(candidate)) {
                     name = candidate;
-                    // 从文本中去掉姓名，剩下的就是地址
-                    address = cleanText.replace(name, '').replace(phone || '', '').replace(/[，,；;、\s]+/g, '').trim();
+                    address = cleanText.replace(name, '').replace(/[，,；;、\s]+/g, '').trim();
                     break;
                 }
             }
         }
     }
     
-    // 第八步：最后对识别出的地址再做一次清理，去掉残留的标签词
+    // 第九步：最后对识别出的地址再做一次清理
     if (address) {
         const finalTagWords = ['详细地址', '详细', '地址', '收货人', '收件人', '姓名', '名', '性名', '电话', '手机', '电话号', '手机号', '联系电话', '备注', '说明'];
         for (const word of finalTagWords) {
-            // 清理地址中出现的标签词
             address = address.replace(new RegExp(word, 'g'), '');
         }
-        // 清理特殊字符，只保留中文、字母、数字、#（路号）、-（门牌号分隔）和空格
-        address = address.replace(/[^\u4e00-\u9fffA-Za-z0-9#-\s]/g, '');
-        // 清理多余的空格
+        address = address.replace(/[^\u4e00-\u9fffA-Za-z0-9#-\s]/g, ' ');
         address = address.replace(/\s+/g, ' ').trim();
     }
     
