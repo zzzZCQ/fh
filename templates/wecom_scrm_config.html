@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <h2><i class="bi bi-gear"></i> 企业微信 SCRM 配置</h2>
+    <p class="text-muted small mb-4">配置企业微信相关参数后，系统可通过企微官方 API 同步客户、管理托管账号。</p>
+
+    <!-- 状态卡片 -->
+    <div class="row mb-4">
+        <div class="col-sm-4">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h5 class="card-title text-muted">托管账号</h5>
+                    <div class="display-4 fw-bold text-primary">{{ account_count }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h5 class="card-title text-muted">客户总数</h5>
+                    <div class="display-4 fw-bold text-success">{{ customer_count }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h5 class="card-title text-muted">快速入口</h5>
+                    <div class="mt-2">
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('wecom_scrm.accounts_list') }}">
+                            <i class="bi bi-people"></i> 托管账号
+                        </a>
+                        <a class="btn btn-sm btn-outline-success" href="{{ url_for('wecom_scrm.customers_list') }}">
+                            <i class="bi bi-person-lines-fill"></i> 客户管理
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 配置表单 -->
+    <div class="card">
+        <div class="card-header bg-white">
+            <h5 class="mb-0">企业微信应用参数</h5>
+        </div>
+        <div class="card-body">
+
+            <form method="POST" action="{{ url_for('wecom_scrm.config_save') }}">
+
+                <div class="row mb-3">
+                    <label class="col-sm-3 col-form-label text-end">企业 ID (Corp ID)</label>
+                    <div class="col-sm-7">
+                        <input type="text" class="form-control" name="corp_id"
+                               value="{{ config.corp_id }}"
+                               placeholder="企业微信管理后台：我的企业 -> 企业信息">
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <label class="col-sm-3 col-form-label text-end">应用 AgentId</label>
+                    <div class="col-sm-7">
+                        <input type="text" class="form-control" name="agent_id"
+                               value="{{ config.agent_id }}"
+                               placeholder="自建应用的 AgentId（可选）">
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <label class="col-sm-3 col-form-label text-end">应用 Secret</label>
+                    <div class="col-sm-7">
+                        <input type="password" class="form-control" name="secret"
+                               value="{{ config.secret }}"
+                               placeholder="自建应用的 Secret（可选）">
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <label class="col-sm-3 col-form-label text-end text-danger fw-bold">
+                        客户联系 Secret *
+                    </label>
+                    <div class="col-sm-7">
+                        <input type="password" class="form-control" name="contact_secret"
+                               value="{{ config.contact_secret }}"
+                               placeholder="客户联系 -> 客户联系Secret，用于客户数据同步">
+                        <div class="form-text text-muted">必填。用于获取外部联系人列表。</div>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <h6 class="mb-3 text-muted">扫码登录配置</h6>
+
+                <div class="row mb-3">
+                    <label class="col-sm-3 col-form-label text-end text-danger fw-bold">
+                        授权完成回调域名 *
+                    </label>
+                    <div class="col-sm-7">
+                        <input type="text" class="form-control" name="qr_redirect_uri"
+                               value="{{ config.qr_redirect_uri }}"
+                               placeholder="https://你的域名.com/wecom-scrm/account/callback">
+                        <div class="form-text text-muted">
+                            <strong>必须与企微管理后台"授权完成回调域名"完全一致</strong>。
+                            建议填写：<code>https://你的域名.com/wecom-scrm/account/callback</code>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <label class="col-sm-3 col-form-label text-end">扫码登录 AppID</label>
+                    <div class="col-sm-7">
+                        <input type="text" class="form-control" name="qr_app_id"
+                               value="{{ config.qr_app_id }}"
+                               placeholder="用于成员扫码登录的应用（可选，留空则用企业ID）">
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <label class="col-sm-3 col-form-label text-end">扫码登录 Secret</label>
+                    <div class="col-sm-7">
+                        <input type="password" class="form-control" name="qr_app_secret"
+                               value="{{ config.qr_app_secret }}"
+                               placeholder="扫码登录应用的 Secret（可选）">
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <h6 class="mb-3 text-muted">消息回调配置（可选）</h6>
+
+                <div class="row mb-3">
+                    <label class="col-sm-3 col-form-label text-end">Token</label>
+                    <div class="col-sm-7">
+                        <input type="text" class="form-control" name="message_token"
+                               value="{{ config.message_token }}"
+                               placeholder="消息回调 Token">
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <label class="col-sm-3 col-form-label text-end">EncodingAESKey</label>
+                    <div class="col-sm-7">
+                        <input type="text" class="form-control" name="message_aes_key"
+                               value="{{ config.message_aes_key }}"
+                               placeholder="消息加解密密钥">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-sm-7 offset-sm-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> 保存配置
+                        </button>
+                        <button type="button" id="btnTestConn" class="btn btn-outline-secondary ms-2">
+                            <i class="bi bi-activity"></i> 测试连接
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <!-- 测试结果 -->
+            <div id="testResult" class="alert mt-4 d-none" role="alert"></div>
+        </div>
+    </div>
+
+    <!-- 开发者文档指引 -->
+    <div class="card mt-4">
+        <div class="card-header bg-white">
+            <h5 class="mb-0"><i class="bi bi-info-circle"></i> 接入步骤</h5>
+        </div>
+        <div class="card-body">
+            <ol class="mb-0">
+                <li>登录 <a href="https://work.weixin.qq.com" target="_blank">企业微信管理后台</a> -> 我的企业 -> 获取企业ID</li>
+                <li>应用管理 -> 自建应用 -> 创建应用 -> 获取 AgentId 和 Secret</li>
+                <li>客户联系 -> 客户 -> 获取客户联系 Secret（用于客户列表API）</li>
+                <li>将上述信息填入上方表单并保存，然后点"测试连接"验证</li>
+                <li>前往<a href="{{ url_for('wecom_scrm.accounts_list') }}" class="text-decoration-none">托管账号</a>添加成员账号（成员 userid 用于扫码登录后同步客户）</li>
+                <li>前往<a href="{{ url_for('wecom_scrm.customers_list') }}" class="text-decoration-none">客户管理</a>查看和搜索客户</li>
+            </ol>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// 测试连接
+document.getElementById('btnTestConn').addEventListener('click', function() {
+    const corpId = document.querySelector('input[name="corp_id"]').value.trim();
+    const contactSecret = document.querySelector('input[name="contact_secret"]').value.trim();
+    const resultEl = document.getElementById('testResult');
+
+    if (!corpId || !contactSecret) {
+        resultEl.className = 'alert alert-warning mt-4';
+        resultEl.textContent = '请先填写企业 ID 和客户联系 Secret';
+        return;
+    }
+
+    resultEl.className = 'alert alert-info mt-4';
+    resultEl.textContent = '正在测试连接...';
+
+    fetch('{{ url_for('wecom_scrm.config_test') }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'corp_id=' + encodeURIComponent(corpId) + '&contact_secret=' + encodeURIComponent(contactSecret)
+    })
+    .then(r => r.json())
+    .then(data => {
+        resultEl.className = data.success ? 'alert alert-success mt-4' : 'alert alert-danger mt-4';
+        resultEl.textContent = data.success ? ('✓ ' + data.message) : ('✗ ' + data.message);
+    })
+    .catch(err => {
+        resultEl.className = 'alert alert-danger mt-4';
+        resultEl.textContent = '请求失败: ' + err;
+    });
+});
+</script>
+
+{% endblock %}

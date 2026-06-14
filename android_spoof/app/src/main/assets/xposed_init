@@ -1,0 +1,10 @@
+/**
+ * 企微iPad设备伪装模块 - Xposed入口声明
+ * 
+ * LSPosed / EdXposed 框架会读取这个文件，
+ * 找到 com.fh.wework.spoof.WeWorkDeviceSpoofer 类作为Hook入口。
+ * 
+ * 编译后安装APK到模拟器，在LSPosed管理器中启用此模块，
+ * 作用域选择"企业微信(com.tencent.wework)"，重启企微APP即可生效。
+ */
+de.robv.android.xposed.IXposedHookLoadPackage=com.fh.wework.spoof.WeWorkDeviceSpoofer

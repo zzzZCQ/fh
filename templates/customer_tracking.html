@@ -209,7 +209,7 @@
                             {% for date in dates %}
                             <td style="text-align: center; {% if row.dates.get(date) and row.dates[date].play_status == 1 %}background-color: #32CD32; color: white;{% elif row.dates.get(date) and row.dates[date].play_status == 2 %}background-color: #FFFF00;{% elif row.dates.get(date) and row.dates[date].play_status == 3 %}background-color: #FF0000; color: white;{% endif %}">
                                 {% if row.dates.get(date) %}
-                                {% if row.dates[date].is_rejected and row.dates[date].call_duration > 0 %}{{ row.dates[date].play_status }}（{{ (row.dates[date].call_duration // 60) }}分{{ row.dates[date].call_duration % 60 }}秒）{% elif row.dates[date].is_rejected %}{{ row.dates[date].play_status }}（拒）{% elif row.dates[date].call_duration > 0 %}{{ row.dates[date].play_status }}（{{ (row.dates[date].call_duration // 60) }}分{{ row.dates[date].call_duration % 60 }}秒）{% else %}{{ row.dates[date].play_status }}{% endif %}
+                                {% if row.dates[date].is_rejected and row.dates[date].call_duration > 0 %}{{ row.dates[date].play_status }}（{{ (row.dates[date].call_duration // 60) }}分{{ row.dates[date].call_duration % 60 }}秒）{% elif row.dates[date].is_rejected %}{{ row.dates[date].play_status }}（拒）{% elif row.dates[date].is_missed and row.dates[date].call_duration > 0 %}{{ row.dates[date].play_status }}（{{ (row.dates[date].call_duration // 60) }}分{{ row.dates[date].call_duration % 60 }}秒）{% elif row.dates[date].is_missed %}{{ row.dates[date].play_status }}（未接）{% elif row.dates[date].call_duration > 0 %}{{ row.dates[date].play_status }}（{{ (row.dates[date].call_duration // 60) }}分{{ row.dates[date].call_duration % 60 }}秒）{% else %}{{ row.dates[date].play_status }}{% endif %}
                                 {% else %}
                                 -
                                 {% endif %}
@@ -621,8 +621,9 @@ function showCustomerDetail(rowIndex) {
         let currentPlayStatus = record?.play_status || 0;
         let durationMinutes = record?.call_duration ? Math.round(record.call_duration / 60) : 0;
         
-        // 使用独立的 is_rejected 字段
+        // 使用独立的 is_rejected 和 is_missed 字段
         let isRejected = record?.is_rejected || false;
+        let isMissed = record?.is_missed || false;
         
         content += `
             <tr>
@@ -632,6 +633,7 @@ function showCustomerDetail(rowIndex) {
                             data-date="${date}" 
                             data-original-value="${currentPlayStatus}"
                             data-original-rejected="${isRejected}"
+                            data-original-missed="${isMissed}"
                             style="width: 120px;">
                         <option value="0" ${currentPlayStatus === 0 ? 'selected' : ''}>无记录</option>
                         <option value="1" ${currentPlayStatus === 1 ? 'selected' : ''}>完播</option>
@@ -640,12 +642,18 @@ function showCustomerDetail(rowIndex) {
                     </select>
                 </td>
                 <td>
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-2 align-items-center">
                         <div class="form-check">
                             <input class="form-check-input rejected-checkbox" type="checkbox" 
                                    data-date="${date}"
                                    ${isRejected ? 'checked' : ''}>
                             <label class="form-check-label small">拒接</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input missed-checkbox" type="checkbox" 
+                                   data-date="${date}"
+                                   ${isMissed ? 'checked' : ''}>
+                            <label class="form-check-label small">未接</label>
                         </div>
                         <input type="number" class="form-control form-control-sm call-duration-input" 
                                data-date="${date}" 
@@ -695,29 +703,34 @@ function saveCustomerInfo() {
     // 获取观看状态和通话时长修改
     const recordChanges = [];
     
-    // 获取观看状态和拒接状态修改
+    // 获取观看状态、拒接和未接状态修改
     dates.forEach(date => {
         const select = document.querySelector(`.play-status-select[data-date="${date}"]`);
-        const checkbox = document.querySelector(`.rejected-checkbox[data-date="${date}"]`);
+        const rejectedCheckbox = document.querySelector(`.rejected-checkbox[data-date="${date}"]`);
+        const missedCheckbox = document.querySelector(`.missed-checkbox[data-date="${date}"]`);
         const input = document.querySelector(`.call-duration-input[data-date="${date}"]`);
         
         if (select) {
             const originalPlayStatus = parseInt(select.dataset.originalValue);
             const currentPlayStatus = parseInt(select.value);
             const originalRejected = select.dataset.originalRejected === 'true';
-            const currentRejected = checkbox ? checkbox.checked : false;
+            const currentRejected = rejectedCheckbox ? rejectedCheckbox.checked : false;
+            const originalMissed = select.dataset.originalMissed === 'true';
+            const currentMissed = missedCheckbox ? missedCheckbox.checked : false;
             const originalMinutes = parseInt(input?.dataset.originalValue || 0);
             const currentMinutes = parseInt(input?.value || 0);
             
             // 检查是否有变化
             if (currentPlayStatus !== originalPlayStatus || 
                 currentRejected !== originalRejected || 
+                currentMissed !== originalMissed ||
                 currentMinutes !== originalMinutes) {
                 
                 recordChanges.push({
                     date: date,
                     play_status: currentPlayStatus,
                     is_rejected: currentRejected,
+                    is_missed: currentMissed,
                     minutes: currentMinutes
                 });
             }

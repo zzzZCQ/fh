@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}定时任务管理 - 发货通知系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-clock-history"></i> 定时任务管理</h2>
+        <small class="text-muted">修改配置后约 5 分钟内生效（系统会自动检测变更并重新加载）</small>
+    </div>
+
+    {% if tasks %}
+    <div class="row">
+        {% for task in tasks %}
+        <div class="col-md-6 mb-4">
+            <div class="card h-100 {% if task.is_enabled %}border-primary{% else %}border-secondary{% endif %}">
+                <div class="card-header d-flex justify-content-between align-items-center bg-transparent">
+                    <div>
+                        <h5 class="mb-0">{{ task.name }}</h5>
+                        <small class="text-muted">task_key: <code>{{ task.task_key }}</code></small>
+                    </div>
+                    <span class="badge {% if task.is_enabled %}bg-success{% else %}bg-secondary{% endif %}">
+                        {% if task.is_enabled %}已启用{% else %}已停用{% endif %}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted mb-3">{{ task.description }}</p>
+
+                    <div class="row mb-3 g-2">
+                        <div class="col-6">
+                            <small class="text-muted">上次执行</small>
+                            <div class="fw-semibold small">
+                                {% if task.last_run_time %}
+                                    {{ task.last_run_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted">上次状态</small>
+                            <div class="fw-semibold small">
+                                {% if task.last_run_status == 'success' %}
+                                    <span class="text-success"><i class="bi bi-check-circle"></i> 成功</span>
+                                {% elif task.last_run_status == 'failed' %}
+                                    <span class="text-danger"><i class="bi bi-x-circle"></i> 失败</span>
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted">下次预计</small>
+                            <div class="fw-semibold small">
+                                {% if task.next_run_time and task.is_enabled %}
+                                    {{ task.next_run_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                                {% elif not task.is_enabled %}
+                                    <span class="text-secondary">已停用</span>
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <!-- 配置表单 -->
+                    <form method="POST" action="{{ url_for('admin_tasks.update_task_config', task_id=task.id) }}" class="mb-3">
+                        <div class="mb-2">
+                            <label class="form-label small fw-semibold mb-1">执行方式</label>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="trigger_type"
+                                       id="tt_interval_{{ task.id }}" value="interval"
+                                       {% if task.trigger_type == 'interval' %}checked{% endif %}>
+                                <label class="form-check-label small" for="tt_interval_{{ task.id }}">按间隔</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="trigger_type"
+                                       id="tt_cron_{{ task.id }}" value="cron"
+                                       {% if task.trigger_type == 'cron' %}checked{% endif %}>
+                                <label class="form-check-label small" for="tt_cron_{{ task.id }}">每天定点</label>
+                            </div>
+                        </div>
+
+                        <div class="row g-2">
+                            <div class="col-6" id="cfg_interval_{{ task.id }}" {% if task.trigger_type != 'interval' %}style="display:none;"{% endif %}>
+                                <label class="form-label small fw-semibold">间隔（小时）</label>
+                                <select class="form-select form-select-sm" name="interval_hours">
+                                    {% for h in [1, 2, 3, 4, 6, 8, 12, 24] %}
+                                    <option value="{{ h }}" {% if task.interval_hours == h %}selected{% endif %}>每 {{ h }} 小时</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="col-6" id="cfg_cron_{{ task.id }}" {% if task.trigger_type != 'cron' %}style="display:none;"{% endif %}>
+                                <label class="form-label small fw-semibold">执行时间</label>
+                                <input type="time" class="form-control form-control-sm" name="cron_time"
+                                       value="{{ task.cron_time }}">
+                            </div>
+
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-save"></i> 保存配置
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <!-- 操作按钮 -->
+                    <div class="d-flex gap-2 flex-wrap">
+                        <form method="POST" action="{{ url_for('admin_tasks.toggle_task', task_id=task.id) }}">
+                            <button type="submit" class="btn btn-sm {% if task.is_enabled %}btn-outline-secondary{% else %}btn-outline-success{% endif %}">
+                                <i class="bi bi-{% if task.is_enabled %}pause{% else %}play{% endif %}-circle"></i>
+                                {% if task.is_enabled %}停用{% else %}启用{% endif %}
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ url_for('admin_tasks.run_task_now', task_id=task.id) }}">
+                            <button type="submit" class="btn btn-sm btn-outline-info">
+                                <i class="bi bi-lightning-charge"></i> 立即执行
+                            </button>
+                        </form>
+                        <a href="{{ url_for('admin_tasks.task_logs', task_id=task.id) }}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-journal-text"></i> 执行日志
+                        </a>
+                    </div>
+
+                    <!-- 最近执行日志（卡片内展示最近3条） -->
+                    {% if recent_logs.get(task.id) %}
+                    <div class="mt-3">
+                        <small class="text-muted fw-semibold">最近执行</small>
+                        <div class="mt-2">
+                            {% for log in recent_logs[task.id] %}
+                            <div class="d-flex justify-content-between align-items-center small py-1 border-bottom">
+                                <span>{{ log.run_time.strftime('%m-%d %H:%M:%S') }}</span>
+                                <span class="{% if log.status == 'success' %}text-success{% else %}text-danger{% endif %}">
+                                    {{ log.message }}
+                                </span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // 单选按钮切换执行方式时，切换显示输入框
+            (function() {
+                const intRadio = document.getElementById('tt_interval_{{ task.id }}');
+                const cronRadio = document.getElementById('tt_cron_{{ task.id }}');
+                const intBox = document.getElementById('cfg_interval_{{ task.id }}');
+                const cronBox = document.getElementById('cfg_cron_{{ task.id }}');
+                function sync() {
+                    intBox.style.display = intRadio.checked ? '' : 'none';
+                    cronBox.style.display = cronRadio.checked ? '' : 'none';
+                }
+                intRadio.addEventListener('change', sync);
+                cronRadio.addEventListener('change', sync);
+            })();
+        </script>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> 暂无定时任务配置，请先在代码中注册任务。
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

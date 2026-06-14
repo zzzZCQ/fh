@@ -123,9 +123,10 @@ def update_logistics():
             (Order.logistics_status == '派送中', 2),
             # 3: 待派送
             (Order.logistics_status == '待派送', 3),
-            # 4: 已揽收/已揽件（非待发货状态）
+            # 4: 已揽收/已揽件/待取件（非待发货状态）
             ((Order.logistics_status == '已揽收') & (Order.status != 'submitted'), 4),
             ((Order.logistics_status == '已揽件') & (Order.status != 'submitted'), 4),
+            ((Order.logistics_status == '待取件') & (Order.status != 'submitted'), 4),
             # 5: 运送中
             (Order.logistics_status == '运送中', 5),
             # 6: 已发货（非待发货状态）

@@ -5,7 +5,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 import re
 
-from models import db, User, Order, Group, Category, OrderReminder
+from models import db, User, Order, Group, Category, OrderReminder, BlacklistedPhone
 from helpers import role_required, get_unread_count, get_active_categories, get_all_categories, get_active_gifts, notify_users, notify_user_upward_admin
 
 bp = Blueprint('orders', __name__)
@@ -159,7 +159,7 @@ def dashboard():
     # 1: 待发货 非主品 + 未导出（无论物流状态如何）
     # 2: 派送中
     # 3: 待派送
-    # 4: 已揽收/已揽件（非待发货状态）
+    # 4: 已揽收/已揽件/待取件（非待发货状态）
     # 5: 运送中
     # 6: 已发货（非待发货状态）
     # 7: 待发货 非主品 + 已导出（无论物流状态如何）
@@ -177,9 +177,10 @@ def dashboard():
             (Order.logistics_status == '派送中', 2),
             # 3: 待派送
             (Order.logistics_status == '待派送', 3),
-            # 4: 已揽收/已揽件（非待发货状态）
+            # 4: 已揽收/已揽件/待取件（非待发货状态）
             ((Order.logistics_status == '已揽收') & (Order.status != 'submitted'), 4),
             ((Order.logistics_status == '已揽件') & (Order.status != 'submitted'), 4),
+            ((Order.logistics_status == '待取件') & (Order.status != 'submitted'), 4),
             # 5: 运送中
             (Order.logistics_status == '运送中', 5),
             # 6: 已发货（非待发货状态）
@@ -386,15 +387,47 @@ def batch_create_order():
     
     success_count = 0
     failed_count = 0
-    
-    for customer in customers:
+    blocked_reasons = []
+
+    for idx, customer in enumerate(customers):
         phone = customer.get('phone', '').strip()
         address = customer.get('address', '').strip()
-        
+
         if not phone or not address or len(address) < 10:
             failed_count += 1
             continue
-        
+
+        # 黑名单检测
+        phone_hit = BlacklistedPhone.get_blacklisted_info(phone)
+        address_hits = BlacklistedPhone.check_address_blacklist(address)
+
+        # 100%匹配 = 阻止
+        block = False
+        if phone_hit:
+            blocked_reasons.append(f'第{idx+1}条：手机号{phone}在黑名单中（{phone_hit.reason or "未说明"}）')
+            block = True
+        if address_hits:
+            entry, sim = address_hits[0]
+            if sim >= 1.0:  # 100%匹配，阻止
+                blocked_reasons.append(f'第{idx+1}条：黑名单地址命中（100%，{entry.reason or "未说明"}）')
+                block = True
+            else:  # 部分匹配，通知但不阻止
+                sim_pct = int(sim * 100)
+                notify_content = (
+                    f'【黑名单地址预警】业务员 {current_user.name} 批量提交了疑似黑名单地址的订单！\n'
+                    f'地址：{address}\n'
+                    f'匹配度：{sim_pct}%\n'
+                    f'黑名单原因：{entry.reason or "未说明"}\n'
+                    f'客户：{customer.get("name", "")}，手机：{phone}\n'
+                    f'请核实是否需要处理。'
+                )
+                from helpers import notify_user_upward_admin
+                notify_user_upward_admin(current_user, notify_content)
+
+        if block:
+            failed_count += 1
+            continue
+
         try:
             order = Order(
                 group_name=current_user.group.name if current_user.group else '',
@@ -420,22 +453,25 @@ def batch_create_order():
         except Exception as e:
             print(f"创建订单失败: {e}")
             failed_count += 1
-    
+
     if success_count > 0:
         db.session.commit()
-        
+
         # 通知发货员
         shipper_ids = [s.id for s in User.query.filter(User.roles.like('%shipper%'), User.is_active==True).all()]
         if shipper_ids:
             notify_users(shipper_ids,
                          f'业务员 {current_user.name} 批量创建了 {success_count} 个订单，请及时处理！',
                          order_id=None)
-    
+
+    error_msg = '\n'.join(blocked_reasons) if blocked_reasons else None
+
     return render_template('create_order.html',
                            unread_count=get_unread_count(current_user.id),
                            categories=get_active_categories(),
                            success_count=success_count,
-                           failed_count=failed_count)
+                           failed_count=failed_count,
+                           error=error_msg)
 
 
 @bp.route('/order/create', methods=['POST'])
@@ -501,6 +537,61 @@ def create_order():
     
     # 验证金额（只在提交订单时验证，保存草稿不验证）
     if action == 'submit':
+        # 检查手机号是否在黑名单中（精确匹配，100%阻止）
+        phone_hit = BlacklistedPhone.get_blacklisted_info(phone)
+        # 检查地址是否在黑名单中（相似度匹配）
+        address_hits = BlacklistedPhone.check_address_blacklist(address)
+
+        # 100%匹配 = 阻止提交
+        block_messages = []
+        if phone_hit:
+            block_messages.append(f'手机号 {phone} 在黑名单中！原因：{phone_hit.reason or "未说明"}')
+        if address_hits:
+            entry, sim = address_hits[0]
+            if sim >= 1.0:  # 100%匹配
+                block_messages.append(f'黑名单地址命中（相似度100%）！原因：{entry.reason or "未说明"}')
+
+        if block_messages:
+            error_msg = '\n'.join(block_messages)
+            if is_ajax:
+                return jsonify({'success': False, 'error': error_msg, 'is_blacklisted': True})
+            return render_template('create_order.html',
+                                 unread_count=get_unread_count(current_user.id),
+                                 categories=get_active_categories(),
+                                 gifts=get_active_gifts(),
+                                 form_data={
+                                     'group_name': group_name,
+                                     'customer_name': customer_name or '',
+                                     'customer_wechat': customer_wechat or '',
+                                     'paid_amount': paid_amount or '',
+                                     'pay_date': pay_date or '',
+                                     'collect_amount': collect_amount or '',
+                                     'product_info': product_info,
+                                     'category': category,
+                                     'phone': phone,
+                                     'address': address,
+                                     'remark': remark or '',
+                                     'has_gift': has_gift,
+                                     'gift_info': gift_list,
+                                     'gender': gender if 'gender' in dir() else ''
+                                 },
+                                 error=error_msg)
+
+        # 部分匹配（<100%）= 允许提交，但通知上级管理员
+        if address_hits:
+            entry, sim = address_hits[0]
+            sim_pct = int(sim * 100)
+            notify_content = (
+                f'【黑名单地址预警】业务员 {current_user.name} 提交了疑似黑名单地址的订单！\n'
+                f'地址：{address}\n'
+                f'匹配度：{sim_pct}%\n'
+                f'黑名单原因：{entry.reason or "未说明"}\n'
+                f'客户：{customer_name}，手机：{phone}\n'
+                f'请核实是否需要处理。'
+            )
+            from helpers import notify_user_upward_admin
+            notify_user_upward_admin(current_user, notify_content)
+
         is_valid, error_msg = validate_order_amount(category, product_info, paid_amount, collect_amount)
         if not is_valid:
             if is_ajax:

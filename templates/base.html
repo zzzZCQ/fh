@@ -230,11 +230,10 @@
                 <a class="nav-link {% if request.endpoint == 'behavior.customer_tracking' %}active{% endif %}" href="{{ url_for('behavior.customer_tracking') }}">
                     <i class="bi bi-eye"></i> 客户跟踪
                 </a>
-                {% if current_user.has_role('admin') and current_user.group and current_user.group.level == 1 %}
-                <!-- 企微通话记录菜单已隐藏，避免卡死问题 -->
-                <!-- <a class="nav-link {% if request.endpoint == 'wework.dashboard' %}active{% endif %}" href="{{ url_for('wework.dashboard') }}">
-                    <i class="bi bi-telephone-inbound"></i> 企微通话记录
-                </a> -->
+                {% if current_user.has_role('admin') %}
+                <a class="nav-link {% if request.endpoint == 'blacklist.admin_blacklist' %}active{% endif %}" href="{{ url_for('blacklist.admin_blacklist') }}">
+                    <i class="bi bi-ban"></i> 黑名单管理
+                </a>
                 {% endif %}
             </nav>
         </div>
@@ -306,6 +305,9 @@
                 <a class="nav-link {% if request.endpoint == 'admin_config.admin_version' %}active{% endif %}" href="{{ url_for('admin_config.admin_version') }}">
                     <i class="bi bi-info-circle"></i> 版本配置
                 </a>
+                <a class="nav-link {% if request.endpoint == 'admin_tasks.admin_tasks' or request.endpoint == 'admin_tasks.task_logs' %}active{% endif %}" href="{{ url_for('admin_tasks.admin_tasks') }}">
+                    <i class="bi bi-clock-history"></i> 定时任务
+                </a>
             </nav>
         </div>
         {% endif %}
@@ -328,29 +330,26 @@
             </nav>
         </div>
 
-        <!-- 企业微信（超级管理员可见） -->
-        {% if current_user.username == 'admin' %}
+        <!-- 企业微信SCRM -->
         <div class="menu-group">
-            <div class="menu-label">企业微信</div>
+            <div class="menu-label">企业微信SCRM</div>
             <nav class="nav flex-column">
-                <a class="nav-link {% if request.endpoint == 'wecom_scrm.index_page' %}active{% endif %}" href="{{ url_for('wecom_scrm.index_page') }}">
-                    <i class="bi bi-robot"></i> SCRM管理
+                {% if current_user.username == 'admin' %}
+                <a class="nav-link {% if request.endpoint == 'wecom_scrm.config_page' %}active{% endif %}" href="{{ url_for('wecom_scrm.config_page') }}">
+                    <i class="bi bi-gear"></i> SCRM配置
+                </a>
+                <a class="nav-link {% if request.endpoint == 'wecom_scrm.admin_qr_login' %}active{% endif %}" href="{{ url_for('wecom_scrm.admin_qr_login') }}">
+                    <i class="bi bi-qr-code-scan"></i> 扫码登录测试
+                </a>
+                {% endif %}
+                <a class="nav-link {% if request.endpoint == 'wecom_scrm.accounts_list' %}active{% endif %}" href="{{ url_for('wecom_scrm.accounts_list') }}">
+                    <i class="bi bi-person-plus"></i> 托管账号
+                </a>
+                <a class="nav-link {% if request.endpoint == 'wecom_scrm.customers_list' %}active{% endif %}" href="{{ url_for('wecom_scrm.customers_list') }}">
+                    <i class="bi bi-people-fill"></i> 客户管理
                 </a>
             </nav>
         </div>
-        {% endif %}
-
-        <!-- 企业微信SCRM系统 -->
-        {% if current_user.has_role('salesman') %}
-        <div class="menu-group">
-            <div class="menu-label">客户运营</div>
-            <nav class="nav flex-column">
-                <a class="nav-link {% if request.endpoint == 'wecom_scrm.index_page' %}active{% endif %}" href="{{ url_for('wecom_scrm.index_page') }}">
-                    <i class="bi bi-chat-dots"></i> 企业微信SCRM
-                </a>
-            </nav>
-        </div>
-        {% endif %}
     </div>
     {% endif %}
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Xposed Hook范围 - 只作用于企微APP -->
+    <string-array name="xposed_scope">
+        <item>com.tencent.wework</item>
+    </string-array>
+</resources>

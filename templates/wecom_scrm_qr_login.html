@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <h2><i class="bi bi-qr-code-scan"></i> 扫码托管企微账号</h2>
+    <p class="text-muted small mb-4">
+        让企业微信成员扫码授权，自动获取成员信息并创建托管账号。
+    </p>
+
+    <div class="row">
+        <!-- 左侧：配置检查 -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-gear"></i> 配置检查</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted mb-1">企业 ID</label>
+                        <div>
+                            {% if config.corp_id %}
+                                <span class="badge bg-success"><i class="bi bi-check2"></i> 已配置</span>
+                                <code class="small text-muted ms-2">{{ config.corp_id[:12] }}{{ '...' if config.corp_id|length > 12 else '' }}</code>
+                            {% else %}
+                                <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 未配置</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted mb-1">客户联系 Secret</label>
+                        <div>
+                            {% if config.contact_secret %}
+                                <span class="badge bg-success"><i class="bi bi-check2"></i> 已配置</span>
+                            {% else %}
+                                <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 未配置</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted mb-1">应用 AgentID</label>
+                        <div>
+                            {% if config.agent_id %}
+                                <span class="badge bg-success"><i class="bi bi-check2"></i> {{ config.agent_id }}</span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> 可留空</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="mb-2">
+                        <label class="form-label small text-muted mb-1">回调地址</label>
+                        <div>
+                            <code class="small text-muted" style="word-break: break-all;">{{ redirect_uri }}</code>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            <i class="bi bi-info-circle"></i> 请将此域名添加到企微管理后台的"可信域名"。
+                        </div>
+                    </div>
+                    <a href="{{ url_for('wecom_scrm.config_page') }}" class="btn btn-outline-secondary btn-sm mt-2 w-100">
+                        <i class="bi bi-gear"></i> 前往配置页
+                    </a>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-list-check"></i> 扫码流程</h5>
+                </div>
+                <div class="card-body">
+                    <ol class="small mb-0" style="padding-left: 1rem;">
+                        <li class="mb-2">点击右侧"打开企微扫码页面"按钮</li>
+                        <li class="mb-2">用企业微信 App 扫描二维码</li>
+                        <li class="mb-2">在手机上确认授权</li>
+                        <li class="mb-2">系统自动获取成员信息并创建托管账号</li>
+                        <li>完成后将跳转到托管账号列表</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：扫码入口 -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-qr-code"></i> 扫码入口</h5>
+                </div>
+                <div class="card-body text-center">
+                    <div class="text-center py-4">
+                        <div class="bg-light rounded p-5 mb-3" style="display: inline-block;">
+                            <i class="bi bi-qr-code-scan" style="font-size: 5rem; color: #07c160;"></i>
+                        </div>
+                        <div class="mb-4">
+                            <h5>让企业微信成员扫码授权</h5>
+                            <p class="text-muted small">扫码后系统将自动获取成员的企微ID和姓名，创建托管账号</p>
+                        </div>
+                        <a href="{{ qr_url }}" target="_blank" class="btn btn-success btn-lg" style="background: #07c160; border-color: #07c160;">
+                            <i class="bi bi-box-arrow-up-right"></i> 打开企微扫码页面
+                        </a>
+                        <div class="small text-muted mt-3">
+                            <i class="bi bi-info-circle"></i> 扫码将在新窗口打开企业微信官方授权页面
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <!-- 直接在页面内展示二维码的备用方案 -->
+                    <details class="mt-3">
+                        <summary class="cursor-pointer text-muted small">
+                            <i class="bi bi-chevron-right"></i> 在本页嵌入企微扫码框（备用方案）
+                        </summary>
+                        <div class="mt-3">
+                            <iframe id="qrFrame" src="{{ qr_url }}"
+                                    style="width: 100%; height: 500px; border: 1px solid #dee2e6; border-radius: 8px;">
+                            </iframe>
+                            <div class="small text-muted mt-2">
+                                <i class="bi bi-info-circle"></i> 如果嵌入页面加载异常，请点击上方"打开企微扫码页面"按钮。
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </div>
+
+            <div class="mt-3 d-flex justify-content-between">
+                <a href="{{ url_for('wecom_scrm.accounts_list') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> 返回托管账号列表
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+details > summary { list-style: none; cursor: pointer; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; }
+details > summary::-webkit-details-marker { display: none; }
+details[open] > summary { background: #e7f7ee; }
+</style>
+{% endblock %}

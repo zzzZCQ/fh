@@ -88,8 +88,9 @@
                                         </div>
                                         <div class="col-md-3">
                                             <label for="single_phone" class="form-label">收货电话 <span class="text-danger">*</span></label>
-                                            <input type="tel" class="form-control" id="single_phone" name="phone" pattern="^1[3-9]\d{9}$" required placeholder="请输入11位手机号" value="{{ form_data.phone if form_data else '' }}" oninput="validatePhone(this, 'single_phone_status')">
+                                            <input type="tel" class="form-control" id="single_phone" name="phone" pattern="^1[3-9]\d{9}$" required placeholder="请输入11位手机号" value="{{ form_data.phone if form_data else '' }}" oninput="validatePhone(this, 'single_phone_status'); checkBlacklist(this.value, document.getElementById('single_address').value)">
                                             <div id="single_phone_status" class="mt-1"></div>
+                                            <div id="blacklist_status" class="mt-1"></div>
                                         </div>
                                         <div class="col-md-3">
                                             <label for="single_paid_amount" class="form-label">已付金额 <span class="text-danger">*</span></label>
@@ -162,7 +163,8 @@
                                     <div class="row mb-3">
                                         <div class="col-12">
                                             <label for="single_address" class="form-label">收货地址 <span class="text-danger">*</span></label>
-                                            <textarea class="form-control" id="single_address" name="address" rows="2" required placeholder="请填写详细收货地址">{{ form_data.address if form_data else '' }}</textarea>
+                                            <textarea class="form-control" id="single_address" name="address" rows="2" required placeholder="请填写详细收货地址" oninput="checkBlacklist(document.getElementById('single_phone').value, this.value)">{{ form_data.address if form_data else '' }}</textarea>
+                                            <div id="blacklist_address_status" class="mt-1"></div>
                                         </div>
                                     </div>
                                     
@@ -340,6 +342,78 @@ function validatePhone(input, statusId) {
         input.classList.remove('is-valid');
         input.classList.add('is-invalid');
     }
+}
+
+// 检查手机号和地址是否在黑名单中（综合检测）
+let blacklistTimeout = null;
+function checkBlacklist(phone, address) {
+    const phoneStatusDiv = document.getElementById('blacklist_status');
+    const addrStatusDiv = document.getElementById('blacklist_address_status');
+
+    const cleanPhone = (phone || '').trim();
+    const cleanAddress = (address || '').trim();
+
+    // 至少有一个有内容才触发
+    const hasPhone = /^1[3-9]\d{9}$/.test(cleanPhone);
+    const hasAddress = cleanAddress.length >= 10;
+
+    if (!hasPhone && !hasAddress) {
+        if (phoneStatusDiv) phoneStatusDiv.innerHTML = '';
+        if (addrStatusDiv) addrStatusDiv.innerHTML = '';
+        return;
+    }
+
+    if (blacklistTimeout) {
+        clearTimeout(blacklistTimeout);
+    }
+
+    blacklistTimeout = setTimeout(function() {
+        const params = new URLSearchParams();
+        if (hasPhone) params.append('phone', cleanPhone);
+        if (hasAddress) params.append('address', cleanAddress);
+
+        fetch('/api/check_blacklist?' + params.toString())
+            .then(response => response.json())
+            .then(data => {
+                // 手机号结果
+                if (phoneStatusDiv) {
+                    if (data.phone_hit) {
+                        phoneStatusDiv.innerHTML = '<span class="text-danger"><i class="bi bi-ban"></i> 该手机号在黑名单中！原因：' + data.phone_hit.reason + '</span>';
+                    } else if (hasPhone) {
+                        phoneStatusDiv.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> 该手机号正常</span>';
+                    } else {
+                        phoneStatusDiv.innerHTML = '';
+                    }
+                }
+                // 地址结果：100%匹配=阻止，部分匹配=警告
+                if (addrStatusDiv) {
+                    if (data.address_hits && data.address_hits.length > 0) {
+                        // 100%匹配，红色警告
+                        const hit = data.address_hits[0];
+                        const sim = Math.round((hit.similarity || 0) * 100);
+                        const reasonText = hit.reason ? '原因：' + hit.reason : '';
+                        const addrText = hit.address ? hit.address : '';
+                        addrStatusDiv.innerHTML = '<span class="text-danger"><i class="bi bi-ban"></i> 黑名单地址命中（相似度' + sim + '%）<br>黑名单地址：' + addrText + '<br>' + reasonText + '</span>';
+                    } else if (data.address_warn) {
+                        // 部分匹配，橙色警告，允许提交
+                        const warn = data.address_warn;
+                        const sim = Math.round((warn.similarity || 0) * 100);
+                        const reasonText = warn.reason ? '原因：' + warn.reason : '';
+                        const addrText = warn.address ? warn.address : '';
+                        addrStatusDiv.innerHTML = '<span class="text-warning"><i class="bi bi-exclamation-triangle"></i> 疑似黑名单地址（相似度' + sim + '%），仍可提交，系统将通知管理员核实<br>黑名单地址：' + addrText + '<br>' + reasonText + '</span>';
+                    } else if (hasAddress) {
+                        addrStatusDiv.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> 该地址正常</span>';
+                    } else {
+                        addrStatusDiv.innerHTML = '';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('检查黑名单失败:', error);
+                if (phoneStatusDiv) phoneStatusDiv.innerHTML = '';
+                if (addrStatusDiv) addrStatusDiv.innerHTML = '';
+            });
+    }, 500);
 }
 
 document.addEventListener('DOMContentLoaded', function() {

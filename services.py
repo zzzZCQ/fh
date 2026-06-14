@@ -957,7 +957,21 @@ def update_single_order_logistics(order):
 
 
 def update_sf_logistics(order_ids=None, app=None):
-    """批量更新顺丰物流信息（支持定时任务调用）"""
+    """批量更新顺丰物流信息（支持定时任务调用）
+
+    Args:
+        order_ids: 要更新的订单ID列表，None表示更新所有顺丰订单
+        app: Flask应用实例（用于app_context）
+    """
+    # 兼容早期把 Flask app 当第一个参数传入的调用方式
+    try:
+        from flask import Flask
+        if isinstance(order_ids, Flask):
+            app = order_ids
+            order_ids = None
+    except Exception:
+        pass
+
     def _do_update():
         query = Order.query.filter(
             Order.express_type == '顺丰',
@@ -978,12 +992,23 @@ def update_sf_logistics(order_ids=None, app=None):
                 failed += 1
 
         return {'updated': updated, 'failed': failed, 'total': len(orders)}
-    
+
+    # 尝试自动获取Flask app（支持两种调用方式）
+    if app is None:
+        try:
+            from app import app as _flask_app
+            app = _flask_app
+        except Exception:
+            pass
+
     if app:
         with app.app_context():
             return _do_update()
     else:
-        return _do_update()
+        # 最后的兜底：尝试从当前模块的db获取session
+        from flask import current_app
+        with current_app.app_context():
+            return _do_update()
 
 
 # ============ 钉钉API Token缓存 ============
@@ -2304,5 +2329,56 @@ def check_order_reminders(app=None):
             return _do_check()
     else:
         return _do_check()
+
+
+# ============ 定时任务统一执行入口 ============
+
+_SCHEDULED_TASK_FUNCS = {}
+
+
+def _register_scheduled_task_func(key, func):
+    """注册任务执行函数"""
+    _SCHEDULED_TASK_FUNCS[key] = func
+
+
+# 项目内置任务注册
+_register_scheduled_task_func('update_sf_logistics', update_sf_logistics)
+_register_scheduled_task_func('check_order_reminders', check_order_reminders)
+
+
+def run_scheduled_task_by_key(task_key, app=None):
+    """按 task_key 执行一个定时任务（供调度器 / 手动执行调用）
+
+    Returns:
+        dict: {'status': 'success'/'failed', 'message': str, 'duration': int}
+    """
+    import time
+    start_time = time.time()
+
+    func = _SCHEDULED_TASK_FUNCS.get(task_key)
+    if func is None:
+        return {'status': 'failed', 'message': f'未知任务: {task_key}', 'duration': 0}
+
+    try:
+        result = func() if task_key == 'check_order_reminders' else func(order_ids=None)
+
+        if isinstance(result, dict):
+            if 'updated' in result:
+                msg = f'共 {result.get("total", 0)} 条，成功 {result.get("updated", 0)} 条，失败 {result.get("failed", 0)} 条'
+            elif 'sent_count' in result:
+                msg = f'共检查 {result.get("total_count", 0)} 条，发送 {result.get("sent_count", 0)} 条提醒'
+            else:
+                msg = str(result)
+        else:
+            msg = str(result)
+
+        duration = int(time.time() - start_time)
+        print(f'[定时任务] {task_key} 执行完成 - {msg} (耗时 {duration}s)')
+        return {'status': 'success', 'message': msg, 'duration': duration}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        duration = int(time.time() - start_time)
+        return {'status': 'failed', 'message': f'执行异常: {e}', 'duration': duration}
 
 

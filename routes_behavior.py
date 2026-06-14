@@ -407,19 +407,32 @@ def process_behavior_tracking_data(user_id):
         target_date = ref_date + timedelta(days=title_num - ref_title_num)
         
         date_records = {}
+        
+        # 首先从通话记录分区表获取通话时长
         try:
             from wework_partition import get_partition_model
             PartitionModel = get_partition_model(target_date)
             records = PartitionModel.query.filter_by(uploader_id=user_id).all()
             
-            # 优化：使用字典推导式
             for rec in records:
                 clean_name = clean_nickname(rec.user_name)
                 if clean_name:
                     date_records[clean_name] = date_records.get(clean_name, 0) + (rec.call_duration_seconds or 0)
-        
         except Exception:
             pass
+        
+        # 然后从数据库中已有的行为轨迹记录获取通话时长（用户手动填写的）
+        # 如果通话记录分区表中没有数据，则使用数据库中已有的数据
+        existing_records = BehaviorTrackingRecord.query.filter_by(
+            user_id=user_id,
+            month=target_date.month,
+            day=target_date.day
+        ).all()
+        
+        for rec in existing_records:
+            clean_name = clean_nickname(rec.nickname)
+            if clean_name and clean_name not in date_records and rec.call_duration_seconds > 0:
+                date_records[clean_name] = rec.call_duration_seconds
         
         all_call_records[title_num] = date_records
     
@@ -566,8 +579,8 @@ def clean_nickname(name):
     if '@' in text:
         text = text.split('@')[0].strip()
     
-    # 第三步：移除排除词
-    exclude_words = ['语音通话', '视频通话', '正在呼叫', '企业微信', '微信', '通话', '接通', '等待', '结束', '取消', '的', '和', '与', '正在']
+    # 第三步：移除排除词（只移除行为轨迹相关词汇，保留常用中文词）
+    exclude_words = ['语音通话', '视频通话', '正在呼叫', '企业微信', '微信', '通话', '接通', '等待', '结束', '取消', '正在']
     for word in exclude_words:
         text = text.replace(word, '')
     
@@ -1134,6 +1147,7 @@ def customer_tracking():
         # 处理旧数据迁移：play_status=4 表示拒接，需要转换
         play_status = record.play_status
         is_rejected = record.is_rejected if hasattr(record, 'is_rejected') else False
+        is_missed = record.is_missed if hasattr(record, 'is_missed') else False
         if play_status == 4:
             play_status = 0
             is_rejected = True
@@ -1141,6 +1155,7 @@ def customer_tracking():
         data[key]['dates'][date_key] = {
             'play_status': play_status,
             'is_rejected': is_rejected,
+            'is_missed': is_missed,
             'call_duration': record.call_duration_seconds
         }
         if play_status == 1:
@@ -1498,6 +1513,11 @@ def save_customer_info():
                     if 'is_rejected' in change:
                         record.is_rejected = change['is_rejected']
                         print(f'[DEBUG] 更新拒接状态: {date_str} -> {change["is_rejected"]}')
+                    
+                    # 更新未接状态
+                    if 'is_missed' in change:
+                        record.is_missed = change['is_missed']
+                        print(f'[DEBUG] 更新未接状态: {date_str} -> {change["is_missed"]}')
                     
                     # 更新通话时长
                     if 'minutes' in change:

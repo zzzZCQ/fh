@@ -424,6 +424,7 @@ class BehaviorTrackingRecord(db.Model):
     day = db.Column(db.Integer, nullable=False)
     play_status = db.Column(db.Integer, nullable=False, default=0)  # 0=无记录,1=完播,2=未完播,3=未观看
     is_rejected = db.Column(db.Boolean, default=False)  # 是否拒接
+    is_missed = db.Column(db.Boolean, default=False)  # 是否未接
     call_duration_seconds = db.Column(db.Integer, default=0)
     play_order = db.Column(db.Integer, default=0)
     create_time = db.Column(db.DateTime, default=_now_bj)
@@ -552,6 +553,139 @@ class WecomAccount(db.Model):
         }
 
 
+class BlacklistedPhone(db.Model):
+    """黑名单模型（支持手机号和地址）"""
+    __tablename__ = 'blacklisted_phone'
+
+    id = db.Column(db.Integer, primary_key=True)
+    entry_type = db.Column(db.String(20), default='phone', nullable=False, index=True)  # phone 或 address
+    phone = db.Column(db.String(20), unique=True, nullable=True, index=True)  # 黑名单手机号（手机号类型必填且唯一）
+    address = db.Column(db.Text, nullable=True)  # 黑名单地址（地址类型必填）
+    normalized_address = db.Column(db.String(255), unique=True, nullable=True, index=True)  # 归一化地址（用于唯一性校验）
+    reason = db.Column(db.Text)  # 拉黑原因
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'))  # 创建者ID
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    update_time = db.Column(db.DateTime, default=_now_bj, onupdate=_now_bj)
+
+    creator = db.relationship('User', backref=db.backref('blacklisted_phones', lazy=True))
+
+    @classmethod
+    def is_blacklisted(cls, phone):
+        """检查手机号是否在黑名单中（向后兼容）"""
+        if not phone:
+            return False
+        return cls.query.filter_by(phone=phone.strip(), entry_type='phone').first() is not None
+
+    @classmethod
+    def get_blacklisted_info(cls, phone):
+        """获取手机号黑名单信息（向后兼容）"""
+        if not phone:
+            return None
+        return cls.query.filter_by(phone=phone.strip(), entry_type='phone').first()
+
+    # ---------- 地址匹配工具 ----------
+    @staticmethod
+    def normalize_address(text):
+        """地址归一化：转小写、去空白与常见符号，统一同义词"""
+        if not text:
+            return ''
+        import re
+        text = text.strip().lower()
+        # 去除空白和标点
+        text = re.sub(r'\s+', '', text)
+        text = re.sub(r'[，,。.！!？?；;：:"“”\'（()）\-【\[\]】《》·/\\]+', '', text)
+        # 常见同义词归一
+        replacements = [
+            ('自治区', ''), ('特别行政区', ''), ('自治州', ''),
+            ('省', ''), ('市', ''), ('区', ''), ('县', ''),
+            ('镇', ''), ('乡', ''), ('村', ''), ('街道', ''),
+            ('路', 'l'), ('大道', 'l'), ('街', 'j'), ('巷', 'j'),
+            ('号楼', 'h'), ('号', 'h'), ('单元', 'd'), ('室', 'r'), ('栋', 'd'),
+            ('building', ''), ('room', ''), ('floor', ''), ('no', ''),
+            ('number', ''), ('apt', ''), ('unit', ''), ('street', ''), ('st', ''),
+            ('avenue', ''), ('ave', ''), ('road', ''), ('rd', ''), ('lane', ''),
+        ]
+        for old, new in replacements:
+            text = text.replace(old, new)
+        return text
+
+    @staticmethod
+    def _char_ngrams(text, n=2):
+        """生成字符 n-gram 集合"""
+        if len(text) < n:
+            return {text} if text else set()
+        return {text[i:i + n] for i in range(len(text) - n + 1)}
+
+    @classmethod
+    def address_similarity(cls, a, b):
+        """计算两个地址的相似度（0~1）"""
+        na = cls.normalize_address(a)
+        nb = cls.normalize_address(b)
+        if not na or not nb:
+            return 0.0
+        # 短地址包含检查（黑名单是关键词时直接命中）
+        if len(na) >= len(nb) and nb in na:
+            return 1.0
+        if len(nb) >= len(na) and na in nb:
+            return 1.0
+        # Jaccard on 2-grams
+        sa = cls._char_ngrams(na, 2)
+        sb = cls._char_ngrams(nb, 2)
+        if not sa or not sb:
+            return 0.0
+        intersection = len(sa & sb)
+        union = len(sa | sb)
+        jaccard = intersection / union if union else 0.0
+        # 同时叠加 difflib ratio 作为第二信号
+        try:
+            import difflib
+            ratio = difflib.SequenceMatcher(None, na, nb).ratio()
+        except Exception:
+            ratio = 0.0
+        return max(jaccard, ratio)
+
+    @classmethod
+    def check_address_blacklist(cls, address, threshold=0.75):
+        """检查地址是否命中黑名单
+        返回 [(entry, similarity), ...] 命中列表，按相似度降序
+        """
+        if not address or not address.strip():
+            return []
+        na = cls.normalize_address(address)
+        if not na:
+            return []
+        # 先精确匹配 normalized_address
+        exact_hit = cls.query.filter_by(entry_type='address', normalized_address=na).first()
+        if exact_hit:
+            return [(exact_hit, 1.0)]
+        # 无精确匹配时，遍历做相似度匹配（用于检测细微差异）
+        items = cls.query.filter_by(entry_type='address').all()
+        hits = []
+        for it in items:
+            if not it.address or not it.normalized_address:
+                continue
+            # 归一化后做相似度计算
+            sim = cls.address_similarity(na, it.normalized_address)
+            if sim >= threshold:
+                hits.append((it, sim))
+        hits.sort(key=lambda x: -x[1])
+        return hits
+
+    @classmethod
+    def check_blacklist(cls, phone=None, address=None, address_threshold=0.75):
+        """综合检测：同时检查手机号和地址
+        返回 {'phone_hit': entry or None, 'address_hits': [(entry, sim), ...]}
+        """
+        result = {'phone_hit': None, 'address_hits': []}
+        if phone:
+            phone_hit = cls.get_blacklisted_info(phone)
+            if phone_hit:
+                result['phone_hit'] = phone_hit
+        if address:
+            result['address_hits'] = cls.check_address_blacklist(address, address_threshold)
+        return result
+
+
 class WecomCustomer(db.Model):
     """企业微信客户信息（SCRM系统）"""
     __tablename__ = 'wecom_customer'
@@ -602,3 +736,61 @@ class WecomCustomer(db.Model):
             'is_active': self.is_active,
             'create_time': self.create_time.isoformat() if self.create_time else None
         }
+
+
+# ============ 定时任务配置 ============
+
+class ScheduledTask(db.Model):
+    """定时任务配置表"""
+    __tablename__ = 'scheduled_task'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_key = db.Column(db.String(100), unique=True, nullable=False)  # 任务唯一标识，如 update_sf_logistics
+    name = db.Column(db.String(200), nullable=False)  # 任务显示名称
+    description = db.Column(db.String(500))  # 任务描述
+
+    # 执行方式：interval（间隔N小时）、cron（每天定点）
+    trigger_type = db.Column(db.String(20), default='interval')
+    # interval 型：间隔小时数
+    interval_hours = db.Column(db.Integer, default=6)
+    # cron 型：每天执行时间 HH:MM
+    cron_time = db.Column(db.String(10), default='01:00')
+
+    is_enabled = db.Column(db.Boolean, default=True)  # 是否启用
+    last_run_time = db.Column(db.DateTime)  # 上次执行时间
+    last_run_status = db.Column(db.String(20))  # 上次执行状态 success/failed
+    last_run_message = db.Column(db.String(500))  # 上次执行结果描述
+    next_run_time = db.Column(db.DateTime)  # 预计下次执行时间
+
+    create_time = db.Column(db.DateTime, default=_now_bj)
+    update_time = db.Column(db.DateTime, default=_now_bj, onupdate=_now_bj)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_key': self.task_key,
+            'name': self.name,
+            'description': self.description,
+            'trigger_type': self.trigger_type,
+            'interval_hours': self.interval_hours,
+            'cron_time': self.cron_time,
+            'is_enabled': self.is_enabled,
+            'last_run_time': self.last_run_time.strftime('%Y-%m-%d %H:%M:%S') if self.last_run_time else '-',
+            'last_run_status': self.last_run_status or '-',
+            'last_run_message': (self.last_run_message or '')[:80] if self.last_run_message else '-',
+            'next_run_time': self.next_run_time.strftime('%Y-%m-%d %H:%M:%S') if self.next_run_time else '-',
+        }
+
+
+class ScheduledTaskLog(db.Model):
+    """定时任务执行日志"""
+    __tablename__ = 'scheduled_task_log'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('scheduled_task.id'), nullable=False)
+    run_time = db.Column(db.DateTime, default=_now_bj)  # 执行开始时间
+    duration_seconds = db.Column(db.Integer, default=0)  # 执行耗时（秒）
+    status = db.Column(db.String(20))  # success/failed
+    message = db.Column(db.Text)  # 执行结果/错误信息
+
+    task = db.relationship('ScheduledTask', backref=db.backref('logs', lazy=True))

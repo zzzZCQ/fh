@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <h2><i class="bi bi-person-lines-fill"></i> 客户管理</h2>
+    <p class="text-muted small mb-4">查看、搜索已同步的客户数据。</p>
+
+    <!-- 筛选条 -->
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <form method="GET" class="d-flex flex-wrap gap-2 align-items-end">
+                <div class="flex-grow-1" style="min-width: 200px;">
+                    <label class="form-label small text-muted mb-1">搜索（姓名/公司/备注）</label>
+                    <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="输入关键词">
+                </div>
+                <div>
+                    <label class="form-label small text-muted mb-1">账号</label>
+                    <select class="form-select" name="account_id" style="min-width: 140px;">
+                        <option value="">全部账号</option>
+                        {% for acc in accounts %}
+                            <option value="{{ acc.id }}" {% if account_id|string == acc.id|string %}selected{% endif %}>
+                                {{ acc.account_name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label small text-muted mb-1">性别</label>
+                    <select class="form-select" name="gender" style="min-width: 100px;">
+                        <option value="">全部</option>
+                        <option value="男" {% if gender == '男' %}selected{% endif %}>男</option>
+                        <option value="女" {% if gender == '女' %}selected{% endif %}>女</option>
+                        <option value="未知" {% if gender == '未知' %}selected{% endif %}>未知</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label small text-muted mb-1">每页</label>
+                    <select class="form-select" name="per_page" style="min-width: 80px;">
+                        <option value="20" {% if request.args.get('per_page')|int == 20 %}selected{% endif %}>20</option>
+                        <option value="50" {% if request.args.get('per_page')|int == 50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if request.args.get('per_page')|int == 100 %}selected{% endif %}>100</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> 搜索</button>
+                <a href="{{ url_for('wecom_scrm.customers_list') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i> 清空
+                </a>
+            </form>
+        </div>
+    </div>
+
+    <!-- 统计 -->
+    <div class="mb-3 small text-muted">
+        共找到 <strong>{{ customers.total }}</strong> 条客户记录
+        {% if account_name_map %}
+            （共 {{ accounts|length }} 个账号）
+        {% endif %}
+    </div>
+
+    <!-- 客户列表 -->
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th style="width: 60px;">头像</th>
+                            <th>姓名</th>
+                            <th>性别</th>
+                            <th>职位</th>
+                            <th>公司</th>
+                            <th>备注</th>
+                            <th>所属账号</th>
+                            <th>标签</th>
+                            <th>添加时间</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if customers.items %}
+                            {% for c in customers.items %}
+                            <tr>
+                                <td>
+                                    {% if c.avatar %}
+                                        <img src="{{ c.avatar }}" alt="" class="rounded-circle"
+                                             style="width: 36px; height: 36px; object-fit: cover;"
+                                             onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2236%22 height=%2236%22 fill=%22%23999%22 class=%22bi bi-person-circle%22 viewBox=%220 0 16 16%22><path d=%22M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm0 2.072V13H5v-4.928A4.001 4.001 0 0 1 8 4a4.001 4.001 0 0 1 3 4.072zM8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16z%22/></svg>'">
+                                    {% else %}
+                                        <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center text-white fw-bold"
+                                             style="width: 36px; height: 36px; font-size: 14px;">
+                                            {{ (c.name or '?')[:1] }}
+                                        </div>
+                                    {% endif %}
+                                </td>
+                                <td><strong>{{ c.name or '(未命名)' }}</strong></td>
+                                <td>
+                                    {% if c.gender == '男' %}<span class="badge bg-primary">男</span>
+                                    {% elif c.gender == '女' %}<span class="badge bg-pink" style="background-color:#ff69b4;">女</span>
+                                    {% else %}<span class="badge bg-secondary">未知</span>{% endif %}
+                                </td>
+                                <td class="text-muted small">{{ c.position or '-' }}</td>
+                                <td class="small">{{ c.corp_name or '-' }}</td>
+                                <td class="small" style="max-width: 200px;">
+                                    <div class="text-truncate" title="{{ c.remark or '' }}">{{ c.remark or '-' }}</div>
+                                </td>
+                                <td class="small">
+                                    <span class="badge bg-light text-dark border">{{ account_name_map.get(c.account_id, '未知') }}</span>
+                                </td>
+                                <td class="small">
+                                    {% if c.tags and c.tags != '[]' and c.tags != '' %}
+                                        <span class="text-muted">{{ c.tags[:20] }}{% if c.tags|length > 20 %}...{% endif %}</span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td class="text-muted small">
+                                    {{ c.first_contact_time or c.create_time or '-' }}
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary detail-btn"
+                                            data-id="{{ c.id }}">详情</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="10" class="text-center py-5 text-muted">
+                                    <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                                    <div class="mt-2">暂无客户数据</div>
+                                    <div class="small mt-1">请先<a href="{{ url_for('wecom_scrm.accounts_list') }}" class="text-decoration-none">添加托管账号</a>，然后点击"同步客户"</div>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 分页 -->
+        {% if customers.pages > 1 %}
+        <div class="card-footer bg-white border-top-0">
+            <nav class="d-flex justify-content-between align-items-center">
+                <span class="text-muted small">第 {{ customers.page }} / {{ customers.pages }} 页</span>
+                <ul class="pagination mb-0">
+                    {% if customers.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ customers.prev_num }}&keyword={{ keyword }}&account_id={{ account_id }}&gender={{ gender }}&per_page={{ request.args.get('per_page', 20) }}">上一页</a>
+                        </li>
+                    {% endif %}
+                    {% for p in customers.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                        {% if p %}
+                            <li class="page-item {% if p == customers.page %}active{% endif %}">
+                                <a class="page-link" href="?page={{ p }}&keyword={{ keyword }}&account_id={{ account_id }}&gender={{ gender }}&per_page={{ request.args.get('per_page', 20) }}">{{ p }}</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                        {% endif %}
+                    {% endfor %}
+                    {% if customers.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ customers.next_num }}&keyword={{ keyword }}&account_id={{ account_id }}&gender={{ gender }}&per_page={{ request.args.get('per_page', 20) }}">下一页</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- 客户详情 Modal -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">客户详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div id="detailBody" class="modal-body">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="text-muted mt-2">加载中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 客户详情按钮
+document.querySelectorAll('.detail-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const id = this.dataset.id;
+        const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+        const body = document.getElementById('detailBody');
+
+        modal.show();
+        body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><div class="text-muted mt-2">加载中...</div></div>';
+
+        fetch('{{ url_for('wecom_scrm.customer_detail', customer_id=0) }}'.replace('/0', '/' + id))
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.customer) {
+                const c = data.customer;
+                body.innerHTML = `
+                    <div class="text-center mb-4">
+                        ${c.avatar ? `<img src="${c.avatar}" class="rounded-circle mb-2" style="width:80px;height:80px;object-fit:cover;">` :
+                                 `<div class="rounded-circle bg-secondary mx-auto mb-2 d-flex align-items-center justify-content-center text-white fs-3" style="width:80px;height:80px;">${c.name.slice(0,1)}</div>`}
+                        <h4 class="mb-0">${c.name}</h4>
+                        <div class="text-muted small">${c.account_name}</div>
+                    </div>
+                    <table class="table table-sm">
+                        <tr><td class="text-muted" style="width:100px;">性别</td><td>${c.gender || '-'}</td></tr>
+                        <tr><td class="text-muted">职位</td><td>${c.position || '-'}</td></tr>
+                        <tr><td class="text-muted">公司</td><td>${c.corp_name || '-'}</td></tr>
+                        <tr><td class="text-muted">备注</td><td>${c.remark || '-'}</td></tr>
+                        <tr><td class="text-muted">标签</td><td>${c.tags && c.tags != '[]' ? c.tags : '-'}</td></tr>
+                        <tr><td class="text-muted">企微外部ID</td><td><code class="small text-info">${c.external_user_id}</code></td></tr>
+                        <tr><td class="text-muted">首次联系</td><td>${c.first_contact_time || '-'}</td></tr>
+                        <tr><td class="text-muted">状态</td><td>${c.status || '-'}</td></tr>
+                    </table>
+                `;
+            } else {
+                body.innerHTML = '<div class="alert alert-danger mb-0">加载失败: ' + (data.message || '未知错误') + '</div>';
+            }
+        })
+        .catch(err => {
+            body.innerHTML = '<div class="alert alert-danger mb-0">请求失败: ' + err + '</div>';
+        });
+    });
+});
+</script>
+
+{% endblock %}

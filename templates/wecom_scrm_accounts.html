@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <h2><i class="bi bi-people-fill"></i> 托管账号管理</h2>
+    <p class="text-muted small mb-4">管理企业微信成员账号，用于扫码登录和同步客户数据。</p>
+
+    <!-- 快速操作 -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <form method="GET" class="d-flex gap-2 align-items-center">
+            <input type="text" class="form-control" name="keyword" placeholder="搜索账号名/企微ID/备注"
+                   value="{{ keyword }}" style="width: 260px;">
+            <select class="form-select" name="status" style="width: 120px;">
+                <option value="">全部状态</option>
+                <option value="offline" {% if status == 'offline' %}selected{% endif %}>未登录</option>
+                <option value="online" {% if status == 'online' %}selected{% endif %}>已登录</option>
+                <option value="expired" {% if status == 'expired' %}selected{% endif %}>已过期</option>
+            </select>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> 搜索</button>
+        </form>
+
+        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#scanQrModal">
+            <i class="bi bi-qr-code-scan"></i> 扫码新增托管账号
+        </button>
+    </div>
+
+    <!-- 账号列表 -->
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>账号名称</th>
+                            <th>企微 userid</th>
+                            <th>备注/别名</th>
+                            <th>状态</th>
+                            <th>客户数</th>
+                            <th>最后同步</th>
+                            <th class="text-end">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if accounts.items %}
+                            {% for acc in accounts.items %}
+                            <tr>
+                                <td>
+                                    <strong>{{ acc.account_name }}</strong>
+                                    {% if acc.real_name %}<br><small class="text-muted">{{ acc.real_name }}</small>{% endif %}
+                                </td>
+                                <td>
+                                    {% if acc.wecom_id %}
+                                        <code class="text-info">{{ acc.wecom_id }}</code>
+                                    {% else %}
+                                        <span class="text-warning">未设置</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ acc.wecom_alias or '-' }}</td>
+                                <td>
+                                    {% if acc.status == 'online' %}
+                                        <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> 已登录</span>
+                                    {% elif acc.status == 'offline' %}
+                                        <span class="badge bg-secondary"><i class="bi bi-x-circle-fill"></i> 未登录</span>
+                                    {% elif acc.status == 'expired' %}
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill"></i> 已过期</span>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark">{{ acc.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ acc.customer_count or 0 }}</td>
+                                <td class="text-muted small">
+                                    {{ acc.last_sync_time or '-' }}
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-primary"
+                                            data-bs-toggle="modal" data-bs-target="#editModal{{ acc.id }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-info sync-btn"
+                                            data-account-id="{{ acc.id }}"
+                                            data-account-name="{{ acc.account_name }}">
+                                        <i class="bi bi-arrow-repeat"></i> 同步客户
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger"
+                                            data-bs-toggle="modal" data-bs-target="#deleteModal{{ acc.id }}">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center py-5 text-muted">
+                                    <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                                    <div class="mt-2">暂无托管账号，点击右上角"新增托管账号"开始</div>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 分页 -->
+        {% if accounts.pages > 1 %}
+        <div class="card-footer bg-white border-top-0">
+            <nav class="d-flex justify-content-between align-items-center">
+                <span class="text-muted small">共 {{ accounts.total }} 个账号</span>
+                <ul class="pagination mb-0">
+                    {% if accounts.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ accounts.prev_num }}&keyword={{ keyword }}&status={{ status }}">上一页</a>
+                        </li>
+                    {% endif %}
+                    {% for p in accounts.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                        {% if p %}
+                            <li class="page-item {% if p == accounts.page %}active{% endif %}">
+                                <a class="page-link" href="?page={{ p }}&keyword={{ keyword }}&status={{ status }}">{{ p }}</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                        {% endif %}
+                    {% endfor %}
+                    {% if accounts.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ accounts.next_num }}&keyword={{ keyword }}&status={{ status }}">下一页</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+{% for acc in accounts.items %}
+<!-- 编辑 Modal -->
+<div class="modal fade" id="editModal{{ acc.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('wecom_scrm.account_update', account_id=acc.id) }}" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑账号：{{ acc.account_name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">账号名称</label>
+                    <input type="text" class="form-control" name="account_name" value="{{ acc.account_name }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">真实姓名</label>
+                    <input type="text" class="form-control" name="real_name" value="{{ acc.real_name or '' }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">企微 userid</label>
+                    <input type="text" class="form-control" name="wecom_id" value="{{ acc.wecom_id or '' }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">备注</label>
+                    <input type="text" class="form-control" name="wecom_alias" value="{{ acc.wecom_alias or '' }}">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 删除 Modal -->
+<div class="modal fade" id="deleteModal{{ acc.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('wecom_scrm.account_delete', account_id=acc.id) }}" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>确定要删除账号 <strong>{{ acc.account_name }}</strong> 吗？</p>
+                <p class="text-warning small">⚠ 同时会删除该账号下 <strong>{{ acc.customer_count or 0 }}</strong> 条客户数据，此操作不可恢复。</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-danger">确认删除</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endfor %}
+
+<!-- 扫码托管 Modal -->
+<div class="modal fade" id="scanQrModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-qr-code-scan text-success"></i> 扫码托管企微账号</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                {% if qr_error %}
+                    <div class="alert alert-warning small">二维码生成失败：{{ qr_error }}</div>
+                {% elif qr_url %}
+                    <iframe src="{{ qr_url }}"
+                            style="width: 100%; height: 380px; border: 1px solid #e9ecef; border-radius: 8px;">
+                    </iframe>
+                    <div class="small text-muted mt-2">用企业微信 App 扫码授权后，系统将自动创建托管账号</div>
+                {% else %}
+                    <div class="alert alert-warning small mb-0">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        请先在<a href="{{ url_for('wecom_scrm.config_page') }}" class="alert-link">SCRM配置页</a>填写企业ID和客户联系Secret
+                    </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+                {% if qr_url %}
+                    <a href="{{ qr_url }}" target="_blank" class="btn btn-success">
+                        <i class="bi bi-box-arrow-up-right"></i> 新窗口打开扫码
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 扫码弹窗打开时刷新iframe（解决首次打开后第二次不加载的问题）
+document.getElementById('scanQrModal').addEventListener('show.bs.modal', function() {
+    const iframe = this.querySelector('iframe');
+    if (iframe && iframe.dataset.src) {
+        iframe.src = iframe.dataset.src;
+    }
+});
+</script>
+
+<script>
+// 同步客户按钮
+document.querySelectorAll('.sync-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const id = this.dataset.accountId;
+        const name = this.dataset.accountName;
+        const result = document.createElement('div');
+        result.className = 'alert alert-info mt-3 small';
+        result.textContent = '正在同步账号"' + name + '"的客户数据...';
+
+        // 在按钮旁显示状态
+        const parentTd = this.closest('td');
+        const oldResult = parentTd.querySelector('.sync-status');
+        if (oldResult) oldResult.remove();
+        result.classList.add('sync-status');
+        parentTd.appendChild(result);
+
+        this.disabled = true;
+        this.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> 同步中...';
+
+        fetch('{{ url_for('wecom_scrm.account_sync', account_id=0) }}'.replace('/0', '/' + id), {
+            method: 'POST'
+        })
+        .then(r => r.json())
+        .then(data => {
+            result.className = data.success ? 'alert alert-success mt-3 small sync-status' : 'alert alert-danger mt-3 small sync-status';
+            result.textContent = data.message;
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-arrow-repeat"></i> 同步客户';
+            if (data.success) {
+                setTimeout(() => window.location.reload(), 1500);
+            }
+        })
+        .catch(err => {
+            result.className = 'alert alert-danger mt-3 small sync-status';
+            result.textContent = '请求失败: ' + err;
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-arrow-repeat"></i> 同步客户';
+        });
+    });
+});
+</script>
+
+<style>
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+.spin { animation: spin 1s linear infinite; display: inline-block; }
+</style>
+
+{% endblock %}

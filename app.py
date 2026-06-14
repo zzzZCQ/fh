@@ -7,7 +7,7 @@ from flask_login import LoginManager
 
 from config import Config
 from models import db, User, _now_bj
-from services import update_sf_logistics, check_order_reminders
+from services import run_scheduled_task_by_key
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # ============ 应用初始化 ============
@@ -66,8 +66,10 @@ from routes_dingtalk import bp as dingtalk_bp
 from routes_customer_follow_up import bp as customer_follow_up_bp
 from routes_tools import bp as tools_bp
 from routes_broadcast import bp as broadcast_bp
-from routes_wework import bp as wework_bp
-from routes_wecom_scrm import wecom_scrm_bp
+from routes_blacklist import bp as blacklist_bp
+from routes_wecom_scrm import bp as wecom_scrm_bp
+from routes_admin_tasks import bp as admin_tasks_bp, register_task, sync_task_config_to_db
+
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(orders_bp)
@@ -84,8 +86,22 @@ app.register_blueprint(dingtalk_bp)
 app.register_blueprint(customer_follow_up_bp)
 app.register_blueprint(tools_bp)
 app.register_blueprint(broadcast_bp)
-app.register_blueprint(wework_bp)
+app.register_blueprint(blacklist_bp)
 app.register_blueprint(wecom_scrm_bp)
+app.register_blueprint(admin_tasks_bp)
+
+
+# ============ 注册定时任务（在这里新增任务即可，配置由 admin 在页面上调整） ============
+register_task('update_sf_logistics',
+              name='顺丰物流批量更新',
+              description='按间隔小时数定时扫描所有顺丰订单，调用顺丰接口获取最新物流状态并更新',
+              trigger_type='interval',
+              default_interval_hours=6)
+register_task('check_order_reminders',
+              name='订单发货提醒检查',
+              description='每天检查预计发货时间已到或即将到达的订单，向业务员发送桌面提醒',
+              trigger_type='cron',
+              default_cron_time='01:00')
 
 # Flask-SocketIO初始化
 from flask_socketio import SocketIO, emit
@@ -190,6 +206,16 @@ def run_migrations():
     except Exception as e:
         print(f'[迁移] behavior_tracking_record表检查/迁移: {e}')
     
+    # behavior_tracking_record表迁移：添加is_missed列（未接）
+    try:
+        bt_columns = [col['name'] for col in inspector.get_columns('behavior_tracking_record')]
+        if 'is_missed' not in bt_columns:
+            db.session.execute(text("ALTER TABLE behavior_tracking_record ADD COLUMN is_missed TINYINT(1) DEFAULT 0"))
+            db.session.commit()
+            print('[迁移] 已添加behavior_tracking_record.is_missed列')
+    except Exception as e:
+        print(f'[迁移] behavior_tracking_record表检查/迁移is_missed列: {e}')
+    
     # 创建order_reminder表（MySQL语法兼容）
     try:
         db.session.execute(text("""
@@ -209,6 +235,51 @@ def run_migrations():
         if 'already exists' not in str(e).lower():
             print(f'[迁移] order_reminder表创建/检查: {e}')
 
+    # 创建 scheduled_task 配置表
+    try:
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS scheduled_task (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                task_key VARCHAR(100) NOT NULL UNIQUE,
+                name VARCHAR(200) NOT NULL,
+                description VARCHAR(500),
+                trigger_type VARCHAR(20) DEFAULT 'interval',
+                interval_hours INTEGER DEFAULT 6,
+                cron_time VARCHAR(10) DEFAULT '01:00',
+                is_enabled TINYINT(1) DEFAULT 1,
+                last_run_time DATETIME,
+                last_run_status VARCHAR(20),
+                last_run_message VARCHAR(500),
+                next_run_time DATETIME,
+                create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """))
+        db.session.commit()
+        print('[迁移] 已检查/创建 scheduled_task 表')
+    except Exception as e:
+        if 'already exists' not in str(e).lower():
+            print(f'[迁移] scheduled_task表创建/检查: {e}')
+
+    # 创建 scheduled_task_log 日志表
+    try:
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS scheduled_task_log (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                task_id INTEGER NOT NULL,
+                run_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                duration_seconds INTEGER DEFAULT 0,
+                status VARCHAR(20),
+                message TEXT,
+                FOREIGN KEY (task_id) REFERENCES scheduled_task(id)
+            )
+        """))
+        db.session.commit()
+        print('[迁移] 已检查/创建 scheduled_task_log 表')
+    except Exception as e:
+        if 'already exists' not in str(e).lower():
+            print(f'[迁移] scheduled_task_log表创建/检查: {e}')
+
 
 def init_db():
     """初始化数据库"""
@@ -216,23 +287,126 @@ def init_db():
 
     # 执行数据迁移
     run_migrations()
+
+    # 同步任务注册表到数据库
+    sync_task_config_to_db()
     db.session.commit()
 
 
-# ============ 启动定时任务 ============
+# ============ 启动定时任务（从数据库配置加载） ============
 scheduler = BackgroundScheduler()
-scheduler.add_job(update_sf_logistics, 'interval', hours=6, args=[app])
-# 每天凌晨1点检查订单发货提醒
-scheduler.add_job(check_order_reminders, 'cron', hour=1, minute=0, args=[app])
-scheduler.start()
 
-# ============ 初始化数据库 ============
+
+def _scheduled_job_wrapper(task_key):
+    """调度器统一包装函数：执行任务并更新状态/日志"""
+    from models import ScheduledTask, ScheduledTaskLog, _now_bj as __now_bj
+
+    result = run_scheduled_task_by_key(task_key)
+
+    with app.app_context():
+        task = ScheduledTask.query.filter_by(task_key=task_key).first()
+        if task:
+            task.last_run_time = __now_bj()
+            task.last_run_status = result.get('status')
+            task.last_run_message = result.get('message', '')[:500]
+
+            log = ScheduledTaskLog(
+                task_id=task.id,
+                run_time=task.last_run_time,
+                duration_seconds=result.get('duration', 0),
+                status=result.get('status'),
+                message=result.get('message', '')[:2000],
+            )
+            db.session.add(log)
+            db.session.commit()
+
+
+def _reload_scheduler_jobs():
+    """从数据库读取所有启用的任务，重建调度器"""
+    from models import ScheduledTask
+    from datetime import timedelta
+
+    # 清空现有任务
+    for job in scheduler.get_jobs():
+        scheduler.remove_job(job.id)
+
+    with app.app_context():
+        tasks = ScheduledTask.query.filter_by(is_enabled=True).all()
+        for task in tasks:
+            try:
+                if task.trigger_type == 'interval':
+                    scheduler.add_job(
+                        _scheduled_job_wrapper,
+                        'interval',
+                        hours=task.interval_hours,
+                        args=[task.task_key],
+                        id=task.task_key,
+                        replace_existing=True,
+                    )
+                elif task.trigger_type == 'cron':
+                    h, m = map(int, task.cron_time.split(':'))
+                    scheduler.add_job(
+                        _scheduled_job_wrapper,
+                        'cron',
+                        hour=h,
+                        minute=m,
+                        args=[task.task_key],
+                        id=task.task_key,
+                        replace_existing=True,
+                    )
+            except Exception as e:
+                print(f'[定时任务] 注册任务 {task.task_key} 失败: {e}')
+
+        # 维护每个任务的 next_run_time（展示用）
+        # 通过 get_jobs() 获取所有任务，避免不同版本 APScheduler 属性差异
+        job_map = {j.id: j for j in scheduler.get_jobs()}
+        for task in ScheduledTask.query.all():
+            job = job_map.get(task.task_key)
+            if job:
+                try:
+                    raw = getattr(job, 'next_run_time', None)
+                    if raw is None:
+                        pass
+                    elif callable(raw):
+                        next_rt = raw()
+                        if next_rt:
+                            task.next_run_time = next_rt.replace(tzinfo=None) if hasattr(next_rt, 'replace') else None
+                    else:
+                        if raw:
+                            task.next_run_time = raw.replace(tzinfo=None) if hasattr(raw, 'replace') else None
+                except Exception:
+                    pass
+                if not task.is_enabled:
+                    task.next_run_time = None
+            elif not task.is_enabled:
+                task.next_run_time = None
+        db.session.commit()
+
+
+# 启动调度器（先初始化数据库，再加载任务）
 with app.app_context():
     init_db()
 
-# ============ 初始化企微通话配置 ============
-from routes_wework import init_call_recording_config
-init_call_recording_config(app)
+# 从数据库加载任务并启动
+_reload_scheduler_jobs()
+scheduler.start()
+
+# 每 5 分钟检测一次数据库中是否有配置变更，如有则重建调度器
+_reload_last_check = {'update_time': None}
+
+
+def _check_config_changes():
+    """检查是否有任务被启停/改配置，如有则重建调度器"""
+    from models import ScheduledTask
+    with app.app_context():
+        latest = db.session.query(db.func.max(ScheduledTask.update_time)).scalar()
+        if latest and (_reload_last_check['update_time'] is None or latest > _reload_last_check['update_time']):
+            _reload_last_check['update_time'] = latest
+            _reload_scheduler_jobs()
+            print(f'[定时任务] 检测到配置变更，已重新加载 ({latest})')
+
+
+scheduler.add_job(_check_config_changes, 'interval', minutes=5, id='_config_watcher', replace_existing=True)
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
