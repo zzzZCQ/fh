@@ -1,5 +1,12 @@
 {% extends "base.html" %}
 
+{% block head %}
+{{ super() }}
+<link href="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/lang/summernote-zh-CN.min.js"></script>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-3">
 
@@ -65,14 +72,20 @@
                         {% if day.periods %}
                         <div class="day-periods">
                             {% for p in day.periods[:2] %}
-                            <div class="period-dot"
+                            <div class="period-dot period-clickable"
                                  style="background:{{ ['#07c160','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899'][p.group_id % 6] }};"
-                                 title="{{ p.period_name }} ({{ p.group.name }})">
+                                 title="{{ p.period_name }} ({{ p.group.name }})"
+                                 data-period-id="{{ p.id }}"
+                                 data-date="{{ day.date.strftime('%Y-%m-%d') }}">
                                 <span>{{ p.period_name[:6] }}</span>
                             </div>
                             {% endfor %}
                             {% if day.periods | length > 2 %}
-                            <div class="period-dot-more">+{{ day.periods | length - 2 }}</div>
+                            <div class="period-dot-more period-clickable"
+                                 title="点击查看更多栏目"
+                                 data-date="{{ day.date.strftime('%Y-%m-%d') }}">
+                                +{{ day.periods | length - 2 }}
+                            </div>
                             {% endif %}
                         </div>
                         {% endif %}
@@ -207,7 +220,7 @@
                         <div class="schedule-actions mt-3">
                             <button class="btn btn-primary btn-sm btn-copy-execute"
                                     data-sched-id="{{ sched.id }}"
-                                    data-content="{{ sched.content_text | replace('\n', '\\n') | replace('\"', '\\\"') }}">
+                                    data-content="{{ sched.content_text | e }}">
                                 <i class="bi bi-clipboard"></i> <span class="btn-copy-label">复制话术并执行</span>
                             </button>
                             {% if is_admin %}
@@ -269,7 +282,7 @@
 
 <!-- 新增话术弹窗 -->
 <div class="modal fade" id="newSchedModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-plus-circle text-success"></i> 新增话术</h5>
@@ -289,17 +302,8 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label small">话术内容</label>
-                    <!-- 支持粘贴图片的 textarea -->
-                    <div class="image-drop-zone" id="nsDropZone">
-                        <textarea class="form-control" id="nsContent" rows="5"
-                                  placeholder="在此粘贴或输入营销话术内容，支持 Ctrl+V 直接粘贴图片"></textarea>
-                        <div class="drop-hint" id="nsDropHint">
-                            <i class="bi bi-image" style="font-size:1.5rem;"></i>
-                            <div>拖入图片或 Ctrl+V 粘贴</div>
-                        </div>
-                        <!-- 已粘贴/上传的图片预览 -->
-                        <div class="image-previews mt-2" id="nsImagePreviews"></div>
-                    </div>
+                    <textarea id="nsContent" style="display:none;"></textarea>
+                    <div id="nsEditor"></div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label small">备注</label>
@@ -311,6 +315,27 @@
                 <button type="button" class="btn btn-success" onclick="submitNewSchedule()">
                     <i class="bi bi-save"></i> 保存话术
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 栏目选择弹窗 -->
+<div class="modal fade" id="periodSelectorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-calendar-check"></i> 选择栏目</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="psDate">
+                <div id="psPeriodList">
+                    <!-- 栏目列表将动态生成 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
             </div>
         </div>
     </div>
@@ -377,9 +402,14 @@
     background: #07c160; color: #fff; font-size: 11px; padding: 2px 6px;
     border-radius: 3px; white-space: nowrap; overflow: hidden;
     max-width: 100%; text-overflow: ellipsis; cursor: default;
+    transition: transform 0.1s, box-shadow 0.1s;
 }
 .period-dot span { pointer-events: none; }
-.period-dot-more { font-size: 11px; color: #999; text-align: center; }
+.period-dot.period-clickable { cursor: pointer; }
+.period-dot.period-clickable:hover { transform: scale(1.05); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.period-dot-more { font-size: 11px; color: #999; text-align: center; cursor: default; }
+.period-dot-more.period-clickable { cursor: pointer; color: #666; }
+.period-dot-more.period-clickable:hover { color: #333; }
 
 /* 话术卡片 */
 .schedule-card {
@@ -569,17 +599,25 @@ function initScheduleCard(cardCol) {
         });
     }
 
-    // ---- 过期判断 ----
-    if (timePoint && timePoint < now) {
-        cardCol.classList.add('schedule-expired');
-        if (badge) {
-            badge.textContent = '已过期';
-            badge.classList.add('badge-expired');
-            badge.classList.remove('d-none');
-        }
-        if (copyBtn) {
-            copyBtn.disabled = true;
-            if (copyLabel) copyLabel.textContent = '已过期';
+    // ---- 过期判断（延迟30分钟）----
+    if (timePoint) {
+        // 计算时间点加上30分钟后的时间
+        var [hours, minutes] = timePoint.split(':').map(Number);
+        var expireMinutes = hours * 60 + minutes + 30;
+        var [nowHours, nowMinutes] = now.split(':').map(Number);
+        var nowTotalMinutes = nowHours * 60 + nowMinutes;
+        
+        if (expireMinutes < nowTotalMinutes) {
+            cardCol.classList.add('schedule-expired');
+            if (badge) {
+                badge.textContent = '已过期';
+                badge.classList.add('badge-expired');
+                badge.classList.remove('d-none');
+            }
+            if (copyBtn) {
+                copyBtn.disabled = true;
+                if (copyLabel) copyLabel.textContent = '已过期';
+            }
         }
     }
 
@@ -720,20 +758,82 @@ function initScheduleCard(cardCol) {
         delBtn.addEventListener('click', function() {
             if (!confirm('确定删除此话术？')) return;
             fetch('/marketing/api/schedule/' + schedId, {method: 'DELETE'})
-                .then(r => r.json()).then(function(data) {
+                .then(function(r) {
+                    if (!r.ok) {
+                        throw new Error('HTTP ' + r.status);
+                    }
+                    return r.json();
+                })
+                .then(function(data) {
                     if (data.success) {
                         cardCol.style.transition = 'opacity 0.3s';
                         cardCol.style.opacity = '0';
                         setTimeout(function() { cardCol.remove(); }, 300);
                     } else {
-                        alert('删除失败');
+                        alert('删除失败: ' + (data.message || ''));
                     }
+                })
+                .catch(function(err) {
+                    alert('删除失败: ' + err.message);
                 });
         });
     }
 }
 
 document.querySelectorAll('.schedule-card-col').forEach(initScheduleCard);
+
+// ========== 栏目色块点击跳转 ==========
+document.querySelectorAll('.period-clickable').forEach(function(dot) {
+    dot.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var periodId = this.dataset.periodId;
+        var date = this.dataset.date;
+        if (periodId) {
+            // 跳转到对应栏目的当天话术页面
+            window.location.href = '/marketing/period/' + periodId + '/schedules?date=' + date;
+        } else if (date) {
+            // 显示该日期的所有栏目选择弹窗
+            showPeriodSelector(date);
+        }
+    });
+});
+
+// ========== 显示栏目选择弹窗 ==========
+function showPeriodSelector(date) {
+    document.getElementById('psDate').value = date;
+    var listEl = document.getElementById('psPeriodList');
+    listEl.innerHTML = '<div class="text-center"><i class="bi bi-spinner bi-spin"></i> 加载中...</div>';
+    
+    fetch('/marketing/api/periods-by-date?date=' + date)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success && data.periods && data.periods.length > 0) {
+                var html = '<div class="list-group">';
+                data.periods.forEach(function(p) {
+                    html += '<a href="/marketing/period/' + p.id + '/schedules?date=' + date + '" class="list-group-item list-group-item-action">';
+                    html += '<div class="d-flex justify-content-between align-items-center">';
+                    html += '<div>';
+                    html += '<h6 class="mb-0">' + p.period_name + '</h6>';
+                    html += '<small class="text-muted">' + p.group_name + '</small>';
+                    html += '</div>';
+                    html += '<i class="bi bi-arrow-right text-muted"></i>';
+                    html += '</div>';
+                    html += '</a>';
+                });
+                html += '</div>';
+                listEl.innerHTML = html;
+            } else {
+                listEl.innerHTML = '<div class="text-center text-muted">当天没有栏目</div>';
+            }
+        })
+        .catch(function() {
+            listEl.innerHTML = '<div class="text-center text-danger">加载失败</div>';
+        });
+    
+    if (window.bootstrap) {
+        new bootstrap.Modal(document.getElementById('periodSelectorModal')).show();
+    }
+}
 
 // ========== 日历点击 ==========
 document.querySelectorAll('.calendar-day').forEach(function(cell) {
@@ -757,21 +857,18 @@ if (addBtn) {
     });
 }
 
-// ========== 新增话术弹窗 ==========
-var _pendingImages = [];
+// ========== 新增话术弹窗（Summernote富文本编辑器）==========
+var nsEditor = null;
 
 function showNewScheduleModal(periodId, date) {
     document.getElementById('nsPeriodId').value = periodId;
     document.getElementById('nsDate').value = date;
-    document.getElementById('nsContent').value = '';
     document.getElementById('nsRemark').value = '';
-    _pendingImages = [];
-    var preview = document.getElementById('nsImagePreviews');
-    if (preview) preview.innerHTML = '';
+    if (nsEditor) {
+        nsEditor.summernote('reset');
+    }
     if (window.bootstrap) {
         new bootstrap.Modal(document.getElementById('newSchedModal')).show();
-    } else {
-        document.getElementById('newSchedModal').style.display = 'block';
     }
 }
 
@@ -779,14 +876,12 @@ function submitNewSchedule() {
     var periodId = document.getElementById('nsPeriodId').value;
     var date = document.getElementById('nsDate').value;
     var time = document.getElementById('nsTime').value;
-    var content = document.getElementById('nsContent').value.trim();
+    var content = nsEditor ? nsEditor.summernote('code') : '';
     var remark = document.getElementById('nsRemark').value.trim();
 
-    if (!content) { alert('请输入话术内容'); return; }
-
-    var extraText = '';
-    if (_pendingImages.length > 0) {
-        extraText = '\n\n[图片] ' + _pendingImages.join(' | ');
+    if (!content || content.replace(/<[^>]*>/g, '').trim() === '') {
+        alert('请输入话术内容');
+        return;
     }
 
     fetch('/marketing/api/schedule', {
@@ -796,13 +891,13 @@ function submitNewSchedule() {
             period_id: parseInt(periodId),
             schedule_date: date,
             time_point: time,
-            content: content + extraText,
+            content: content,
             remark: remark
         })
     }).then(r => r.json()).then(data => {
         if (data.success) {
             try { bootstrap.Modal.getInstance(document.getElementById('newSchedModal')).hide(); }
-            catch(e) { document.getElementById('newSchedModal').style.display = 'none'; }
+            catch(e) {}
             window.location.reload();
         } else {
             alert('保存失败: ' + (data.message || '未知错误'));
@@ -810,74 +905,67 @@ function submitNewSchedule() {
     });
 }
 
-// ========== 新增话术弹窗内：图片拖拽/粘贴上传 ==========
-(function initNewSchedDropZone() {
-    var dz = document.getElementById('nsDropZone');
-    var preview = document.getElementById('nsImagePreviews');
-    if (!dz || !preview) return;
-
-    function uploadLocal(file) {
-        var formData = new FormData();
-        formData.append('file', file);
-
-        var wrapper = document.createElement('div');
-        wrapper.style.cssText = 'position:relative;display:inline-block;';
-        wrapper.innerHTML = '<img src="" class="preview-img" style="opacity:0.4">';
-        preview.appendChild(wrapper);
-        var img = wrapper.querySelector('img');
-
-        var reader = new FileReader();
-        reader.onload = function(e) { img.src = e.target.result; };
-        reader.readAsDataURL(file);
-
-        fetch('/marketing/api/upload-image', {method: 'POST', body: formData})
-            .then(r => r.json()).then(function(data) {
-                if (data.success) {
-                    _pendingImages.push(data.url);
-                    img.style.opacity = '1';
-                    var removeBtn = document.createElement('button');
-                    removeBtn.type = 'button';
-                    removeBtn.textContent = '×';
-                    removeBtn.style.cssText = 'position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:18px;text-align:center;cursor:pointer;border:none;';
-                    removeBtn.addEventListener('click', function() {
-                        var idx = _pendingImages.indexOf(data.url);
-                        if (idx !== -1) _pendingImages.splice(idx, 1);
-                        wrapper.remove();
-                    });
-                    wrapper.appendChild(removeBtn);
-                } else {
-                    wrapper.remove();
-                    alert('上传失败');
+// ========== 初始化 Summernote 编辑器 ==========
+$(document).ready(function() {
+    nsEditor = $('#nsEditor');
+    nsEditor.summernote({
+        lang: 'zh-CN',
+        placeholder: '在此输入营销话术，可直接拖入或粘贴图片...',
+        height: 250,
+        minHeight: 200,
+        toolbar: [
+            ['style', ['bold', 'italic', 'underline', 'clear']],
+            ['color', ['color']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['insert', ['picture']],
+            ['view', ['codeview']]
+        ],
+        callbacks: {
+            onImageUpload: function(files) {
+                for (var i = 0; i < files.length; i++) {
+                    uploadImageToEditor(files[i]);
                 }
-            });
-    }
-
-    dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
-    dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
-    dz.addEventListener('drop', function(e) {
-        e.preventDefault();
-        dz.classList.remove('drag-over');
-        if (e.dataTransfer && e.dataTransfer.files) {
-            for (var i = 0; i < e.dataTransfer.files.length; i++) uploadLocal(e.dataTransfer.files[i]);
-        }
-    });
-
-    var textarea = dz.querySelector('textarea');
-    if (textarea) {
-        textarea.addEventListener('paste', function(e) {
-            if (e.clipboardData && e.clipboardData.items) {
-                for (var i = 0; i < e.clipboardData.items.length; i++) {
-                    var it = e.clipboardData.items[i];
-                    if (it.type.indexOf('image') !== -1) {
-                        e.preventDefault();
-                        var file = it.getAsFile();
-                        if (file) uploadLocal(file);
-                        return;
+            },
+            onPaste: function(e) {
+                var clipboardData = e.clipboardData;
+                if (clipboardData && clipboardData.items) {
+                    for (var i = 0; i < clipboardData.items.length; i++) {
+                        var item = clipboardData.items[i];
+                        if (item.type.indexOf('image') !== -1) {
+                            e.preventDefault();
+                            var file = item.getAsFile();
+                            if (file) {
+                                uploadImageToEditor(file);
+                            }
+                        }
                     }
                 }
             }
-        });
-    }
-})();
+        }
+    });
+});
+
+function uploadImageToEditor(file) {
+    var data = new FormData();
+    data.append('file', file);
+    
+    $.ajax({
+        url: '/marketing/api/schedule/image/upload',
+        data: data,
+        type: 'POST',
+        contentType: false,
+        processData: false,
+        success: function(response) {
+            if (response.success && response.url) {
+                nsEditor.summernote('insertImage', response.url);
+            } else {
+                alert('图片上传失败: ' + (response.message || '未知错误'));
+            }
+        },
+        error: function() {
+            alert('图片上传失败');
+        }
+    });
+}
 </script>
 {% endblock %}

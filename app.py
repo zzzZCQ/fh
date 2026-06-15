@@ -45,6 +45,15 @@ login_manager.init_app(app)
 login_manager.login_view = 'auth.login'
 
 
+@login_manager.unauthorized_handler
+def unauthorized():
+    """处理未登录请求：API 返回 JSON，其他请求重定向到登录页"""
+    from flask import request, jsonify, redirect
+    if request.path.startswith('/api/') or request.path.startswith('/marketing/api/'):
+        return jsonify({'success': False, 'message': '请先登录'}), 401
+    return redirect('/auth/login')
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))

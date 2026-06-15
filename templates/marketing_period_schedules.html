@@ -113,10 +113,11 @@
                             <i class="bi bi-clipboard"></i> <span class="btn-copy-label">复制话术并执行</span>
                         </button>
                         {% if can_edit %}
-                        <a href="{{ url_for('marketing.schedule_edit', schedule_id=s.id) }}" class="btn btn-sm btn-outline-secondary">
-                            <i class="bi bi-pencil"></i> 编辑
-                        </a>
-                        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#delSched{{ s.id }}">
+                        <button type="button" class="btn btn-sm btn-outline-info btn-save-edit d-none"
+                                data-sched-id="{{ s.id }}" title="保存修改">
+                            <i class="bi bi-save"></i> 保存
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#delSched{{ s.id }}">
                             <i class="bi bi-trash"></i> 删除
                         </button>
                         {% endif %}
@@ -125,7 +126,13 @@
 
                 <!-- 话术内容（支持拖入 / 粘贴图片） -->
                 <div class="schedule-content image-drop-zone" id="sched-content-{{ s.id }}"
-                     style="background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 14px 18px; font-size: 15px; line-height: 1.8; word-break: break-word; cursor: default;">
+                     {% if can_edit %}
+                     contenteditable="true"
+                     {% else %}
+                     style="cursor: default;"
+                     {% endif %}
+                     data-sched-id="{{ s.id }}"
+                     style="background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 14px 18px; font-size: 15px; line-height: 1.8; word-break: break-word;">
                     {# 富文本 HTML 内容：直接渲染文本和图片 #}
                     {% if '<' in s.content %}
                     <div class="rich-content">{{ s.content | safe }}</div>
@@ -303,17 +310,25 @@ function initScheduleCard(cardCol) {
         });
     }
 
-    // ---- 过期判断：只有今天的话术才判断时间；非今天的过期话术不再启用 ----
-    if (dateStr === todayStr && timePoint && timePoint < now) {
-        cardCol.classList.add('schedule-expired');
-        if (badge) {
-            badge.textContent = '已过期';
-            badge.classList.add('badge-expired');
-            badge.classList.remove('d-none');
-        }
-        if (copyBtn) {
-            copyBtn.disabled = true;
-            if (copyLabel) copyLabel.textContent = '已过期';
+    // ---- 过期判断（延迟30分钟）：只有今天的话术才判断时间；非今天的过期话术不再启用 ----
+    if (dateStr === todayStr && timePoint) {
+        // 计算时间点加上30分钟后的时间
+        var [hours, minutes] = timePoint.split(':').map(Number);
+        var expireMinutes = hours * 60 + minutes + 30;
+        var [nowHours, nowMinutes] = now.split(':').map(Number);
+        var nowTotalMinutes = nowHours * 60 + nowMinutes;
+        
+        if (expireMinutes < nowTotalMinutes) {
+            cardCol.classList.add('schedule-expired');
+            if (badge) {
+                badge.textContent = '已过期';
+                badge.classList.add('badge-expired');
+                badge.classList.remove('d-none');
+            }
+            if (copyBtn) {
+                copyBtn.disabled = true;
+                if (copyLabel) copyLabel.textContent = '已过期';
+            }
         }
     }
 
@@ -341,6 +356,43 @@ function initScheduleCard(cardCol) {
                 }).catch(function() {});
             });
         });
+    }
+
+    // ---- 编辑保存功能（仅管理员） ----
+    var saveBtn = cardCol.querySelector('.btn-save-edit');
+    if (contentEl && contentEl.isContentEditable && saveBtn) {
+        contentEl.addEventListener('input', function() {
+            if (saveBtn) saveBtn.classList.remove('d-none');
+        });
+        
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function() {
+                var content = contentEl.innerHTML;
+                var xhr = new XMLHttpRequest();
+                xhr.open('PUT', '/marketing/api/schedule/' + schedId, true);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 4) {
+                        if (xhr.status === 200) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                if (data.success) {
+                                    saveBtn.classList.add('d-none');
+                                    alert('保存成功');
+                                } else {
+                                    alert('保存失败: ' + (data.message || ''));
+                                }
+                            } catch(e) {
+                                alert('保存失败: 解析响应失败');
+                            }
+                        } else {
+                            alert('保存失败: HTTP ' + xhr.status);
+                        }
+                    }
+                };
+                xhr.send(JSON.stringify({ content: content }));
+            });
+        }
     }
 
     // ---- 拖入 / 粘贴图片（任何登录用户都可向话术追加图片） ----
@@ -411,7 +463,7 @@ document.querySelectorAll('.schedule-card-col').forEach(initScheduleCard);
 
 // 自动滚动到当前时间最近的那条话术
 (function(){
-    var targetId = {{ target_sched_id or 'null' }};
+    var targetId = {{ target_sched_id | tojson if target_sched_id else 'null' }};
     if (targetId) {
         var el = document.getElementById('sched-' + targetId);
         if (el) {

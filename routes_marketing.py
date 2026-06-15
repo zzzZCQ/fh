@@ -67,10 +67,10 @@ def can_access_group(group_id):
 def get_managed_groups():
     """获取当前用户可访问的组列表（admin=全部，业务员=自己所在组）"""
     if current_user.has_role('admin'):
-        return Group.query.filter_by(is_active=True).order_by(Group.level, Group.name).all()
+        return Group.query.filter_by(is_active=True).filter(Group.level > 1).order_by(Group.level, Group.name).all()
     if current_user.group_id:
         grp = Group.query.get(current_user.group_id)
-        return [grp] if grp and grp.is_active else []
+        return [grp] if grp and grp.is_active and grp.level > 1 else []
     return []
 
 
@@ -339,7 +339,7 @@ def period_edit(period_id):
 @bp.route('/marketing/period/<int:period_id>/delete', methods=['POST'])
 @login_required
 def period_delete(period_id):
-    """删除栏目（连带话术和执行记录）"""
+    """删除栏目（连带话术、执行记录和投票记录）"""
     period = MarketingPeriod.query.get_or_404(period_id)
     if not can_manage_marketing(period.group_id):
         flash('没有权限', 'danger')
@@ -347,6 +347,12 @@ def period_delete(period_id):
 
     gid = period.group_id
     name = period.period_name
+    
+    from sqlalchemy import text
+    db.session.execute(text('DELETE FROM marketing_schedule_vote WHERE schedule_id IN (SELECT id FROM marketing_schedule WHERE period_id = :pid)'), {'pid': period_id})
+    MarketingExecution.query.filter_by(period_id=period_id).delete()
+    MarketingSchedule.query.filter_by(period_id=period_id).delete()
+    
     db.session.delete(period)
     db.session.commit()
     flash(f'栏目"{name}"已删除', 'info')
@@ -356,6 +362,47 @@ def period_delete(period_id):
 # ============================================================
 # 4. 栏目下的话术/档期列表 + 新增编辑
 # ============================================================
+
+@bp.route('/marketing/api/periods-by-date', methods=['GET'])
+@login_required
+def api_periods_by_date():
+    """根据日期获取当天有话术的栏目列表"""
+    date_str = request.args.get('date')
+    if not date_str:
+        return jsonify({'success': False, 'message': '缺少日期参数'})
+    
+    try:
+        from datetime import datetime
+        schedule_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'success': False, 'message': '日期格式错误'})
+    
+    # 获取用户有权限访问的组
+    user_groups = get_user_groups(current_user)
+    group_ids = [g.id for g in user_groups]
+    
+    # 查询当天有话术的栏目
+    periods = db.session.query(
+        MarketingPeriod.id,
+        MarketingPeriod.period_name,
+        MarketingGroup.name.label('group_name')
+    ).join(MarketingGroup, MarketingPeriod.group_id == MarketingGroup.id) \
+     .join(MarketingSchedule, MarketingPeriod.id == MarketingSchedule.period_id) \
+     .filter(MarketingPeriod.group_id.in_(group_ids)) \
+     .filter(MarketingSchedule.schedule_date == schedule_date) \
+     .distinct() \
+     .all()
+    
+    result = []
+    for p in periods:
+        result.append({
+            'id': p.id,
+            'period_name': p.period_name,
+            'group_name': p.group_name
+        })
+    
+    return jsonify({'success': True, 'periods': result})
+
 
 @bp.route('/marketing/period/<int:period_id>', methods=['GET'])
 @login_required
@@ -546,6 +593,15 @@ def schedule_delete(schedule_id):
         flash('没有权限', 'danger')
         return redirect(url_for('marketing.index'))
     pid = sched.period_id
+    # 删除投票记录（先执行）
+    try:
+        from sqlalchemy import text
+        db.session.execute(text('DELETE FROM marketing_schedule_vote WHERE schedule_id = :sid'), {'sid': schedule_id})
+    except Exception:
+        pass
+    # 删除执行记录
+    MarketingExecution.query.filter_by(schedule_id=schedule_id).delete()
+    # 删除主记录
     db.session.delete(sched)
     db.session.commit()
     flash('话术已删除', 'info')
@@ -588,6 +644,16 @@ def schedule_execute(schedule_id):
 
     flash('已记录本次营销执行', 'success')
     return redirect(url_for('marketing.period_schedules', period_id=sched.period_id))
+
+
+@bp.route('/marketing/api/schedule/image/upload', methods=['POST'])
+@login_required
+def schedule_image_upload():
+    """富文本编辑器图片上传（不关联特定话术，直接返回URL）"""
+    image_url = save_upload_image(request.files.get('file'))
+    if not image_url:
+        return jsonify({'success': False, 'message': '上传失败或格式不支持'}), 400
+    return jsonify({'success': True, 'url': image_url})
 
 
 @bp.route('/marketing/api/schedule/<int:schedule_id>/image', methods=['POST'])
@@ -815,16 +881,54 @@ def api_schedule():
     })
 
 
+@bp.route('/marketing/api/schedule/<int:schedule_id>', methods=['PUT'])
+@login_required
+def api_schedule_update(schedule_id):
+    """更新话术内容"""
+    try:
+        sched = MarketingSchedule.query.get(schedule_id)
+        if not sched:
+            return jsonify({'success': False, 'message': '话术不存在'})
+        if not can_manage_marketing(sched.period.group_id):
+            return jsonify({'success': False, 'message': '没有权限'})
+        
+        data = request.get_json()
+        if 'content' in data:
+            sched.content = process_html_images(data['content'])
+            sched.update_time = _now_bj()
+            db.session.commit()
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'message': '缺少参数'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+
+
 @bp.route('/marketing/api/schedule/<int:schedule_id>', methods=['DELETE'])
 @login_required
 def api_schedule_delete(schedule_id):
     """删除话术"""
-    sched = MarketingSchedule.query.get(schedule_id)
-    if not sched or not can_manage_marketing(sched.period.group_id):
-        return jsonify({'success': False, 'message': '无权操作'})
-    db.session.delete(sched)
-    db.session.commit()
-    return jsonify({'success': True})
+    try:
+        sched = MarketingSchedule.query.get(schedule_id)
+        if not sched:
+            return jsonify({'success': False, 'message': '话术不存在'})
+        if not can_manage_marketing(sched.period.group_id):
+            return jsonify({'success': False, 'message': '没有权限'})
+        # 删除投票记录（先执行）
+        try:
+            from sqlalchemy import text
+            db.session.execute(text('DELETE FROM marketing_schedule_vote WHERE schedule_id = :sid'), {'sid': schedule_id})
+        except Exception:
+            pass
+        # 删除执行记录
+        MarketingExecution.query.filter_by(schedule_id=schedule_id).delete()
+        # 删除主记录
+        db.session.delete(sched)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
 
 
 # ============================================================

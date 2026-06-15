@@ -22,7 +22,7 @@
         {% endif %}
     </div>
 
-    {% if not periods %}
+    {% if periods %}
     <div class="card">
         <div class="card-body p-0">
             <table class="table table-hover mb-0">
@@ -84,7 +84,7 @@
                                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
-                                确定要删除栏目「<strong>{{ p.period_name }}</strong> 吗？<br>
+                                确定要删除栏目「<strong>{{ p.period_name }}</strong>」吗？<br>
                                 <small class="text-danger">栏目的所有话术与执行记录将一并删除，此操作不可恢复。</small>
                             </div>
                             <div class="modal-footer">

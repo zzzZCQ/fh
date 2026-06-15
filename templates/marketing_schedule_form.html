@@ -121,19 +121,60 @@
         ],
         callbacks: {
             onInit: function() {
-                // 设置初始内容
                 if (initialContent) {
                     $('#editor-wrapper').summernote('code', initialContent);
                 }
             },
             onChange: function(contents, $editable) {
-                // 同步到隐藏 textarea
                 hiddenInput.value = contents;
+            },
+            onImageUpload: function(files) {
+                for (var i = 0; i < files.length; i++) {
+                    uploadImage(files[i]);
+                }
+            },
+            onPaste: function(e) {
+                var clipboardData = e.clipboardData;
+                if (clipboardData && clipboardData.items) {
+                    for (var i = 0; i < clipboardData.items.length; i++) {
+                        var item = clipboardData.items[i];
+                        if (item.type.indexOf('image') !== -1) {
+                            e.preventDefault();
+                            var file = item.getAsFile();
+                            if (file) {
+                                uploadImage(file);
+                            }
+                        }
+                    }
+                }
             }
         }
     });
 
-    // 表单提交前同步内容
+    function uploadImage(file) {
+        var $editor = $('#editor-wrapper');
+        var data = new FormData();
+        data.append('file', file);
+        
+        $.ajax({
+            url: '/marketing/api/schedule/image/upload',
+            data: data,
+            type: 'POST',
+            contentType: false,
+            processData: false,
+            success: function(response) {
+                if (response.success && response.url) {
+                    $editor.summernote('insertImage', response.url);
+                } else {
+                    alert('图片上传失败');
+                }
+            },
+            error: function() {
+                alert('图片上传失败');
+            }
+        });
+    }
+
     document.querySelector('form').addEventListener('submit', function() {
         hiddenInput.value = $('#editor-wrapper').summernote('code');
     });
