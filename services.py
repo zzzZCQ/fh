@@ -2249,6 +2249,212 @@ def _send_file_legacy_api(token, media_id):
         return {'success': False, 'error': error_msg}
 
 
+# ============================================================
+# 钉钉考勤数据同步
+# ============================================================
+
+def fetch_dingtalk_attendance_by_date(date_str):
+    """按日期拉取钉钉考勤打卡数据
+    :param date_str: 日期字符串，格式 'YYYY-MM-DD'
+    :return: dict {'success': bool, 'data': list, 'error': str, 'fetched_users': int}
+    """
+    from models import User, DingTalkAttendance
+    token = _get_dingtalk_token()
+    if not token:
+        return {'success': False, 'error': '获取钉钉Token失败'}
+
+    # 1. 列出本系统中已有的业务员，按 user_id 索引
+    system_users = User.query.filter_by(is_active=True).all()
+    if not system_users:
+        return {'success': False, 'error': '系统中暂无用户'}
+
+    # 2. 调用钉钉考勤列表API（获取所有用户某天打卡结果）
+    # 文档参考：https://open.dingtalk.com/document/isvapp/attendance-list
+    api_url = 'https://oapi.dingtalk.com/attendance/list'
+    params = {'access_token': token}
+
+    # 按用户分批请求（每次最多50个userId）
+    batch_size = 50
+
+    # 先尝试通过 userid 获取用户ID（钉钉userId）
+    # 如果用户没有 dingtalk_userid 字段，则按姓名匹配（不推荐，但可尝试）
+    user_batches = []
+    current_batch = []
+    for u in system_users:
+        # 使用用户手机号或姓名匹配（这里简化为按姓名匹配钉钉返回结果）
+        current_batch.append(u)
+        if len(current_batch) >= batch_size:
+            user_batches.append(current_batch)
+            current_batch = []
+    if current_batch:
+        user_batches.append(current_batch)
+
+    # 构建统一索引：name -> user 对象，id -> user 对象
+    name_index = {}
+    for u in system_users:
+        name_index[u.name.strip()] = u
+
+    fetched_records = []
+    processed_user_ids = set()
+    total_result_items = 0
+
+    try:
+        # 调用考勤API，获取指定日期的所有人打卡结果
+        offset = 0
+        limit = 50
+        has_more = True
+        while has_more:
+            payload = {
+                'checkDateFrom': date_str + ' 00:00:00',
+                'checkDateTo': date_str + ' 23:59:59',
+                'offset': offset,
+                'limit': limit
+            }
+            resp = requests.post(api_url, params=params, json=payload, timeout=15)
+            result = resp.json()
+            print(f"[DEBUG] 钉钉考勤API响应: errcode={result.get('errcode')}, errmsg={result.get('errmsg')}")
+
+            if result.get('errcode') != 0:
+                # 如果API失败，可能是权限不足，给出清晰的错误提示
+                errmsg = result.get('errmsg', '未知错误')
+                if 'not enough auth' in errmsg or 'access' in errmsg.lower():
+                    return {
+                        'success': False,
+                        'error': '钉钉应用没有考勤权限，请在钉钉后台为应用开启"考勤"只读权限。错误详情: ' + errmsg
+                    }
+                return {'success': False, 'error': '钉钉考勤API调用失败: ' + errmsg}
+
+            result_items = result.get('recordresult', []) or []
+            total_result_items += len(result_items)
+            for item in result_items:
+                # 解析考勤字段
+                dt_name = (item.get('name') or '').strip()
+                dt_user_id = item.get('userId') or item.get('userid') or ''
+
+                # 在系统用户中匹配（优先按姓名，可后续扩展按手机号匹配）
+                matched_user = name_index.get(dt_name)
+                if not matched_user:
+                    continue
+
+                # 考勤状态
+                # timeResult: Normal(正常), Late(迟到), Early(早退), Absent(缺旷),
+                #             OnBusinessTrip(出差), OffDuty(外勤), Leave(请假)
+                time_result = item.get('timeResult') or item.get('checkType') or ''
+                # 打卡时间
+                checkin_str = item.get('userCheckTime') or item.get('checkInTime') or ''
+                checkout_str = item.get('userCheckOutTime') or item.get('checkOutTime') or ''
+
+                # 迟到/早退分钟
+                late_min = int(item.get('lateMinutes') or item.get('late_minutes') or 0)
+                early_min = int(item.get('earlyMinutes') or item.get('early_minutes') or 0)
+
+                # 请假信息
+                leave_type = item.get('leaveType') or item.get('leave_type') or ''
+                leave_days = 0.0
+                try:
+                    leave_days = float(item.get('leaveDuration') or item.get('leave_days') or 0)
+                except (ValueError, TypeError):
+                    leave_days = 0.0
+
+                # 构造考勤记录（每日一条，存在则更新）
+                try:
+                    att_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    continue
+
+                record = DingTalkAttendance.query.filter_by(
+                    user_id=matched_user.id,
+                    attendance_date=att_date
+                ).first()
+                if not record:
+                    record = DingTalkAttendance(user_id=matched_user.id, attendance_date=att_date)
+                    db.session.add(record)
+
+                # 转换时间字段
+                def _parse_dt(s):
+                    if not s:
+                        return None
+                    try:
+                        # 钉钉返回 "YYYY-MM-DD HH:MM:SS"
+                        return datetime.strptime(s, '%Y-%m-%d %H:%M:%S')
+                    except (ValueError, TypeError):
+                        try:
+                            # "YYYY-MM-DD HH:MM"
+                            return datetime.strptime(s, '%Y-%m-%d %H:%M')
+                        except (ValueError, TypeError):
+                            return None
+
+                record.check_type = time_result
+                record.checkin_time = _parse_dt(checkin_str)
+                record.checkout_time = _parse_dt(checkout_str)
+                record.late_minutes = late_min
+                record.early_minutes = early_min
+                record.leave_days = leave_days
+                record.leave_type = leave_type
+                record.raw_data = json.dumps(item, ensure_ascii=False)
+                record.source = 'dingtalk_api'
+
+                fetched_records.append(record)
+                processed_user_ids.add(matched_user.id)
+
+            # 判断是否还有下一页
+            has_more = result.get('hasMore', False) or len(result_items) >= limit
+            offset += limit
+            if offset > 2000:  # 防止死循环
+                break
+
+        db.session.commit()
+        return {
+            'success': True,
+            'data': fetched_records,
+            'processed_users': len(processed_user_ids),
+            'total_items': total_result_items,
+            'saved_records': len(fetched_records),
+            'date': date_str
+        }
+
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        print(f"[ERROR] 钉钉考勤同步异常: {traceback.format_exc()}")
+        return {'success': False, 'error': '同步异常: ' + str(e)}
+
+
+def fetch_dingtalk_attendance_by_range(start_date_str, end_date_str):
+    """批量同步指定日期区间的考勤数据"""
+    try:
+        start = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return {'success': False, 'error': '日期格式错误，应为 YYYY-MM-DD'}
+
+    if start > end:
+        return {'success': False, 'error': '开始日期不能晚于结束日期'}
+
+    from datetime import timedelta
+    results = []
+    current = start
+    total_saved = 0
+    total_processed_users = 0
+    while current <= end:
+        date_str = current.strftime('%Y-%m-%d')
+        res = fetch_dingtalk_attendance_by_date(date_str)
+        results.append({'date': date_str, 'result': res})
+        if res.get('success'):
+            total_saved += res.get('saved_records', 0)
+            total_processed_users = max(total_processed_users, res.get('processed_users', 0))
+        current += timedelta(days=1)
+        # 避免被限流，每次请求间隔0.5秒
+        time.sleep(0.5)
+
+    return {
+        'success': True,
+        'total_saved_records': total_saved,
+        'max_processed_users': total_processed_users,
+        'details': results
+    }
+
+
 # ============ 订单发货提醒功能 ============
 def check_order_reminders(app=None):
     """

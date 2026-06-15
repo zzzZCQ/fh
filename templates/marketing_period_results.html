@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <nav style="--bs-breadcrumb-divider: '>';" aria-label="breadcrumb">
+        <ol class="breadcrumb small">
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.index') }}">营销中心</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.group_periods', group_id=group.id) }}">{{ group.name }}</a></li>
+            <li class="breadcrumb-item active">执行结果</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h3 class="mb-0"><i class="bi bi-bar-chart-line"></i> {{ period.period_name }}</h3>
+            <small class="text-muted">
+                档期 {{ period.start_date }} ~ {{ period.end_date }} ·
+                共 {{ period.total_days }} 天 ·
+                {{ user_stats | length }} 名业务员 ·
+                <strong>累计执行 {{ total_executions }} 次</strong>
+            </small>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('marketing.period_schedules', period_id=period.id) }}" class="btn btn-primary">
+                <i class="bi bi-chat-dots"></i> 查看话术
+            </a>
+        </div>
+    </div>
+
+    <!-- 按业务员统计 -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-person-bounding-box"></i> 业务员执行情况</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th>业务员</th>
+                                    <th>已执行话术数</th>
+                                    <th>应执行话术数</th>
+                                    <th>完成率</th>
+                                    <th>最近执行时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {% for s in user_stats %}
+                                <tr>
+                                    <td><strong>{{ s.user.name or s.user.username }}</strong></td>
+                                    <td>{{ s.executed_count }}</td>
+                                    <td>{{ s.total_schedules }}</td>
+                                    <td>
+                                        <div class="d-flex align-items-center" style="min-width: 140px;">
+                                            <div class="progress flex-grow-1 me-2" style="height: 8px;">
+                                                <div class="progress-bar {% if s.completion_rate >= 80 %}bg-success{% elif s.completion_rate >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                                                     role="progressbar" style="width: {{ s.completion_rate }}%;"></div>
+                                            </div>
+                                            <span class="small text-nowrap"><strong>{{ s.completion_rate }}%</strong></span>
+                                        </div>
+                                    </td>
+                                    <td class="small text-muted">
+                                        {{ s.latest_execution.strftime('%Y-%m-%d %H:%M') if s.latest_execution else '—' }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                            {% if not user_stats %}
+                                <tr><td colspan="5" class="text-center text-muted py-4">该组暂无业务员</td></tr>
+                            {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-pie-chart"></i> 话术执行情况</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th>话术</th>
+                                    <th style="width: 80px;">执行</th>
+                                    <th style="width: 80px;">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {% for s in schedule_stats %}
+                                <tr>
+                                    <td class="small" style="max-width: 220px;">
+                                        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+                                             title="{{ s.schedule.schedule_date }} {{ s.schedule.time_point }} — {{ s.schedule.content }}">
+                                            <strong>{{ s.schedule.schedule_date }} {{ s.schedule.time_point }}</strong><br>
+                                            <span class="text-muted">{{ s.schedule.content | truncate(30) }}</span>
+                                        </div>
+                                    </td>
+                                    <td>{{ s.execution_count }}/{{ s.user_count }}</td>
+                                    <td><span class="badge {% if s.completion_rate >= 80 %}bg-success{% elif s.completion_rate >= 50 %}bg-warning text-dark{% else %}bg-danger{% endif %}">{{ s.completion_rate }}%</span></td>
+                                </tr>
+                            {% endfor %}
+                            {% if not schedule_stats %}
+                                <tr><td colspan="3" class="text-center text-muted py-4">还没有话术</td></tr>
+                            {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 执行明细 -->
+    <div class="card">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-list-ul"></i> 执行明细（最近 200 条）</h5>
+            <small class="text-muted">共 {{ total_executions }} 条记录</small>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th style="width: 180px;">执行时间</th>
+                            <th style="width: 120px;">业务员</th>
+                            <th>话术</th>
+                            <th style="width: 100px;">渠道</th>
+                            <th>备注/反馈</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for item in detail %}
+                        <tr>
+                            <td class="small text-muted">
+                                {{ item.execution.executed_at.strftime('%Y-%m-%d %H:%M') }}
+                            </td>
+                            <td>{{ item.user.name if item.user else '—' }}</td>
+                            <td class="small">
+                                <strong>{{ item.schedule.schedule_date }} {{ item.schedule.time_point }}</strong>
+                                <div class="text-muted" style="max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ item.schedule.content | truncate(80) }}</div>
+                            </td>
+                            <td>{{ item.execution.channel or '—' }}</td>
+                            <td class="small">{{ item.execution.notes or '—' }}</td>
+                        </tr>
+                    {% endfor %}
+                    {% if not detail %}
+                        <tr><td colspan="5" class="text-center text-muted py-4">暂无执行记录</td></tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -78,7 +78,15 @@
                 </div>
                 <div class="row g-3 mt-2">
                     <div class="col-md-6">
-                        <label class="form-label">身体情况</label>
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label mb-0">身体情况</label>
+                            <button type="button" class="btn btn-sm btn-primary" id="btn-knowledge-search"
+                                    data-health="{{ customer_info.health_condition if customer_info else '' }}"
+                                    data-medication="{{ customer_info.medication_status if customer_info else '' }}"
+                                    data-name="{{ customer_info.customer_name if customer_info else '' }}">
+                                <i class="bi bi-chat-quote"></i> 客情应答
+                            </button>
+                        </div>
                         <textarea class="form-control" id="health_condition" name="health_condition" rows="3" disabled>{{ customer_info.health_condition if customer_info else '' }}</textarea>
                     </div>
                     <div class="col-md-6">
@@ -258,5 +266,221 @@
             alert('保存失败，请重试');
         });
     }
+</script>
+
+<!-- 客情应答搜索结果弹窗 -->
+<div class="modal fade" id="knowledgeModal" tabindex="-1" aria-labelledby="knowledgeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="knowledgeModalLabel">
+                    <i class="bi bi-chat-quote"></i> 客情应答推荐话术
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3 small text-muted" id="knowledge-match-info"></div>
+                <div id="knowledge-results"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .knowledge-entry-card {
+        margin-bottom: 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 12px;
+        background: #fff;
+    }
+    .knowledge-entry-card .entry-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #495057;
+    }
+    .knowledge-entry-card .entry-keywords {
+        margin-bottom: 8px;
+    }
+    .knowledge-entry-card .entry-content {
+        white-space: pre-wrap;
+        line-height: 1.7;
+        color: #666;
+        font-size: 13px;
+    }
+    .knowledge-entry-card .entry-vote {
+        display: flex;
+        align-items: center;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px dashed #eee;
+    }
+    .knowledge-entry-card .vote-btn {
+        padding: 2px 8px;
+        font-size: 12px;
+        margin-right: 8px;
+    }
+    .knowledge-entry-card .priority-badge {
+        font-size: 11px;
+    }
+</style>
+
+<script>
+(function() {
+    // 客情应答搜索按钮点击
+    var searchBtn = document.getElementById('btn-knowledge-search');
+    if (!searchBtn) return;
+
+    var modal = new bootstrap.Modal(document.getElementById('knowledgeModal'));
+
+    searchBtn.addEventListener('click', function() {
+        var health = (this.dataset.health || '').trim();
+        var medication = (this.dataset.medication || '').trim();
+        var customerName = (this.dataset.name || '').trim();
+        var combined = [health, medication, customerName].filter(function(x) { return x; }).join(' ');
+
+        // 显示加载状态
+        document.getElementById('knowledge-match-info').innerHTML =
+            '<i class="bi bi-hourglass-split"></i> 正在分析客户情况并检索话术...';
+        document.getElementById('knowledge-results').innerHTML =
+            '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><div class="mt-2 small text-muted">正在检索...</div></div>';
+        modal.show();
+
+        fetch('/knowledge/api/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ keywords: combined })
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.success) {
+                renderKnowledgeResults(data);
+            } else {
+                document.getElementById('knowledge-results').innerHTML =
+                    '<div class="alert alert-danger">检索失败：' + (data.message || '') + '</div>';
+            }
+        }).catch(function(err) {
+            document.getElementById('knowledge-results').innerHTML =
+                '<div class="alert alert-danger">检索失败：' + err + '</div>';
+        });
+    });
+
+    function renderKnowledgeResults(data) {
+        var entries = data.entries || [];
+        var keywords = data.matched_keywords || [];
+
+        if (!entries.length) {
+            document.getElementById('knowledge-match-info').innerHTML = '';
+            document.getElementById('knowledge-results').innerHTML =
+                '<div class="alert alert-info text-center py-4">' +
+                '<i class="bi bi-inbox" style="font-size:2rem;"></i>' +
+                '<div class="mt-2 fw-semibold">未找到相关话术</div>' +
+                '<div class="small text-muted mt-1">当前话术库中没有与「' + (keywords.join('、') || '客户情况') + '」匹配的内容。<br>建议：完善客户身体情况信息，或让管理员添加相关话术。</div>' +
+                '</div>';
+            return;
+        }
+
+        var matchInfo = '检索关键词：<span class="fw-semibold text-primary">' + keywords.join('、').substring(0, 100) + '</span>';
+        if (data.total_count) {
+            matchInfo += ' · 共找到 <b>' + data.total_count + '</b> 条，已按权重排序展示前 ' + entries.length + ' 条';
+        }
+        document.getElementById('knowledge-match-info').innerHTML = matchInfo;
+
+        var html = '';
+        for (var i = 0; i < entries.length; i++) {
+            var entry = entries[i];
+            html += '<div class="knowledge-entry-card" data-entry-id="' + entry.id + '">';
+            html += '<div class="entry-title"><i class="bi bi-lightbulb text-warning"></i> ' + entry.title + '</div>';
+            if (entry.keywords) {
+                html += '<div class="entry-keywords">';
+                var kws = String(entry.keywords).replace(/，/g, ',').split(',');
+                for (var j = 0; j < kws.length; j++) {
+                    if (kws[j].trim()) {
+                        html += '<span class="badge bg-light text-dark border me-1 small px-2 py-1">' + kws[j].trim() + '</span>';
+                    }
+                }
+                html += '</div>';
+            }
+            html += '<div class="entry-content">' + entry.content + '</div>';
+            var weight = (entry.useful_count || 0) - (entry.useless_count || 0);
+            html += '<div class="entry-vote">';
+            html += '<button class="btn btn-sm btn-outline-secondary vote-btn btn-vote-useful" data-entry-id="' + entry.id + '" data-vote="useful" title="此话术有用">';
+            html += '<i class="bi bi-hand-thumbs-up"></i> <span class="vote-count useful">' + (entry.useful_count || 0) + '</span>';
+            html += '</button>';
+            html += '<button class="btn btn-sm btn-outline-secondary vote-btn btn-vote-useless" data-entry-id="' + entry.id + '" data-vote="useless" title="此话术无用">';
+            html += '<i class="bi bi-hand-thumbs-down"></i> <span class="vote-count useless">' + (entry.useless_count || 0) + '</span>';
+            html += '</button>';
+            var badgeColor = weight > 0 ? 'bg-success' : weight < 0 ? 'bg-danger' : 'bg-secondary';
+            var weightText = (weight > 0 ? '+' : '') + weight || '±0';
+            html += '<span class="badge priority-badge ' + badgeColor + ' ms-1">' + weightText + '</span>';
+            html += '<span class="text-muted ms-2 small"><i class="bi bi-eye"></i> ' + (entry.view_count || 0) + ' 次查看</span>';
+            html += '</div>';
+            html += '</div>';
+
+            // 初始化按钮状态
+            if (entry.user_vote === 'useful') {
+                setTimeout(function(cardId) {
+                    var card = document.querySelector('[data-entry-id="' + cardId + '"]');
+                    if (card) {
+                        var btn = card.querySelector('.btn-vote-useful');
+                        if (btn) { btn.classList.remove('btn-outline-secondary'); btn.classList.add('btn-success'); }
+                    }
+                }, 0, entry.id);
+            } else if (entry.user_vote === 'useless') {
+                setTimeout(function(cardId) {
+                    var card = document.querySelector('[data-entry-id="' + cardId + '"]');
+                    if (card) {
+                        var btn = card.querySelector('.btn-vote-useless');
+                        if (btn) { btn.classList.remove('btn-outline-secondary'); btn.classList.add('btn-danger'); }
+                    }
+                }, 0, entry.id);
+            }
+        }
+
+        document.getElementById('knowledge-results').innerHTML = html;
+
+        // 绑定投票按钮事件
+        document.querySelectorAll('#knowledge-results .vote-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var entryId = parseInt(this.dataset.entryId);
+                var voteType = this.dataset.vote;
+                var card = document.querySelector('[data-entry-id="' + entryId + '"]');
+                if (!card) return;
+
+                fetch('/knowledge/api/entry/' + entryId + '/vote', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ vote: voteType })
+                }).then(function(r) { return r.json(); }).then(function(data) {
+                    if (data.success) {
+                        var usefulBtn = card.querySelector('.btn-vote-useful');
+                        var uselessBtn = card.querySelector('.btn-vote-useless');
+                        var priorityBadge = card.querySelector('.priority-badge');
+
+                        var usefulCount = card.querySelector('.vote-count.useful');
+                        var uselessCount = card.querySelector('.vote-count.useless');
+                        if (usefulCount) usefulCount.textContent = data.useful_count;
+                        if (uselessCount) uselessCount.textContent = data.useless_count;
+
+                        if (priorityBadge) {
+                            var w = data.vote_weight;
+                            priorityBadge.textContent = (w > 0 ? '+' : '') + w || '±0';
+                            priorityBadge.className = 'badge priority-badge ms-1 ' + (w > 0 ? 'bg-success' : w < 0 ? 'bg-danger' : 'bg-secondary');
+                        }
+
+                        if (voteType === 'useful') {
+                            if (usefulBtn) { usefulBtn.classList.remove('btn-outline-secondary'); usefulBtn.classList.add('btn-success'); }
+                            if (uselessBtn) { uselessBtn.classList.remove('btn-danger'); uselessBtn.classList.add('btn-outline-secondary'); }
+                        } else {
+                            if (uselessBtn) { uselessBtn.classList.remove('btn-outline-secondary'); uselessBtn.classList.add('btn-danger'); }
+                            if (usefulBtn) { usefulBtn.classList.remove('btn-success'); usefulBtn.classList.add('btn-outline-secondary'); }
+                        }
+                    }
+                });
+            });
+        });
+    }
+})();
 </script>
 {% endblock %}

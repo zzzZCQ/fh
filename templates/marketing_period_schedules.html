@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <nav style="--bs-breadcrumb-divider: '>';" aria-label="breadcrumb">
+        <ol class="breadcrumb small">
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.index') }}">营销中心</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.group_periods', group_id=group.id) }}">{{ group.name }}</a></li>
+            <li class="breadcrumb-item active">栏目详情</li>
+        </ol>
+    </nav>
+
+    <!-- 栏目信息头部 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h3 class="mb-1">{{ period.period_name }}</h3>
+                    <div class="text-muted small mb-2">
+                        <i class="bi bi-calendar-event"></i> {{ period.start_date }} ~ {{ period.end_date }} · 共 {{ period.total_days }} 天
+                        · <i class="bi bi-chat-dots"></i> {{ period.schedule_count }} 条话术
+                        · <i class="bi bi-people"></i> 所属：{{ group.name }}
+                    </div>
+                    {% if period.description %}
+                    <p class="small text-muted mb-0" style="max-width: 720px;">{{ period.description }}</p>
+                    {% endif %}
+                </div>
+                <div class="d-flex gap-2">
+                    {% if can_edit %}
+                    <a href="{{ url_for('marketing.period_results', period_id=period.id) }}" class="btn btn-info">
+                        <i class="bi bi-bar-chart"></i> 执行结果
+                    </a>
+                    {% endif %}
+                    {% if can_edit %}
+                    <a href="{{ url_for('marketing.period_edit', period_id=period.id) }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-pencil"></i> 编辑栏目
+                    </a>
+                    <form method="POST" action="{{ url_for('marketing.period_auto_fill', period_id=period.id) }}" class="d-inline">
+                        <button type="submit" class="btn btn-warning" onclick="return confirm('将按 09:00 / 12:00 / 14:30 / 18:00 / 20:30 每天生成话术骨架，确定继续？')">
+                            <i class="bi bi-magic"></i> 一键填充骨架
+                        </button>
+                    </form>
+                    <a href="{{ url_for('marketing.schedule_add', period_id=period.id) }}" class="btn btn-success">
+                        <i class="bi bi-plus-circle"></i> 新增话术
+                    </a>
+                    {% endif %}
+                    {% if today_only %}
+                    <span class="badge bg-light text-dark border align-self-center py-2">
+                        <i class="bi bi-info-circle"></i> 仅显示今日（{{ today }}）话术
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 按日期展示话术 -->
+    {% if not date_list %}
+    <div class="card">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-inbox" style="font-size: 2.5rem; color: #999;"></i>
+            {% if today_only %}
+            <h5 class="mt-3 text-muted">今日暂无话术</h5>
+            <p class="small text-muted mb-3">请稍候，管理员正在准备今日的营销话术。</p>
+            {% else %}
+            <h5 class="mt-3 text-muted">还没有话术</h5>
+            <p class="small text-muted mb-3">请点击右上角「新增话术」或「一键填充骨架」快速生成每日话术。</p>
+            <div class="d-flex justify-content-center gap-2">
+                <form method="POST" action="{{ url_for('marketing.period_auto_fill', period_id=period.id) }}">
+                    <button type="submit" class="btn btn-warning btn-sm">
+                        <i class="bi bi-magic"></i> 一键填充骨架
+                    </button>
+                </form>
+                <a href="{{ url_for('marketing.schedule_add', period_id=period.id) }}" class="btn btn-success btn-sm">
+                    <i class="bi bi-plus-circle"></i> 手动新增话术
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% for date_key in date_list %}
+    <div class="card mb-3">
+        <div class="card-header bg-white">
+            <h6 class="mb-0">
+                <i class="bi bi-calendar-check text-primary"></i>
+                {{ date_key }}
+                <small class="text-muted ms-2">共 {{ by_date[date_key] | length }} 条</small>
+            </h6>
+        </div>
+        <div class="card-body p-3">
+            {% for s in by_date[date_key] %}
+            <div class="schedule-card-col mb-3" id="sched-{{ s.id }}"
+                 data-sched-id="{{ s.id }}"
+                 data-time-point="{{ s.time_point }}"
+                 data-date="{{ date_key }}">
+            <div class="schedule-card" style="padding: 18px 20px;">
+                <!-- 时间点 + 操作 -->
+                <div class="d-flex justify-content-between align-items-start mb-3" style="padding-bottom: 10px; border-bottom: 1px solid #f0f0f0;">
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                        <span class="time-badge" style="background:#07c160; color:#fff; font-size:15px; padding: 4px 12px; border-radius:12px; font-family:monospace; font-weight:600;">{{ s.time_point }}</span>
+                        <span class="badge status-badge d-none"></span>
+                        {% if s.remark %}
+                        <small class="text-muted"><i class="bi bi-info-circle"></i> {{ s.remark }}</small>
+                        {% endif %}
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-primary btn-sm btn-copy-execute"
+                                data-sched-id="{{ s.id }}"
+                                data-content="{{ s.content_text | replace('\n', '\\n') | replace('\"', '\\\"') }}">
+                            <i class="bi bi-clipboard"></i> <span class="btn-copy-label">复制话术并执行</span>
+                        </button>
+                        {% if can_edit %}
+                        <a href="{{ url_for('marketing.schedule_edit', schedule_id=s.id) }}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-pencil"></i> 编辑
+                        </a>
+                        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#delSched{{ s.id }}">
+                            <i class="bi bi-trash"></i> 删除
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- 话术内容（支持拖入 / 粘贴图片） -->
+                <div class="schedule-content image-drop-zone" id="sched-content-{{ s.id }}"
+                     style="background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 14px 18px; font-size: 15px; line-height: 1.8; word-break: break-word; cursor: default;">
+                    {# 富文本 HTML 内容：直接渲染文本和图片 #}
+                    {% if '<' in s.content %}
+                    <div class="rich-content">{{ s.content | safe }}</div>
+                    {% else %}
+                    <div style="white-space: pre-wrap;">{{ s.content_text }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- 图片区（仅展示旧格式的独立图片；富文本图片已在上方内容中） -->
+                {% if s.image_list and '<' not in s.content %}
+                <div class="schedule-images d-flex flex-wrap gap-2 mt-3" id="sched-images-{{ s.id }}">
+                    {% for img in s.image_list %}
+                    <a href="{{ img }}" target="_blank">
+                        <img src="{{ img }}" style="width: 180px; height: 180px; object-fit: cover; border-radius: 8px; border: 1px solid #eee;">
+                    </a>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if can_edit %}
+                <div class="small text-muted mt-2">
+                    <i class="bi bi-image"></i> 可拖入图片或 Ctrl+V 粘贴图片，自动上传；
+                    <i class="bi bi-person-circle"></i> {{ s.creator.name or (s.creator.username if s.creator else '—') }}
+                    · <i class="bi bi-clock"></i> {{ s.create_time.strftime('%Y-%m-%d %H:%M') }}
+                </div>
+                {% endif %}
+            </div>
+            </div>
+
+            <!-- 删除确认 Modal -->
+            <div class="modal fade" id="delSched{{ s.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                    <form method="POST" action="{{ url_for('marketing.schedule_delete', schedule_id=s.id) }}" class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">确认删除</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            确定删除 {{ date_key }} {{ s.time_point }} 的话术吗？
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                            <button type="submit" class="btn btn-danger">确认删除</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<style>
+/* ===== 过期 / 已执行状态样式 ===== */
+.schedule-card-col.schedule-expired .schedule-card {
+    opacity: 0.55; background: #f9fafb; border-color: #e5e7eb;
+}
+.schedule-card-col.schedule-expired .schedule-content {
+    background: #f3f4f6; border-color: #e5e7eb; color: #6b7280;
+}
+.schedule-card-col.schedule-expired .time-badge {
+    background: #9ca3af !important;
+}
+.schedule-card-col.schedule-expired .btn-copy-execute {
+    background: #9ca3af !important; border-color: #9ca3af !important;
+    cursor: not-allowed; opacity: 0.85;
+}
+.schedule-card-col.schedule-executed .time-badge {
+    background: #10b981 !important;
+}
+.schedule-card-col.schedule-executed .btn-copy-execute {
+    background: #10b981 !important; border-color: #10b981 !important;
+}
+.status-badge { padding: 4px 10px; font-size: 11px; }
+.status-badge.badge-executed { background: #10b981 !important; }
+.status-badge.badge-expired { background: #9ca3af !important; }
+
+/* 拖拽高亮 */
+.image-drop-zone.drag-over { background: #f0f9ff !important; border-color: #07c160 !important; }
+
+/* 富文本内容中的图片（文本+图片交替展示） */
+.rich-content { width: 100%; }
+.rich-content p { margin-bottom: 0.6em; }
+.rich-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    margin: 6px 0;
+    display: block;
+    max-height: 400px;
+    object-fit: contain;
+}
+</style>
+
+<script>
+// ========== 工具：当前时间 HH:MM ==========
+function getCurrentTimeStr() {
+    var d = new Date();
+    var h = String(d.getHours()).padStart(2, '0');
+    var m = String(d.getMinutes()).padStart(2, '0');
+    return h + ':' + m;
+}
+
+// ========== 工具：复制文本到剪贴板 ==========
+function copyText(text) {
+    if (navigator.clipboard) {
+        return navigator.clipboard.writeText(text);
+    }
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    return Promise.resolve();
+}
+
+// ========== 工具：从文本中解析 [图片] URL 标记 ==========
+function extractImageUrls(text) {
+    var urls = [];
+    if (!text) return urls;
+    var regex = /\[图片\]\s*(\S+)/gi;
+    var m;
+    while ((m = regex.exec(text)) !== null) {
+        if (m[1]) urls.push(m[1]);
+    }
+    return urls;
+}
+
+function stripImageMarks(text) {
+    if (!text) return '';
+    return text.replace(/\s*\[图片\]\s*\S+/gi, '').trim();
+}
+
+// ========== 为每张话术卡片初始化：图片解析 + 过期判断 + 复制即执行 + 拖拽/粘贴图片 ==========
+function initScheduleCard(cardCol) {
+    if (!cardCol) return;
+    var schedId = cardCol.dataset.schedId;
+    var timePoint = cardCol.dataset.timePoint || '';
+    var dateStr = cardCol.dataset.date || '';
+    var now = getCurrentTimeStr();
+    var today = new Date();
+    var todayStr = today.getFullYear() + '-' +
+        String(today.getMonth() + 1).padStart(2, '0') + '-' +
+        String(today.getDate()).padStart(2, '0');
+    var card = cardCol.querySelector('.schedule-card');
+    if (!card) return;
+    var copyBtn = cardCol.querySelector('.btn-copy-execute');
+    var copyLabel = cardCol.querySelector('.btn-copy-label');
+    var contentEl = cardCol.querySelector('#sched-content-' + schedId);
+    var badge = cardCol.querySelector('.status-badge');
+    var imagesDiv = cardCol.querySelector('#sched-images-' + schedId);
+
+    // ---- 解析 [图片] URL，并从文本中移除 ----
+    var rawContent = contentEl ? contentEl.textContent : '';
+    var imageUrlsFromContent = extractImageUrls(rawContent);
+    if (imageUrlsFromContent.length > 0 && contentEl) {
+        contentEl.textContent = stripImageMarks(rawContent);
+    }
+    if (imagesDiv && imageUrlsFromContent.length > 0) {
+        var existingSrcs = [];
+        imagesDiv.querySelectorAll('img').forEach(function(img) {
+            existingSrcs.push(img.getAttribute('src'));
+        });
+        imageUrlsFromContent.forEach(function(url) {
+            if (existingSrcs.indexOf(url) !== -1) return;
+            var a = document.createElement('a');
+            a.href = url; a.target = '_blank';
+            var img = document.createElement('img');
+            img.src = url; img.className = 'schedule-thumb';
+            a.appendChild(img);
+            imagesDiv.appendChild(a);
+        });
+    }
+
+    // ---- 过期判断：只有今天的话术才判断时间；非今天的过期话术不再启用 ----
+    if (dateStr === todayStr && timePoint && timePoint < now) {
+        cardCol.classList.add('schedule-expired');
+        if (badge) {
+            badge.textContent = '已过期';
+            badge.classList.add('badge-expired');
+            badge.classList.remove('d-none');
+        }
+        if (copyBtn) {
+            copyBtn.disabled = true;
+            if (copyLabel) copyLabel.textContent = '已过期';
+        }
+    }
+
+    // ---- 复制即执行 ----
+    if (copyBtn && !copyBtn.disabled) {
+        copyBtn.addEventListener('click', function() {
+            var text = contentEl ? contentEl.textContent : rawContent;
+            text = stripImageMarks(text);
+            copyText(text).then(function() {
+                var form = new FormData();
+                form.append('channel', '点击复制');
+                fetch('/marketing/schedule/' + schedId + '/execute', {
+                    method: 'POST', body: form,
+                    headers: { 'Accept': 'application/json' }
+                }).then(r => r.json()).then(function(data) {
+                    if (data && data.success) {
+                        cardCol.classList.add('schedule-executed');
+                        if (copyLabel) copyLabel.textContent = '已执行';
+                        if (badge) {
+                            badge.textContent = '✓ 已执行';
+                            badge.classList.add('badge-executed');
+                            badge.classList.remove('d-none', 'badge-expired');
+                        }
+                    }
+                }).catch(function() {});
+            });
+        });
+    }
+
+    // ---- 拖入 / 粘贴图片（任何登录用户都可向话术追加图片） ----
+    function uploadImageToSchedule(file) {
+        if (!file || !file.type || file.type.indexOf('image') === -1) return;
+        var placeholder = document.createElement('a');
+        placeholder.innerHTML = '<img src="" style="width:180px;height:180px;opacity:0.5;border-radius:8px;border:1px solid #eee;object-fit:cover;">';
+        var imgPlaceholder = placeholder.querySelector('img');
+        var reader = new FileReader();
+        reader.onload = function(e) { imgPlaceholder.src = e.target.result; };
+        reader.readAsDataURL(file);
+        imagesDiv.appendChild(placeholder);
+
+        var formData = new FormData();
+        formData.append('file', file);
+        fetch('/marketing/api/schedule/' + schedId + '/image', {
+            method: 'POST', body: formData,
+            headers: { 'Accept': 'application/json' }
+        }).then(r => r.json()).then(function(data) {
+            if (data.success) {
+                placeholder.href = data.url;
+                placeholder.target = '_blank';
+                imgPlaceholder.src = data.url;
+                imgPlaceholder.style.opacity = '1';
+            } else {
+                placeholder.remove();
+                alert('图片上传失败');
+            }
+        }).catch(function() {
+            placeholder.remove();
+            alert('图片上传失败');
+        });
+    }
+
+    if (contentEl) {
+        contentEl.addEventListener('dragover', function(e) {
+            e.preventDefault(); contentEl.classList.add('drag-over');
+        });
+        contentEl.addEventListener('dragleave', function() {
+            contentEl.classList.remove('drag-over');
+        });
+        contentEl.addEventListener('drop', function(e) {
+            e.preventDefault();
+            contentEl.classList.remove('drag-over');
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                for (var i = 0; i < e.dataTransfer.files.length; i++) {
+                    uploadImageToSchedule(e.dataTransfer.files[i]);
+                }
+            }
+        });
+        contentEl.addEventListener('paste', function(e) {
+            if (e.clipboardData && e.clipboardData.items) {
+                for (var i = 0; i < e.clipboardData.items.length; i++) {
+                    var it = e.clipboardData.items[i];
+                    if (it.type.indexOf('image') !== -1) {
+                        e.preventDefault();
+                        var file = it.getAsFile();
+                        if (file) uploadImageToSchedule(file);
+                        return;
+                    }
+                }
+            }
+        });
+    }
+}
+
+document.querySelectorAll('.schedule-card-col').forEach(initScheduleCard);
+
+// 自动滚动到当前时间最近的那条话术
+(function(){
+    var targetId = {{ target_sched_id or 'null' }};
+    if (targetId) {
+        var el = document.getElementById('sched-' + targetId);
+        if (el) {
+            setTimeout(function(){ el.scrollIntoView({behavior:'smooth', block:'center'}); }, 300);
+        }
+    }
+})();
+</script>
+
+{% endblock %}

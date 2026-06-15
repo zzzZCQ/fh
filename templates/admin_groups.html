@@ -50,6 +50,7 @@
                                 {% if is_super_admin or group.id in managed_group_ids %}
                                 <div class="btn-group btn-group-sm">
                                     <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal{{ group.id }}">编辑</button>
+                                    <a class="btn btn-outline-info" href="{{ url_for('finance.attendance_config') }}" title="财务配置">财务配置</a>
                                     <form method="POST" action="{{ url_for('templates.toggle_group', group_id=group.id) }}" class="d-inline">
                                         {% if group.is_active %}
                                         <button type="submit" class="btn btn-outline-warning" onclick="return confirm('确定停用此组别？')">停用</button>
@@ -103,6 +104,7 @@
                                 {% if is_super_admin or root.id in managed_group_ids %}
                                 <div class="btn-group btn-group-sm">
                                     <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal{{ root.id }}">编辑</button>
+                                    <a class="btn btn-outline-info" href="{{ url_for('finance.attendance_config') }}" title="财务配置">财务配置</a>
                                     <form method="POST" action="{{ url_for('templates.toggle_group', group_id=root.id) }}" class="d-inline">
                                         {% if root.is_active %}
                                         <button type="submit" class="btn btn-outline-warning" onclick="return confirm('确定停用此组别？')">停用</button>
@@ -146,6 +148,7 @@
                                         {% if is_super_admin or child.id in managed_group_ids %}
                                         <div class="btn-group btn-group-sm">
                                             <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal{{ child.id }}">编辑</button>
+                                            <a class="btn btn-outline-info" href="{{ url_for('finance.attendance_config') }}" title="财务配置">财务配置</a>
                                             <form method="POST" action="{{ url_for('templates.toggle_group', group_id=child.id) }}" class="d-inline">
                                                 {% if child.is_active %}
                                                 <button type="submit" class="btn btn-outline-warning" onclick="return confirm('确定停用此组别？')">停用</button>

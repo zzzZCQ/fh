@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block title %}提成规则配置{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+    <h3 class="mb-4"><i class="bi bi-percent text-primary"></i> 提成规则配置</h3>
+
+    <p class="text-muted mb-4">
+        为每个业务组别设置提成规则。支持"固定比例"（无论业绩高低统一比例）和"阶梯比例"（按业绩金额分档递增）。
+    </p>
+
+    {% if not group_rules %}
+    <div class="alert alert-warning">暂无可用的业务组别，请先在用户管理中创建组别。</div>
+    {% endif %}
+
+    {% for group, rule in group_rules %}
+    <div class="card mb-3 shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>{{ group.name }}</strong>
+            <span class="badge bg-{% if rule.id %}success{% else %}secondary{% endif %}">
+                {% if rule.id %}已保存{% else %}未配置{% endif %}
+            </span>
+        </div>
+        <div class="card-body">
+            <form method="post" action="{{ url_for('finance.commission_save') }}" class="needs-validation" novalidate>
+                <input type="hidden" name="group_id" value="{{ group.id }}">
+
+                <div class="row g-3 align-items-center mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">规则类型</label>
+                        <select name="rule_type" class="form-select rule-type-select" data-group="{{ group.id }}">
+                            <option value="fixed" {% if rule.rule_type == 'fixed' %}selected{% endif %}>固定比例</option>
+                            <option value="tiered" {% if rule.rule_type == 'tiered' %}selected{% endif %}>阶梯比例</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 固定比例 -->
+                <div id="fixed-block-{{ group.id }}" class="mb-3 {% if rule.rule_type != 'fixed' %}d-none{% endif %}">
+                    <label class="form-label">提成比例（%）</label>
+                    <input type="number" step="0.1" min="0" max="100" class="form-control w-25"
+                           name="fixed_rate" value="{{ rule.fixed_rate or 5.0 }}" required>
+                    <div class="form-text small text-muted">示例：5% 表示按已签收业绩的 5% 计算提成。</div>
+                </div>
+
+                <!-- 阶梯比例 -->
+                <div id="tiered-block-{{ group.id }}" class="{% if rule.rule_type != 'tiered' %}d-none{% endif %}">
+                    <label class="form-label">阶梯档位</label>
+                    <table class="table table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>最低业绩（元）</th>
+                                <th>最高业绩（元，留空表示无上限）</th>
+                                <th>提成比例（%）</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tiered-rows-{{ group.id }}">
+                            {% if rule.rule_type == 'tiered' and rule.tiered_config %}
+                                {% set tiers = rule.tiered_config|from_json %}
+                                {% for tier in tiers %}
+                                <tr class="tier-row">
+                                    <td><input type="number" name="tier_min[]" class="form-control" value="{{ tier.min_amount }}" min="0"></td>
+                                    <td><input type="number" name="tier_max[]" class="form-control" value="{{ tier.max_amount if tier.max_amount else '' }}"></td>
+                                    <td><input type="number" step="0.1" name="tier_rate[]" class="form-control" value="{{ tier.rate }}" min="0" max="100"></td>
+                                    <td><button type="button" class="btn btn-sm btn-outline-danger remove-tier">-</button></td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr class="tier-row">
+                                    <td><input type="number" name="tier_min[]" class="form-control" value="0" min="0"></td>
+                                    <td><input type="number" name="tier_max[]" class="form-control" value="30000"></td>
+                                    <td><input type="number" step="0.1" name="tier_rate[]" class="form-control" value="3" min="0" max="100"></td>
+                                    <td><button type="button" class="btn btn-sm btn-outline-danger remove-tier">-</button></td>
+                                </tr>
+                                <tr class="tier-row">
+                                    <td><input type="number" name="tier_min[]" class="form-control" value="30000" min="0"></td>
+                                    <td><input type="number" name="tier_max[]" class="form-control" value="100000"></td>
+                                    <td><input type="number" step="0.1" name="tier_rate[]" class="form-control" value="5" min="0" max="100"></td>
+                                    <td><button type="button" class="btn btn-sm btn-outline-danger remove-tier">-</button></td>
+                                </tr>
+                                <tr class="tier-row">
+                                    <td><input type="number" name="tier_min[]" class="form-control" value="100000" min="0"></td>
+                                    <td><input type="number" name="tier_max[]" class="form-control" placeholder="无上限"></td>
+                                    <td><button type="button" class="btn btn-sm btn-outline-danger remove-tier">-</button></td>
+                                    <td><input type="number" step="0.1" name="tier_rate[]" class="form-control" value="10" min="0" max="100"></td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                    <button type="button" class="btn btn-sm btn-outline-secondary add-tier" data-target="{{ group.id }}">+ 添加档位</button>
+                    <div class="form-text small text-muted mt-2">
+                        系统按业务员"已签收业绩"落入的档位计算提成。若业绩在 30,000 到 100,000 之间，则用 5% 计算。
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">备注</label>
+                    <input type="text" name="remark" class="form-control" value="{{ rule.remark or '' }}" maxlength="200">
+                </div>
+
+                <button type="submit" class="btn btn-primary">保存配置</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+// 切换固定/阶梯显示
+document.querySelectorAll('.rule-type-select').forEach(sel => {
+    sel.addEventListener('change', function () {
+        const gid = this.getAttribute('data-group');
+        const type = this.value;
+        document.getElementById('fixed-block-' + gid).classList.toggle('d-none', type !== 'fixed');
+        document.getElementById('tiered-block-' + gid).classList.toggle('d-none', type !== 'tiered');
+    });
+});
+
+// 添加/删除阶梯行
+document.querySelectorAll('.add-tier').forEach(btn => {
+    btn.addEventListener('click', function () {
+        const gid = this.getAttribute('data-target');
+        const tbody = document.getElementById('tiered-rows-' + gid);
+        const tr = document.createElement('tr');
+        tr.className = 'tier-row';
+        tr.innerHTML = `
+            <td><input type="number" name="tier_min[]" class="form-control" min="0"></td>
+            <td><input type="number" name="tier_max[]" class="form-control"></td>
+            <td><input type="number" step="0.1" name="tier_rate[]" class="form-control" min="0" max="100"></td>
+            <td><button type="button" class="btn btn-sm btn-outline-danger remove-tier">-</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+});
+
+document.addEventListener('click', function (e) {
+    if (e.target.classList.contains('remove-tier')) {
+        const tr = e.target.closest('.tier-row');
+        const tbody = tr.parentNode;
+        if (tbody.querySelectorAll('.tier-row').length > 1) {
+            tbody.removeChild(tr);
+        }
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+
+{% block title %}客情应答 - 话术搜索{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-chat-quote"></i> 客情应答 · 话术搜索</h2>
+        {% if current_user.has_role('admin') %}
+        <a href="{{ url_for('knowledge.admin_knowledge') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-gear"></i> 管理员维护
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- 搜索框 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('knowledge.knowledge_search') }}" class="row g-2 align-items-center">
+                <div class="col-md-10">
+                    <input type="text" class="form-control" name="q" value="{{ keyword }}"
+                           placeholder="输入关键词，例如：糖尿病、二甲双胍、糖足…" autofocus>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search"></i> 搜索
+                    </button>
+                </div>
+            </form>
+            <div class="mt-2 small text-muted">
+                {% if keyword %}
+                    找到 <b>{{ pagination.total }}</b> 条命中话术
+                {% else %}
+                    共收录 <b>{{ pagination.total }}</b> 条话术，输入关键词可搜索命中的话术
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 搜索结果 -->
+    {% if entries %}
+    <div class="row">
+        {% for entry in entries %}
+        <div class="col-12 mb-3" data-entry-id="{{ entry.id }}">
+            <div class="card">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-lightbulb text-warning"></i> {{ entry.title }}</h5>
+                    <small class="text-muted">查看 {{ entry.view_count or 0 }} 次 · {{ entry.create_time.strftime('%Y-%m-%d') if entry.create_time else '' }}</small>
+                </div>
+                <div class="card-body">
+                    {% if entry.keywords %}
+                    <div class="mb-2">
+                        {% for kw in entry.keywords.replace('，', ',').split(',') %}
+                            {% if kw.strip() %}
+                            <span class="badge bg-light text-dark border me-1 small px-2 py-1">{{ kw.strip() }}</span>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div style="white-space: pre-wrap; line-height: 1.8;" class="text-muted">{{ entry.content }}</div>
+
+                    <!-- 投票按钮区 -->
+                    <div class="d-flex align-items-center mt-3 pt-3 border-top">
+                        <button class="btn btn-sm btn-outline-secondary btn-vote-useful me-2"
+                                data-entry-id="{{ entry.id }}"
+                                title="此话术有用">
+                            <i class="bi bi-hand-thumbs-up"></i>
+                            <span class="vote-count useful">{{ entry.useful_count }}</span>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary btn-vote-useless me-3"
+                                data-entry-id="{{ entry.id }}"
+                                title="此话术无用">
+                            <i class="bi bi-hand-thumbs-down"></i>
+                            <span class="vote-count useless">{{ entry.useless_count }}</span>
+                        </button>
+                        <span class="badge priority-badge" title="权重">
+                            {% set weight = entry.useful_count - entry.useless_count %}
+                            {{ '%+d'|format(weight) if weight != 0 else '±0' }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- 分页 -->
+    {% if pagination and pagination.pages and pagination.pages > 1 %}
+    <nav class="mt-4">
+        <ul class="pagination pagination-sm justify-content-center">
+            {% if pagination.has_prev %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('knowledge.knowledge_search', q=keyword, page=pagination.prev_num) }}">上一页</a>
+            </li>
+            {% endif %}
+            {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if p %}
+                <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('knowledge.knowledge_search', q=keyword, page=p) }}">{{ p }}</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+                {% endif %}
+            {% endfor %}
+            {% if pagination.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('knowledge.knowledge_search', q=keyword, page=pagination.next_num) }}">下一页</a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+    {% else %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i>
+        {% if keyword %}未找到与「<b>{{ keyword }}</b>」匹配的话术，换个关键词试试。{% else %}暂无话术数据。{% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    .priority-badge {
+        font-size: 11px;
+        font-weight: 600;
+    }
+</style>
+
+<script>
+(function() {
+    // 从后端传入的 user_votes
+    var userVotes = {
+        {% for entry in entries %}
+        {{ entry.id }}: {{ user_votes.get(entry.id, 'null') if user_votes else 'null' }},
+        {% endfor %}
+    };
+
+    // 初始化按钮状态
+    document.querySelectorAll('[data-entry-id]').forEach(function(card) {
+        var entryId = parseInt(card.dataset.entryId);
+        var usefulBtn = card.querySelector('.btn-vote-useful');
+        var uselessBtn = card.querySelector('.btn-vote-useless');
+        var priorityBadge = card.querySelector('.priority-badge');
+        var userVote = userVotes[entryId];
+
+        // 初始化按钮高亮
+        if (userVote === 'useful' && usefulBtn) {
+            usefulBtn.classList.remove('btn-outline-secondary');
+            usefulBtn.classList.add('btn-success');
+        }
+        if (userVote === 'useless' && uselessBtn) {
+            uselessBtn.classList.remove('btn-outline-secondary');
+            uselessBtn.classList.add('btn-danger');
+        }
+
+        // 优先级徽章颜色
+        if (priorityBadge) {
+            var weight = parseInt(priorityBadge.textContent.trim()) || 0;
+            if (weight > 0) {
+                priorityBadge.classList.add('bg-success');
+            } else if (weight < 0) {
+                priorityBadge.classList.add('bg-danger');
+            } else {
+                priorityBadge.classList.add('bg-secondary');
+            }
+        }
+
+        // 绑定点击事件
+        if (usefulBtn) {
+            usefulBtn.addEventListener('click', function() {
+                voteForEntry(entryId, 'useful', card);
+            });
+        }
+        if (uselessBtn) {
+            uselessBtn.addEventListener('click', function() {
+                voteForEntry(entryId, 'useless', card);
+            });
+        }
+    });
+
+    function voteForEntry(entryId, voteType, card) {
+        fetch('/knowledge/api/entry/' + entryId + '/vote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ vote: voteType })
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.success) {
+                var usefulBtn = card.querySelector('.btn-vote-useful');
+                var uselessBtn = card.querySelector('.btn-vote-useless');
+                var priorityBadge = card.querySelector('.priority-badge');
+
+                // 更新计数
+                var usefulCount = card.querySelector('.vote-count.useful');
+                var uselessCount = card.querySelector('.vote-count.useless');
+                if (usefulCount) usefulCount.textContent = data.useful_count;
+                if (uselessCount) uselessCount.textContent = data.useless_count;
+
+                // 更新优先级徽章
+                if (priorityBadge) {
+                    var weight = data.vote_weight;
+                    priorityBadge.textContent = (weight > 0 ? '+' : '') + weight || '±0';
+                    priorityBadge.className = 'badge priority-badge ' + (weight > 0 ? 'bg-success' : weight < 0 ? 'bg-danger' : 'bg-secondary');
+                }
+
+                // 更新按钮高亮
+                if (voteType === 'useful') {
+                    if (usefulBtn) {
+                        usefulBtn.classList.remove('btn-outline-secondary');
+                        usefulBtn.classList.add('btn-success');
+                    }
+                    if (uselessBtn) {
+                        uselessBtn.classList.remove('btn-danger');
+                        uselessBtn.classList.add('btn-outline-secondary');
+                    }
+                } else {
+                    if (uselessBtn) {
+                        uselessBtn.classList.remove('btn-outline-secondary');
+                        uselessBtn.classList.add('btn-danger');
+                    }
+                    if (usefulBtn) {
+                        usefulBtn.classList.remove('btn-success');
+                        usefulBtn.classList.add('btn-outline-secondary');
+                    }
+                }
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,883 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-3">
+
+    <!-- 页面标题 + 新增栏目按钮 -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h4 class="mb-0"><i class="bi bi-megaphone-fill" style="color:#07c160;"></i> 营销中心</h4>
+            {% if not is_admin %}
+            <small class="text-muted">今日营销话术（执行即可，不用编辑）</small>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+            {% if groups and is_admin %}
+            <select class="form-select" style="width:160px;" id="groupSelect">
+                {% for g in groups %}
+                <option value="{{ g.id }}">{{ g.name }}</option>
+                {% endfor %}
+            </select>
+            <a href="#" id="addPeriodBtn" class="btn btn-success">
+                <i class="bi bi-plus-circle"></i> 新增栏目
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not groups %}
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle"></i> 当前没有可管理的组，请联系管理员分配组别。
+    </div>
+    {% endif %}
+
+    {% if groups %}
+    <!-- ========================= 日历（仅管理员可见） ========================= -->
+    {% if is_admin %}
+    <div class="card mb-3">
+        <div class="card-body p-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">
+                    <i class="bi bi-calendar3"></i> 本周栏目排期
+                </h5>
+            </div>
+
+            <!-- 日历网格 -->
+            <div class="calendar-grid">
+                <!-- 表头：周几 -->
+                <div class="calendar-header">
+                    {% for label in ['周一','周二','周三','周四','周五','周六','周日'] %}
+                    <div class="calendar-cell calendar-header-cell">{{ label }}</div>
+                    {% endfor %}
+                </div>
+                <!-- 日期格 -->
+                <div class="calendar-body">
+                    {% for day in calendar_days %}
+                    <div class="calendar-cell calendar-day
+                        {% if not day.is_current_month %} calendar-other-month{% endif %}
+                        {% if day.is_today %} calendar-today{% endif %}
+                        {% if day.periods %} calendar-has-event{% endif %}"
+                        data-date="{{ day.date.strftime('%Y-%m-%d') }}">
+
+                        <span class="day-num">{{ day.date.day }}</span>
+
+                        <!-- 栏目色块（最多2个） -->
+                        {% if day.periods %}
+                        <div class="day-periods">
+                            {% for p in day.periods[:2] %}
+                            <div class="period-dot"
+                                 style="background:{{ ['#07c160','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899'][p.group_id % 6] }};"
+                                 title="{{ p.period_name }} ({{ p.group.name }})">
+                                <span>{{ p.period_name[:6] }}</span>
+                            </div>
+                            {% endfor %}
+                            {% if day.periods | length > 2 %}
+                            <div class="period-dot-more">+{{ day.periods | length - 2 }}</div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- 图例 -->
+            <div class="d-flex flex-wrap gap-3 mt-2">
+                {% for g in groups %}
+                {% set color_idx = (g.id - 1) % 6 %}
+                <div class="d-flex align-items-center gap-1 small">
+                    <span class="period-dot" style="background:{{ ['#07c160','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899'][color_idx] }}; width:12px; height:12px; border-radius:2px; display:inline-block;"></span>
+                    <span class="text-muted">{{ g.name }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- /日历结束 -->
+
+    <!-- ========================= 当前进行中的栏目 ========================= -->
+    {% for item in group_active %}
+    {% if item.active %}
+    <div class="card mb-4" id="group-{{ item.group.id }}">
+        <!-- 栏目头部 -->
+        <div class="card-header bg-white py-2 px-3" style="border-left: 4px solid {{ ['#07c160','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899'][(item.group.id-1) % 6] }};">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong class="me-2">{{ item.group.name }}</strong>
+                    <span class="badge bg-success">进行中</span>
+                    <span class="text-muted small ms-2">{{ item.active.period_name }}</span>
+                    <span class="text-muted small ms-1">
+                        {{ item.active.start_date }} ~ {{ item.active.end_date }}
+                        · 共 {{ item.active.total_days }} 天
+                        · 已执行 {{ item.today_exec_count }} 次
+                    </span>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('marketing.period_schedules', period_id=item.active.id) }}" class="btn btn-sm btn-outline-secondary">
+                        {{ '完整话术' if is_admin else '查看全部' }} <i class="bi bi-arrow-right"></i>
+                    </a>
+                    {% if is_admin %}
+                    <a href="{{ url_for('marketing.period_edit', period_id=item.active.id) }}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-pencil"></i> 编辑栏目
+                    </a>
+                    <form method="POST" action="{{ url_for('marketing.period_auto_fill', period_id=item.active.id) }}" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-warning"
+                                onclick="return confirm('按 09:00/12:00/14:30/18:00/20:30 每天生成话术骨架？')">
+                            <i class="bi bi-magic"></i> 快速填充
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 今日话术卡片 -->
+        <div class="card-body p-3">
+            <div class="mb-2 small text-muted">
+                <i class="bi bi-calendar-event"></i> 今日 {{ today }} · 共 {{ item.today_schedules | length }} 条话术
+            </div>
+
+            {% if not item.today_schedules %}
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-inbox" style="font-size:1.8rem;"></i>
+                <div class="mt-1 small">今天还没有话术</div>
+                {% if is_admin %}
+                <button class="btn btn-sm btn-success mt-2" onclick="showNewScheduleModal({{ item.active.id }}, '{{ today.strftime('%Y-%m-%d') }}')">
+                    <i class="bi bi-plus-circle"></i> 添加今日话术
+                </button>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="row g-3" id="schedule-list-{{ item.active.id }}">
+                {% for sched in item.today_schedules %}
+                <div class="col-12 schedule-card-col" id="sched-card-{{ sched.id }}"
+                     data-sched-id="{{ sched.id }}"
+                     data-time-point="{{ sched.time_point }}"
+                     data-date="{{ today.strftime('%Y-%m-%d') }}">
+                    <div class="schedule-card">
+                        <!-- 时间点 -->
+                        <div class="schedule-time">
+                            <span class="time-badge">{{ sched.time_point }}</span>
+                            {% if sched.remark %}
+                            <span class="text-muted small ms-1">{{ sched.remark }}</span>
+                            {% endif %}
+                            <!-- 状态标签：已执行 / 已过期 -->
+                            <span class="badge ms-2 status-badge d-none"></span>
+                            {% if is_admin %}
+                            <div class="float-end">
+                                <button class="btn btn-sm btn-outline-danger py-0 px-1 btn-del-sched" title="删除"
+                                        data-sched-id="{{ sched.id }}">
+                                    <i class="bi bi-trash" style="font-size:0.8rem;"></i>
+                                </button>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- 话术内容（支持拖入/粘贴图片） -->
+                        <div class="schedule-content image-drop-zone" id="sched-content-{{ sched.id }}"
+                             data-sched-id="{{ sched.id }}"
+                             {% if is_admin %}
+                             contenteditable="true"
+                             title="点击编辑；也可以拖入图片 / Ctrl+V 粘贴图片"
+                             {% else %}
+                             style="cursor: default; user-select: text;"
+                             title="拖入图片 / Ctrl+V 粘贴图片到此处"
+                             {% endif %}>
+                            {# 富文本 HTML 内容：直接渲染文本和图片 #}
+                            {% if '<' in sched.content %}
+                            <div class="rich-content">{{ sched.content | safe }}</div>
+                            {% else %}
+                            <div style="white-space: pre-wrap;">{{ sched.content_text }}</div>
+                            {% endif %}
+                        </div>
+
+                        <!-- 图片（仅展示旧格式的独立图片；富文本图片已在上方内容中） -->
+                        {% if sched.image_list and '<' not in sched.content %}
+                        <div class="schedule-images d-flex flex-wrap gap-1 mt-2" id="sched-images-{{ sched.id }}">
+                            {% for img in sched.image_list %}
+                            <a href="{{ img }}" target="_blank">
+                                <img src="{{ img }}" class="schedule-thumb">
+                            </a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <!-- 操作行 -->
+                        <div class="schedule-actions mt-3">
+                            <button class="btn btn-primary btn-sm btn-copy-execute"
+                                    data-sched-id="{{ sched.id }}"
+                                    data-content="{{ sched.content_text | replace('\n', '\\n') | replace('\"', '\\\"') }}">
+                                <i class="bi bi-clipboard"></i> <span class="btn-copy-label">复制话术并执行</span>
+                            </button>
+                            {% if is_admin %}
+                            <!-- 图片上传按钮（仅管理员） -->
+                            <label class="btn btn-outline-secondary btn-sm mb-0" title="拖入或粘贴图片">
+                                <i class="bi bi-image"></i>
+                                <input type="file" accept="image/*" class="d-none"
+                                       onchange="handleImageUpload(this, {{ sched.id }})">
+                            </label>
+                            {% endif %}
+                        </div>
+
+                        {% if is_admin %}
+                        <div class="edit-hint small text-muted mt-1">
+                            <i class="bi bi-pencil"></i> 点击内容编辑并自动保存；可拖入图片 / Ctrl+V 粘贴图片
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+
+                <!-- 新增话术卡片（仅管理员） -->
+                {% if is_admin %}
+                <div class="col-12 col-md-6 col-lg-4">
+                    <div class="schedule-add-card h-100 d-flex align-items-center justify-content-center"
+                         onclick="showNewScheduleModal({{ item.active.id }}, '{{ today.strftime('%Y-%m-%d') }}')"
+                         title="添加话术">
+                        <div class="text-center text-muted">
+                            <i class="bi bi-plus-circle-dotted" style="font-size:1.5rem;"></i>
+                            <div class="small mt-1">添加话术</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <!-- 无进行中栏目 -->
+    <div class="card mb-3" id="group-{{ item.group.id }}">
+        <div class="card-body py-3 text-muted">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-people"></i> {{ item.group.name }}
+                    <span class="small ms-2">当前无进行中的栏目</span>
+                </div>
+                <a href="{{ url_for('marketing.period_add', group_id=item.group.id) }}" class="btn btn-sm btn-success">
+                    <i class="bi bi-plus-circle"></i> 新增栏目
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    {% endif %}
+</div>
+
+<!-- 新增话术弹窗 -->
+<div class="modal fade" id="newSchedModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle text-success"></i> 新增话术</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="nsPeriodId">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label small">日期</label>
+                        <input type="date" class="form-control" id="nsDate" value="{{ today.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">时间点</label>
+                        <input type="time" class="form-control" id="nsTime" value="09:00">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">话术内容</label>
+                    <!-- 支持粘贴图片的 textarea -->
+                    <div class="image-drop-zone" id="nsDropZone">
+                        <textarea class="form-control" id="nsContent" rows="5"
+                                  placeholder="在此粘贴或输入营销话术内容，支持 Ctrl+V 直接粘贴图片"></textarea>
+                        <div class="drop-hint" id="nsDropHint">
+                            <i class="bi bi-image" style="font-size:1.5rem;"></i>
+                            <div>拖入图片或 Ctrl+V 粘贴</div>
+                        </div>
+                        <!-- 已粘贴/上传的图片预览 -->
+                        <div class="image-previews mt-2" id="nsImagePreviews"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">备注</label>
+                    <input type="text" class="form-control" id="nsRemark" placeholder="如：老客户群">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-success" onclick="submitNewSchedule()">
+                    <i class="bi bi-save"></i> 保存话术
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 执行确认弹窗 -->
+<div class="modal fade" id="execModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-check2-square text-success"></i> 标记已执行</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="execSchedId">
+                <div class="mb-2">
+                    <label class="form-label small">推送渠道</label>
+                    <select class="form-select" id="execChannel">
+                        <option>企微客户朋友圈</option>
+                        <option>客户群</option>
+                        <option>一对一私聊</option>
+                        <option>微信朋友圈</option>
+                        <option>微信群</option>
+                        <option>短信</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label small">备注/反馈</label>
+                    <input type="text" class="form-control" id="execNotes" placeholder="发给了XX位客户...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-success" onclick="confirmExecuted()">
+                    <i class="bi bi-check2"></i> 确认
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* 日历样式 */
+.calendar-grid { font-size: 14px; }
+.calendar-header { display: flex; gap: 4px; margin-bottom: 6px; }
+.calendar-body { display: flex; gap: 4px; }
+.calendar-cell { width: calc(100% / 7); min-height: 80px; }
+.calendar-header-cell {
+    text-align: center; font-weight: 600; color: #6c757d;
+    padding: 4px 0; min-height: auto !important;
+}
+.calendar-day {
+    background: #f8f9fa; border-radius: 6px; padding: 8px 10px;
+    cursor: pointer; transition: background 0.15s;
+    position: relative; overflow: hidden;
+    min-height: 80px;
+}
+.calendar-day:hover { background: #e9ecef; }
+.calendar-today { background: #d1e7dd; border: 1.5px solid #07c160; }
+.calendar-today .day-num { color: #07c160; font-weight: bold; font-size: 16px; }
+.day-num { font-size: 14px; color: #333; display: block; margin-bottom: 4px; }
+.day-periods { display: flex; flex-direction: column; gap: 2px; }
+.period-dot {
+    background: #07c160; color: #fff; font-size: 11px; padding: 2px 6px;
+    border-radius: 3px; white-space: nowrap; overflow: hidden;
+    max-width: 100%; text-overflow: ellipsis; cursor: default;
+}
+.period-dot span { pointer-events: none; }
+.period-dot-more { font-size: 11px; color: #999; text-align: center; }
+
+/* 话术卡片 */
+.schedule-card {
+    background: #fff; border: 1px solid #e9ecef; border-radius: 10px;
+    padding: 18px 20px; display: flex; flex-direction: column;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    transition: box-shadow 0.15s, opacity 0.2s;
+}
+.schedule-card:hover { box-shadow: 0 3px 14px rgba(0,0,0,0.1); }
+.schedule-time {
+    display: flex; align-items: center; margin-bottom: 10px;
+    padding-bottom: 10px; border-bottom: 1px solid #f0f0f0;
+}
+.time-badge {
+    background: #07c160; color: #fff; font-size: 15px;
+    padding: 4px 12px; border-radius: 12px; font-family: monospace;
+    font-weight: 600;
+}
+.status-badge { padding: 4px 10px; font-size: 11px; }
+.status-badge.badge-executed { background: #10b981 !important; }
+.status-badge.badge-expired { background: #9ca3af !important; }
+.schedule-content {
+    flex: 1; font-size: 15px; line-height: 1.8;
+    background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px;
+    padding: 14px 18px; cursor: text; min-height: 80px;
+    white-space: pre-wrap; word-break: break-word;
+    outline: none; transition: border-color 0.15s;
+}
+.schedule-content:focus { border-color: #07c160; background: #f6ffed; }
+.schedule-images { }
+.schedule-thumb {
+    width: 180px; height: 180px; object-fit: cover;
+    border-radius: 8px; border: 1px solid #eee;
+}
+.schedule-actions .btn { font-size: 14px; padding: 6px 14px; }
+.schedule-actions {
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+.schedule-add-card {
+    border: 2px dashed #dee2e6; border-radius: 8px;
+    cursor: pointer; min-height: 120px; transition: all 0.15s;
+    color: #adb5bd;
+}
+.schedule-add-card:hover { border-color: #07c160; color: #07c160; background: #f0f9f1; }
+
+/* ===== 过期/已执行状态 ===== */
+.schedule-card-col.schedule-expired .schedule-card {
+    opacity: 0.55;
+    background: #f9fafb;
+    border-color: #e5e7eb;
+}
+.schedule-card-col.schedule-expired .time-badge {
+    background: #9ca3af !important;
+}
+.schedule-card-col.schedule-expired .schedule-content {
+    background: #f3f4f6;
+    border-color: #e5e7eb;
+    color: #6b7280;
+}
+.schedule-card-col.schedule-expired .btn-copy-execute {
+    background: #9ca3af !important;
+    border-color: #9ca3af !important;
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+.schedule-card-col.schedule-executed .time-badge {
+    background: #10b981 !important;
+}
+.schedule-card-col.schedule-executed .btn-copy-execute {
+    background: #10b981 !important;
+    border-color: #10b981 !important;
+}
+
+/* 新增话术弹窗 - 拖拽区域 */
+.image-drop-zone { position: relative; transition: background 0.2s; }
+.image-drop-zone.drag-over { background: #f0f9f1; border-color: #07c160 !important; }
+.image-drop-zone.drag-over .drop-hint { display: flex !important; }
+.drop-hint {
+    display: none; position: absolute; inset: 0;
+    background: rgba(7,193,96,0.05); border: 2px dashed #07c160;
+    border-radius: 6px; align-items: center; justify-content: center;
+    flex-direction: column; gap: 4px; color: #07c160; font-size: 13px;
+    pointer-events: none;
+}
+.image-previews { display: flex; flex-wrap: wrap; gap: 4px; }
+.image-previews .preview-img {
+    width: 70px; height: 70px; object-fit: cover; border-radius: 4px;
+    border: 1px solid #eee; position: relative;
+}
+.image-previews .remove-img {
+    position: absolute; top: -6px; right: -6px;
+    background: #ef4444; color: #fff; border-radius: 50%;
+    width: 16px; height: 16px; font-size: 10px; line-height: 16px;
+    text-align: center; cursor: pointer; border: none;
+}
+.edit-hint { font-size: 11px; }
+
+/* 富文本内容中的图片（文本+图片交替展示） */
+.rich-content { width: 100%; }
+.rich-content p { margin-bottom: 0.6em; }
+.rich-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    margin: 6px 0;
+    display: block;
+    max-height: 400px;
+    object-fit: contain;
+}
+</style>
+
+<script>
+// ========== 工具：获取当前本地时间字符串（与服务器 time_point 比较用） ==========
+function getCurrentTimeStr() {
+    var d = new Date();
+    var h = String(d.getHours()).padStart(2, '0');
+    var m = String(d.getMinutes()).padStart(2, '0');
+    return h + ':' + m;
+}
+
+// ========== 工具：复制文本到剪贴板 ==========
+function copyText(text) {
+    if (navigator.clipboard) {
+        return navigator.clipboard.writeText(text);
+    }
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    return Promise.resolve();
+}
+
+// ========== 工具：从文本中解析 [图片] URL 标记 ==========
+function extractImageUrls(text) {
+    var urls = [];
+    if (!text) return urls;
+    var regex = /\[图片\]\s*(\S+)/gi;
+    var m;
+    while ((m = regex.exec(text)) !== null) {
+        if (m[1]) urls.push(m[1]);
+    }
+    return urls;
+}
+
+function stripImageMarks(text) {
+    if (!text) return '';
+    return text.replace(/\s*\[图片\]\s*\S+/gi, '').trim();
+}
+
+// ========== 为每张话术卡片初始化：图片解析、过期判断、复制即执行、拖拽/粘贴上传 ==========
+function initScheduleCard(cardCol) {
+    if (!cardCol) return;
+    var schedId = cardCol.dataset.schedId;
+    var timePoint = cardCol.dataset.timePoint || '';
+    var now = getCurrentTimeStr();
+    var card = cardCol.querySelector('.schedule-card');
+    if (!card) return;
+    var copyBtn = cardCol.querySelector('.btn-copy-execute');
+    var copyLabel = cardCol.querySelector('.btn-copy-label');
+    var contentEl = cardCol.querySelector('#sched-content-' + schedId);
+    var badge = cardCol.querySelector('.status-badge');
+    var imagesDiv = cardCol.querySelector('#sched-images-' + schedId);
+
+    // ---- 解析 [图片] URL（仅旧格式，纯文本），富文本 HTML 中图片已在内容里 ----
+    var rawContent = contentEl ? contentEl.textContent : '';
+    var isHtmlContent = contentEl && contentEl.querySelector('.rich-content') !== null;
+    var imageUrlsFromContent = isHtmlContent ? [] : extractImageUrls(rawContent);
+    if (imageUrlsFromContent.length > 0 && contentEl) {
+        contentEl.textContent = stripImageMarks(rawContent);
+    }
+    if (imagesDiv && imageUrlsFromContent.length > 0) {
+        // 去重：检查 imagesDiv 中已有的图片 URL
+        var existingSrcs = [];
+        imagesDiv.querySelectorAll('img').forEach(function(img) {
+            existingSrcs.push(img.getAttribute('src'));
+        });
+        imageUrlsFromContent.forEach(function(url) {
+            if (existingSrcs.indexOf(url) !== -1) return;
+            var a = document.createElement('a');
+            a.href = url; a.target = '_blank';
+            var img = document.createElement('img');
+            img.src = url; img.className = 'schedule-thumb';
+            a.appendChild(img);
+            imagesDiv.appendChild(a);
+        });
+    }
+
+    // ---- 过期判断 ----
+    if (timePoint && timePoint < now) {
+        cardCol.classList.add('schedule-expired');
+        if (badge) {
+            badge.textContent = '已过期';
+            badge.classList.add('badge-expired');
+            badge.classList.remove('d-none');
+        }
+        if (copyBtn) {
+            copyBtn.disabled = true;
+            if (copyLabel) copyLabel.textContent = '已过期';
+        }
+    }
+
+    // ---- 复制即执行 ----
+    if (copyBtn && !copyBtn.disabled) {
+        copyBtn.addEventListener('click', function() {
+            // 复制内容：若已做图片分离，则使用已清理文本；否则再做一次 strip
+            var text = contentEl ? contentEl.textContent : rawContent;
+            text = stripImageMarks(text);
+            copyText(text).then(function() {
+                var form = new FormData();
+                form.append('channel', '点击复制');
+                fetch('/marketing/schedule/' + schedId + '/execute', {
+                    method: 'POST', body: form,
+                    headers: { 'Accept': 'application/json' }
+                }).then(function(r) { return r.json(); }).then(function(data) {
+                    if (data && data.success) {
+                        cardCol.classList.add('schedule-executed');
+                        if (copyLabel) copyLabel.textContent = '已执行';
+                        if (badge) {
+                            badge.textContent = '✓ 已执行';
+                            badge.classList.add('badge-executed');
+                            badge.classList.remove('d-none', 'badge-expired');
+                        }
+                    }
+                }).catch(function() {});
+            });
+        });
+    }
+
+    // ---- 内联编辑（管理员） ----
+    if (contentEl && contentEl.getAttribute('contenteditable') === 'true') {
+        contentEl.addEventListener('blur', function() {
+            var newContent = contentEl.innerText.trim();
+            fetch('/marketing/api/schedule', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({schedule_id: parseInt(schedId), content: newContent})
+            }).then(r => r.json()).then(function(data) {
+                if (data.success) {
+                    var hint = contentEl.parentElement.querySelector('.edit-hint');
+                    if (hint) {
+                        hint.innerHTML = '<i class="bi bi-check-circle text-success"></i> 已保存';
+                        setTimeout(function() {
+                            hint.innerHTML = '<i class="bi bi-pencil"></i> 点击内容编辑并自动保存；可拖入图片 / Ctrl+V 粘贴图片';
+                        }, 1500);
+                    }
+                }
+            });
+        });
+    }
+
+    // ---- 拖入 / 粘贴图片上传（内容区） ----
+    function uploadImageToSchedule(file) {
+        if (!file || !file.type || file.type.indexOf('image') === -1) return;
+        // 显示一个"上传中"占位
+        var placeholder = document.createElement('a');
+        placeholder.href = '#';
+        placeholder.innerHTML = '<img src="" style="width:180px;height:180px;opacity:0.5;border-radius:8px;border:1px solid #eee;object-fit:cover;">';
+        var imgPlaceholder = placeholder.querySelector('img');
+        // 生成预览
+        var reader = new FileReader();
+        reader.onload = function(e) { imgPlaceholder.src = e.target.result; };
+        reader.readAsDataURL(file);
+        imagesDiv.appendChild(placeholder);
+
+        var formData = new FormData();
+        formData.append('file', file);
+        fetch('/marketing/api/schedule/' + schedId + '/image', {
+            method: 'POST', body: formData,
+            headers: { 'Accept': 'application/json' }
+        }).then(r => r.json()).then(function(data) {
+            if (data.success) {
+                placeholder.href = data.url;
+                placeholder.target = '_blank';
+                imgPlaceholder.src = data.url;
+                imgPlaceholder.style.opacity = '1';
+            } else {
+                placeholder.remove();
+                alert('图片上传失败');
+            }
+        }).catch(function() {
+            placeholder.remove();
+            alert('图片上传失败');
+        });
+    }
+
+    if (contentEl) {
+        contentEl.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            contentEl.classList.add('drag-over');
+        });
+        contentEl.addEventListener('dragleave', function(e) {
+            if (!e.clientX && !e.clientY) contentEl.classList.remove('drag-over');
+            // 简单退逻辑：离手时直接移除
+            contentEl.classList.remove('drag-over');
+        });
+        contentEl.addEventListener('drop', function(e) {
+            e.preventDefault();
+            contentEl.classList.remove('drag-over');
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                for (var i = 0; i < e.dataTransfer.files.length; i++) {
+                    uploadImageToSchedule(e.dataTransfer.files[i]);
+                }
+            }
+        });
+        contentEl.addEventListener('paste', function(e) {
+            if (e.clipboardData && e.clipboardData.items) {
+                for (var i = 0; i < e.clipboardData.items.length; i++) {
+                    var it = e.clipboardData.items[i];
+                    if (it.type.indexOf('image') !== -1) {
+                        e.preventDefault();
+                        var file = it.getAsFile();
+                        if (file) uploadImageToSchedule(file);
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
+    // ---- 文件选择按钮上传（管理员用）----
+    var fileInput = cardCol.querySelector('input[type="file"]');
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            if (fileInput.files && fileInput.files.length > 0) {
+                for (var i = 0; i < fileInput.files.length; i++) {
+                    uploadImageToSchedule(fileInput.files[i]);
+                }
+            }
+            fileInput.value = '';
+        });
+    }
+
+    // ---- 删除按钮 ----
+    var delBtn = cardCol.querySelector('.btn-del-sched');
+    if (delBtn) {
+        delBtn.addEventListener('click', function() {
+            if (!confirm('确定删除此话术？')) return;
+            fetch('/marketing/api/schedule/' + schedId, {method: 'DELETE'})
+                .then(r => r.json()).then(function(data) {
+                    if (data.success) {
+                        cardCol.style.transition = 'opacity 0.3s';
+                        cardCol.style.opacity = '0';
+                        setTimeout(function() { cardCol.remove(); }, 300);
+                    } else {
+                        alert('删除失败');
+                    }
+                });
+        });
+    }
+}
+
+document.querySelectorAll('.schedule-card-col').forEach(initScheduleCard);
+
+// ========== 日历点击 ==========
+document.querySelectorAll('.calendar-day').forEach(function(cell) {
+    cell.addEventListener('click', function() {
+        var date = this.dataset.date;
+        var periods = this.querySelectorAll('.period-dot');
+        if (periods.length > 0) {
+            alert('日期: ' + date + '\n栏目：' + periods.length + ' 个\n（可扩展：跳转到该天话术列表）');
+        }
+    });
+});
+
+// ========== 新增栏目按钮 ==========
+var addBtn = document.getElementById('addPeriodBtn');
+if (addBtn) {
+    addBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        var sel = document.getElementById('groupSelect');
+        var groupId = sel ? sel.value : '';
+        if (groupId) window.location.href = '/marketing/group/' + groupId + '/period/add';
+    });
+}
+
+// ========== 新增话术弹窗 ==========
+var _pendingImages = [];
+
+function showNewScheduleModal(periodId, date) {
+    document.getElementById('nsPeriodId').value = periodId;
+    document.getElementById('nsDate').value = date;
+    document.getElementById('nsContent').value = '';
+    document.getElementById('nsRemark').value = '';
+    _pendingImages = [];
+    var preview = document.getElementById('nsImagePreviews');
+    if (preview) preview.innerHTML = '';
+    if (window.bootstrap) {
+        new bootstrap.Modal(document.getElementById('newSchedModal')).show();
+    } else {
+        document.getElementById('newSchedModal').style.display = 'block';
+    }
+}
+
+function submitNewSchedule() {
+    var periodId = document.getElementById('nsPeriodId').value;
+    var date = document.getElementById('nsDate').value;
+    var time = document.getElementById('nsTime').value;
+    var content = document.getElementById('nsContent').value.trim();
+    var remark = document.getElementById('nsRemark').value.trim();
+
+    if (!content) { alert('请输入话术内容'); return; }
+
+    var extraText = '';
+    if (_pendingImages.length > 0) {
+        extraText = '\n\n[图片] ' + _pendingImages.join(' | ');
+    }
+
+    fetch('/marketing/api/schedule', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            period_id: parseInt(periodId),
+            schedule_date: date,
+            time_point: time,
+            content: content + extraText,
+            remark: remark
+        })
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            try { bootstrap.Modal.getInstance(document.getElementById('newSchedModal')).hide(); }
+            catch(e) { document.getElementById('newSchedModal').style.display = 'none'; }
+            window.location.reload();
+        } else {
+            alert('保存失败: ' + (data.message || '未知错误'));
+        }
+    });
+}
+
+// ========== 新增话术弹窗内：图片拖拽/粘贴上传 ==========
+(function initNewSchedDropZone() {
+    var dz = document.getElementById('nsDropZone');
+    var preview = document.getElementById('nsImagePreviews');
+    if (!dz || !preview) return;
+
+    function uploadLocal(file) {
+        var formData = new FormData();
+        formData.append('file', file);
+
+        var wrapper = document.createElement('div');
+        wrapper.style.cssText = 'position:relative;display:inline-block;';
+        wrapper.innerHTML = '<img src="" class="preview-img" style="opacity:0.4">';
+        preview.appendChild(wrapper);
+        var img = wrapper.querySelector('img');
+
+        var reader = new FileReader();
+        reader.onload = function(e) { img.src = e.target.result; };
+        reader.readAsDataURL(file);
+
+        fetch('/marketing/api/upload-image', {method: 'POST', body: formData})
+            .then(r => r.json()).then(function(data) {
+                if (data.success) {
+                    _pendingImages.push(data.url);
+                    img.style.opacity = '1';
+                    var removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.textContent = '×';
+                    removeBtn.style.cssText = 'position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:18px;text-align:center;cursor:pointer;border:none;';
+                    removeBtn.addEventListener('click', function() {
+                        var idx = _pendingImages.indexOf(data.url);
+                        if (idx !== -1) _pendingImages.splice(idx, 1);
+                        wrapper.remove();
+                    });
+                    wrapper.appendChild(removeBtn);
+                } else {
+                    wrapper.remove();
+                    alert('上传失败');
+                }
+            });
+    }
+
+    dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', function() { dz.classList.remove('drag-over'); });
+    dz.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dz.classList.remove('drag-over');
+        if (e.dataTransfer && e.dataTransfer.files) {
+            for (var i = 0; i < e.dataTransfer.files.length; i++) uploadLocal(e.dataTransfer.files[i]);
+        }
+    });
+
+    var textarea = dz.querySelector('textarea');
+    if (textarea) {
+        textarea.addEventListener('paste', function(e) {
+            if (e.clipboardData && e.clipboardData.items) {
+                for (var i = 0; i < e.clipboardData.items.length; i++) {
+                    var it = e.clipboardData.items[i];
+                    if (it.type.indexOf('image') !== -1) {
+                        e.preventDefault();
+                        var file = it.getAsFile();
+                        if (file) uploadLocal(file);
+                        return;
+                    }
+                }
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

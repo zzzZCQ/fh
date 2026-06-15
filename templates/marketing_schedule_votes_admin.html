@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 1100px;">
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.index') }}">营销管理</a></li>
+            <li class="breadcrumb-item active" aria-current="page">话术投票管理</li>
+        </ol>
+    </nav>
+
+    <h4 class="mb-4">
+        <i class="bi bi-bar-chart"></i> 话术投票管理
+        <span class="small text-muted fw-normal ms-2">查看并管理所有话术的投票统计</span>
+    </h4>
+
+    <!-- 筛选表单 -->
+    <form method="get" class="row g-3 mb-4">
+        <div class="col-md-4">
+            <label class="form-label small text-muted">栏目</label>
+            <select name="period_id" class="form-select">
+                <option value="">全部栏目</option>
+                {% for p in periods %}
+                <option value="{{ p.id }}" {{ 'selected' if selected_period == p.id else '' }}>{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small text-muted">日期</label>
+            <input type="date" name="date" class="form-control" value="{{ selected_date }}">
+        </div>
+        <div class="col-md-3 d-flex align-items-end gap-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-search"></i> 筛选
+            </button>
+            <a href="{{ url_for('marketing.admin_schedule_votes') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-x-circle"></i> 重置
+            </a>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <span class="text-muted small">
+                共 {{ votes | length }} 条话术
+            </span>
+        </div>
+    </form>
+
+    <!-- 统计概览 -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card text-center border-success">
+                <div class="card-body py-2">
+                    <div class="text-success fw-bold" style="font-size:1.5rem;">
+                        {{ votes | sum(attribute='useful_count') or 0 }}
+                    </div>
+                    <small class="text-muted">总有用票</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-danger">
+                <div class="card-body py-2">
+                    <div class="text-danger fw-bold" style="font-size:1.5rem;">
+                        {{ votes | sum(attribute='useless_count') or 0 }}
+                    </div>
+                    <small class="text-muted">总无用票</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-primary">
+                <div class="card-body py-2">
+                    <div class="text-primary fw-bold" style="font-size:1.5rem;">
+                        {{ (votes | map(attribute='useful_count') | sum) - (votes | map(attribute='useless_count') | sum) }}
+                    </div>
+                    <small class="text-muted">总优先级差值</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-secondary">
+                <div class="card-body py-2">
+                    <div class="fw-bold" style="font-size:1.5rem;">{{ votes | length }}</div>
+                    <small class="text-muted">话术总数</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 投票列表 -->
+    <div class="card">
+        <div class="card-header py-2">
+            <strong>话术投票明细</strong>
+        </div>
+        <table class="table table-hover mb-0" style="font-size: 14px;">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:100px;">日期</th>
+                    <th style="width:70px;">时间</th>
+                    <th>栏目</th>
+                    <th>话术摘要</th>
+                    <th style="width:80px;text-align:center;">👍 有用</th>
+                    <th style="width:80px;text-align:center;">👎 无用</th>
+                    <th style="width:80px;text-align:center;">优先级</th>
+                    <th style="width:80px;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for v in votes %}
+                <tr>
+                    <td><span class="small">{{ v.schedule_date }}</span></td>
+                    <td><span class="small">{{ v.time_point }}</span></td>
+                    <td><span class="badge bg-secondary">{{ v.period_name }}</span></td>
+                    <td>
+                        <span class="text-muted small" style="max-width:200px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                            {{ v.content[:50] if v.content else '（无内容）' }}
+                        </span>
+                    </td>
+                    <td class="text-center text-success fw-bold">{{ v.useful_count or 0 }}</td>
+                    <td class="text-center text-danger fw-bold">{{ v.useless_count or 0 }}</td>
+                    <td class="text-center">
+                        {% set priority = (v.useful_count or 0) - (v.useless_count or 0) %}
+                        <span class="badge {{ 'bg-success' if priority > 0 else 'bg-danger' if priority < 0 else 'bg-secondary' }}">
+                            {{ '%+d'|format(priority) if priority != 0 else '±0' }}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-danger btn-reset-vote"
+                                data-sched-id="{{ v.id }}"
+                                data-sched-content="{{ v.content[:30] }}">
+                            <i class="bi bi-arrow-counterclockwise"></i> 重置
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox" style="font-size:1.5rem;"></i>
+                        <div class="mt-1">暂无话术投票数据</div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+document.querySelectorAll('.btn-reset-vote').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var schedId = this.dataset.schedId;
+        var content = this.dataset.schedContent || '此话术';
+        if (!confirm('确定重置「' + content + '...」的所有投票吗？')) return;
+        fetch('/marketing/api/admin/schedule/' + schedId + '/vote/reset', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json' }
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('重置失败: ' + (data.message || ''));
+            }
+        }).catch(function() {
+            alert('重置失败，请重试');
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+{% block title %}考勤数据{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+    <h3 class="mb-4"><i class="bi bi-clock-history text-primary"></i> 考勤数据</h3>
+
+    <!-- 月份切换 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-center">
+                <div class="col-auto"><label class="form-label mb-0">月份：</label></div>
+                <div class="col-auto">
+                    <select name="year" class="form-select">
+                        {% for y in range(year-2, year+3) %}
+                        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}年</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <select name="month" class="form-select">
+                        {% for m in range(1, 13) %}
+                        <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}月</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">切换</button>
+                </div>
+                <div class="col-auto ms-auto text-muted">
+                    当前查看：{{ year }}年{{ month }}月
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 钉钉考勤同步 -->
+    <div class="card mb-4 border-primary">
+        <div class="card-header bg-primary text-white">
+            <strong><i class="bi bi-cloud-download"></i> 同步钉钉考勤数据</strong>
+        </div>
+        <div class="card-body">
+            <form method="post" action="{{ url_for('finance.attendance_sync') }}" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">按单日同步</label>
+                    <input type="date" name="date" class="form-control" value="{{ '%04d-%02d-%02d'|format(year, month, 1) }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">或起始日期</label>
+                    <input type="date" name="start_date" class="form-control">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">结束日期</label>
+                    <input type="date" name="end_date" class="form-control">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">开始同步</button>
+                </div>
+            </form>
+            <div class="form-text text-muted small mt-2">
+                <i class="bi bi-info-circle"></i> 提示：
+                <ol class="mt-1 mb-0 ps-3">
+                    <li>请确保钉钉应用已开启"考勤"相关只读权限；</li>
+                    <li>系统用户姓名需与钉钉员工姓名一致才能匹配；</li>
+                    <li>如需按钉钉 userId 匹配，可在"用户管理"扩展字段中维护。</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- 月度汇总表 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <strong>月度考勤汇总</strong>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>姓名</th>
+                        <th>正常出勤</th>
+                        <th>迟到天数</th>
+                        <th>累计迟到分钟</th>
+                        <th>缺旷天数</th>
+                        <th>病假天数</th>
+                        <th>事假天数</th>
+                        <th>出差</th>
+                        <th>外勤</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if user_stats %}
+                    {% for u, s in user_stats %}
+                    <tr>
+                        <td><strong>{{ u.name }}</strong></td>
+                        <td>{{ s.normal_days }}</td>
+                        <td class="{% if s.late_days > 0 %}text-warning{% endif %}">{{ s.late_days }}</td>
+                        <td class="{% if s.total_late_minutes > 0 %}text-warning{% endif %}">{{ s.total_late_minutes }}分</td>
+                        <td class="{% if s.absence_days > 0 %}text-danger{% endif %}">{{ s.absence_days }}</td>
+                        <td>{{ s.sick_leave_days }}</td>
+                        <td>{{ s.personal_leave_days }}</td>
+                        <td>{{ s.business_trip_days }}</td>
+                        <td>{{ s.outside_days }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr><td colspan="9" class="text-center text-muted">暂无考勤记录</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 新增打卡记录 -->
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <strong>新增 / 修改 考勤记录</strong>
+        </div>
+        <div class="card-body">
+            <form method="post" action="{{ url_for('finance.attendance_data_add') }}" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">业务员</label>
+                    <select name="user_id" class="form-select" required>
+                        {% for u, _ in user_stats %}
+                        <option value="{{ u.id }}">{{ u.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">日期</label>
+                    <input type="date" name="date" class="form-control" required value="{{ '%04d-%02d-%02d'|format(year, month, 1) }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">状态</label>
+                    <select name="check_type" class="form-select">
+                        <option value="normal">正常</option>
+                        <option value="late">迟到</option>
+                        <option value="early">早退</option>
+                        <option value="absent">缺旷</option>
+                        <option value="leave">请假</option>
+                        <option value="business_trip">出差</option>
+                        <option value="outside">外勤</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">迟到分钟</label>
+                    <input type="number" name="late_minutes" class="form-control" min="0" value="0">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">早退分钟</label>
+                    <input type="number" name="early_minutes" class="form-control" min="0" value="0">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">请假天数</label>
+                    <input type="number" name="leave_days" step="0.5" min="0" class="form-control" value="0">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">请假类型</label>
+                    <input type="text" name="leave_type" class="form-control" placeholder="病假/事假/年假">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">保存记录</button>
+                </div>
+            </form>
+            <div class="form-text text-muted small mt-2">
+                同一用户同一日期的记录会被新的覆盖。建议按每日考勤实际情况录入。
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

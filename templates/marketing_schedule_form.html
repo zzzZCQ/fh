@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block head %}
+{{ super() }}
+<!-- Summernote 富文本编辑器 -->
+<link href="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote.min.css" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 780px;">
+
+    <nav style="--bs-breadcrumb-divider: '>';" aria-label="breadcrumb">
+        <ol class="breadcrumb small">
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.index') }}">营销中心</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.period_schedules', period_id=period.id) }}">{{ period.period_name }}</a></li>
+            <li class="breadcrumb-item active">{{ '编辑话术' if schedule else '新增话术' }}</li>
+        </ol>
+    </nav>
+
+    <div class="alert alert-info small">
+        <i class="bi bi-info-circle"></i>
+        当前栏目：<strong>{{ period.period_name }}</strong>（{{ period.start_date }} ~ {{ period.end_date }}，共 {{ period.total_days }} 天）
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" class="card">
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">档期日期 <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" name="schedule_date"
+                           min="{{ period.start_date }}" max="{{ period.end_date }}"
+                           value="{{ schedule.schedule_date.strftime('%Y-%m-%d') if schedule else default_date.strftime('%Y-%m-%d') }}">
+                    <div class="form-text">必须在栏目的档期范围内</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">时间点 <span class="text-danger">*</span></label>
+                    <input type="time" class="form-control" name="time_point"
+                           value="{{ schedule.time_point if schedule else '09:00' }}">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">营销话术内容 <span class="text-danger">*</span></label>
+                <textarea id="summernote-content" name="content" style="display:none;">{{ schedule.content if schedule and schedule.content else '' }}</textarea>
+                <div id="editor-wrapper"></div>
+                <div class="form-text">业务员在前台可一键复制话术到剪贴板；可直接拖入或粘贴图片，图片自动上传并插入到文本中</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">配套图片（可选）</label>
+                <input type="file" class="form-control mb-2" name="image" accept="image/*">
+                {% if schedule and schedule.image_list %}
+                <div class="mb-2">
+                    <label class="form-check small">
+                        <input type="checkbox" class="form-check-input" name="keep_images" value="1" checked>
+                        保留现有图片
+                    </label>
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        {% for img in schedule.image_list %}
+                        <a href="{{ img }}" target="_blank">
+                            <img src="{{ img }}" style="width: 90px; height: 90px; object-fit: cover; border-radius: 4px; border: 1px solid #eee;">
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                <input type="url" class="form-control" name="image_url"
+                       placeholder="也可以粘贴已有图片的 URL（http 或 https 开头）">
+            </div>
+
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">备注/使用说明</label>
+                    <input type="text" class="form-control" name="remark"
+                           value="{{ schedule.remark if schedule else '' }}"
+                           placeholder="例如：老客户群">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">排序</label>
+                    <input type="number" class="form-control" name="sort_order"
+                           value="{{ schedule.sort_order if schedule else 0 }}">
+                    <div class="form-text">同时间点下多条话术时的显示顺序（从小到大）</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-footer text-end">
+            <a href="{{ url_for('marketing.period_schedules', period_id=period.id) }}" class="btn btn-secondary">取消</a>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save"></i> {{ '更新话术' if schedule else '保存话术' }}
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Summernote JS -->
+<script src="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/lang/summernote-zh-CN.min.js"></script>
+
+<script>
+(function() {
+    // 初始化 Summernote
+    var editorWrapper = document.getElementById('editor-wrapper');
+    var hiddenInput = document.getElementById('summernote-content');
+    var initialContent = hiddenInput.value;
+
+    $('#editor-wrapper').summernote({
+        lang: 'zh-CN',
+        placeholder: '在此输入营销话术，可直接拖入或粘贴图片，图片将自动插入到文本中...',
+        height: 300,
+        minHeight: 200,
+        maxHeight: 600,
+        focus: false,
+        toolbar: [
+            ['style', ['style', 'bold', 'italic', 'underline', 'clear']],
+            ['color', ['color']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['insert', ['picture', 'link']],
+            ['view', ['fullscreen', 'codeview']],
+            ['help', ['help']]
+        ],
+        callbacks: {
+            onInit: function() {
+                // 设置初始内容
+                if (initialContent) {
+                    $('#editor-wrapper').summernote('code', initialContent);
+                }
+            },
+            onChange: function(contents, $editable) {
+                // 同步到隐藏 textarea
+                hiddenInput.value = contents;
+            }
+        }
+    });
+
+    // 表单提交前同步内容
+    document.querySelector('form').addEventListener('submit', function() {
+        hiddenInput.value = $('#editor-wrapper').summernote('code');
+    });
+})();
+</script>
+{% endblock %}

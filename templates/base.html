@@ -159,7 +159,7 @@
                 {% endif %}
             </div>
             <span>{{ current_user.name }}
-                <span class="badge bg-secondary">{% if current_user.has_role('admin') %}管理员{% elif current_user.has_role('shipper') %}发货员{% elif current_user.has_role('follow_up') %}对接员{% else %}业务员{% endif %}</span>
+                <span class="badge bg-secondary">{% if current_user.has_role('admin') %}管理员{% elif current_user.has_role('finance') %}财务{% elif current_user.has_role('shipper') %}发货员{% elif current_user.has_role('follow_up') %}对接员{% else %}业务员{% endif %}</span>
             </span>
             <a href="{{ url_for('auth.change_password') }}" class="text-decoration-none text-muted"><i class="bi bi-key"></i></a>
             <a href="{{ url_for('auth.logout') }}" class="text-decoration-none text-muted"><i class="bi bi-box-arrow-right"></i></a>
@@ -203,6 +203,24 @@
 
     <!-- 侧边栏 -->
     <div class="sidebar">
+        <!-- 营销中心 -->
+        <div class="menu-group">
+            <div class="menu-label">营销中心</div>
+            <nav class="nav flex-column">
+                <a class="nav-link {% if request.endpoint and request.endpoint.startswith('marketing.') %}active{% endif %}" href="{{ url_for('marketing.index') }}">
+                    <i class="bi bi-megaphone-fill"></i> 营销栏目
+                </a>
+                <a class="nav-link {% if request.endpoint == 'knowledge.knowledge_search' %}active{% endif %}" href="{{ url_for('knowledge.knowledge_search') }}">
+                    <i class="bi bi-chat-quote"></i> 客情应答
+                </a>
+                {% if current_user.has_role('admin') %}
+                <a class="nav-link {% if request.endpoint == 'knowledge.admin_knowledge' %}active{% endif %}" href="{{ url_for('knowledge.admin_knowledge') }}">
+                    <i class="bi bi-gear"></i> 话术管理
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+
         <!-- 订单管理 -->
         <div class="menu-group">
             <div class="menu-label">订单管理</div>
@@ -230,13 +248,34 @@
                 <a class="nav-link {% if request.endpoint == 'behavior.customer_tracking' %}active{% endif %}" href="{{ url_for('behavior.customer_tracking') }}">
                     <i class="bi bi-eye"></i> 客户跟踪
                 </a>
-                {% if current_user.has_role('admin') %}
+                {% if current_user.has_role('admin') or current_user.has_role('finance') %}
                 <a class="nav-link {% if request.endpoint == 'blacklist.admin_blacklist' %}active{% endif %}" href="{{ url_for('blacklist.admin_blacklist') }}">
                     <i class="bi bi-ban"></i> 黑名单管理
                 </a>
                 {% endif %}
             </nav>
         </div>
+
+        <!-- 财务管理 -->
+        {% if current_user.has_role('finance') or current_user.has_role('admin') %}
+        <div class="menu-group">
+            <div class="menu-label">财务管理</div>
+            <nav class="nav flex-column">
+                <a class="nav-link {% if request.endpoint == 'finance.finance_dashboard' %}active{% endif %}" href="{{ url_for('finance.finance_dashboard') }}">
+                    <i class="bi bi-graph-up"></i> 财务仪表盘
+                </a>
+                <a class="nav-link {% if request.endpoint == 'finance.attendance_config' %}active{% endif %}" href="{{ url_for('finance.attendance_config') }}">
+                    <i class="bi bi-gear-fill"></i> 财务配置（提成+考勤）
+                </a>
+                <a class="nav-link {% if request.endpoint == 'finance.attendance_data' %}active{% endif %}" href="{{ url_for('finance.attendance_data') }}">
+                    <i class="bi bi-clock-history"></i> 考勤数据
+                </a>
+                <a class="nav-link {% if request.endpoint == 'finance.salary_calculation' %}active{% endif %}" href="{{ url_for('finance.salary_calculation') }}">
+                    <i class="bi bi-currency-yen"></i> 薪资核算
+                </a>
+            </nav>
+        </div>
+        {% endif %}
 
         <!-- 业绩管理 -->
         <div class="menu-group">
@@ -350,6 +389,7 @@
                 </a>
             </nav>
         </div>
+
     </div>
     {% endif %}
 

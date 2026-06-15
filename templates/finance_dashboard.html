@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}财务仪表盘{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+    <h3 class="mb-4"><i class="bi bi-graph-up text-primary"></i> 财务仪表盘</h3>
+
+    <!-- 月份选择 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-center">
+                <div class="col-auto">
+                    <label class="form-label mb-0">统计月份：</label>
+                </div>
+                <div class="col-auto">
+                    <select name="year" class="form-select">
+                        {% for y in range(year-2, year+3) %}
+                        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}年</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <select name="month" class="form-select">
+                        {% for m in range(1, 13) %}
+                        <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}月</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">切换</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 数据概览卡片 -->
+    <div class="row mb-4">
+        <div class="col-md-3 col-sm-6">
+            <div class="card text-center shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">业务员人数</div>
+                    <div class="h3 mt-2">{{ total_users }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card text-center shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">财务配置适用组数</div>
+                    <div class="h3 mt-2">{{ applicable_group_count }} / {{ groups|length }}</div>
+                    <a href="{{ url_for('finance.attendance_config') }}" class="small text-info">立即配置</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card text-center shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">财务配置状态</div>
+                    <div class="h3 mt-2">{{ '已保存' if finance_config_saved else '未保存' }}</div>
+                    <a href="{{ url_for('finance.attendance_config') }}" class="small text-warning">{{ '查看/编辑' if finance_config_saved else '立即配置' }}</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card text-center shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">本月考勤记录数</div>
+                    <div class="h3 mt-2">{{ attendance_record_count }}</div>
+                    <a href="{{ url_for('finance.attendance_data', year=year, month=month) }}" class="small text-info">查看/录入</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快捷入口 -->
+    <div class="card">
+        <div class="card-header">
+            <strong>快捷操作</strong>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <a href="{{ url_for('finance.attendance_config') }}" class="btn btn-outline-primary w-100 py-3">
+                        <i class="bi bi-gear-fill fs-4"></i><br>
+                        <span class="mt-1">财务配置（提成+考勤）</span>
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <a href="{{ url_for('finance.attendance_data', year=year, month=month) }}" class="btn btn-outline-warning w-100 py-3">
+                        <i class="bi bi-clock-history fs-4"></i><br>
+                        <span class="mt-1">录入考勤数据</span>
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <a href="{{ url_for('finance.salary_calculation', year=year, month=month) }}" class="btn btn-primary w-100 py-3">
+                        <i class="bi bi-currency-yen fs-4"></i><br>
+                        <span class="mt-1">核算本月薪资</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 说明 -->
+    <div class="card mt-4">
+        <div class="card-header bg-light">
+            <strong><i class="bi bi-info-circle"></i> 薪资计算流程说明</strong>
+        </div>
+        <div class="card-body text-muted small">
+            <ol class="mb-0">
+                <li><strong>配置提成规则</strong>：为每个业务组别配置提成比例（固定或阶梯式）。</li>
+                <li><strong>配置考勤参数</strong>：设置基础薪资、全勤奖、迟到/缺旷/病事假扣款规则。</li>
+                <li><strong>录入考勤数据</strong>：按日期录入每个业务员的考勤状态（正常/迟到/请假/缺旷等）。</li>
+                <li><strong>核算薪资</strong>：系统按"业绩×提成 + 基础薪资 + 全勤奖 − 各项扣款"自动计算。</li>
+                <li><strong>导出薪资表</strong>：导出 Excel 用于存档。</li>
+            </ol>
+        </div>
+    </div>
+</div>
+{% endblock %}

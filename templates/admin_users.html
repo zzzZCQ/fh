@@ -74,6 +74,9 @@
                                 {% if 'admin' in user_roles %}
                                     <span class="badge bg-danger">管理员</span>
                                 {% endif %}
+                                {% if 'finance' in user_roles %}
+                                    <span class="badge bg-warning text-dark">财务</span>
+                                {% endif %}
                                 {% if 'salesman' in user_roles %}
                                     <span class="badge bg-primary">业务员</span>
                                 {% endif %}
@@ -251,6 +254,12 @@
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" name="roles" value="follow_up" id="new_role_follow_up">
                                     <label class="form-check-label" for="new_role_follow_up">对接员</label>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="roles" value="finance" id="new_role_finance">
+                                    <label class="form-check-label" for="new_role_finance">财务</label>
                                 </div>
                             </div>
                         </div>

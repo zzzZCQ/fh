@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <nav style="--bs-breadcrumb-divider: '>';" aria-label="breadcrumb">
+        <ol class="breadcrumb small">
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.index') }}">营销中心</a></li>
+            <li class="breadcrumb-item active">{{ group.name }} 栏目列表</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="mb-0"><i class="bi bi-calendar3"></i> {{ group.name }}</h2>
+            <small class="text-muted">各期营销栏目</small>
+        </div>
+        {% if can_manage %}
+        <a href="{{ url_for('marketing.period_add', group_id=group.id) }}" class="btn btn-success">
+            <i class="bi bi-plus-circle"></i> 新增本期栏目
+        </a>
+        {% endif %}
+    </div>
+
+    {% if not periods %}
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th>栏目名称</th>
+                        <th>档期</th>
+                        <th>天数</th>
+                        <th>话术数</th>
+                        <th>执行数</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                        <th style="width: 220px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in periods %}
+                <tr>
+                    <td>
+                        <a href="{{ url_for('marketing.period_schedules', period_id=p.id) }}">
+                            <strong>{{ p.period_name }}</strong>
+                        </a>
+                        {% if p.description %}
+                            <div class="small text-muted mt-1" style="max-width: 400px;">{{ p.description | truncate(60) }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted small">{{ p.start_date }} ~ {{ p.end_date }}</td>
+                    <td>{{ p.total_days }}</td>
+                    <td>{{ p.schedule_count }}</td>
+                    <td>{{ p.execution_count }}</td>
+                    <td>
+                        {% if p._ui_status == 'active' %}
+                            <span class="badge bg-success">进行中</span>
+                        {% elif p._ui_status == 'upcoming' %}
+                            <span class="badge bg-warning text-dark">即将开始</span>
+                        {% elif p._ui_status == 'ended' %}
+                            <span class="badge bg-secondary">已结束</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ p.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="small text-muted">{{ p.create_time.strftime('%Y-%m-%d') }}</td>
+                    <td>
+                        <a href="{{ url_for('marketing.period_schedules', period_id=p.id) }}" class="btn btn-sm btn-outline-primary">话术</a>
+                        {% if can_manage %}
+                            <a href="{{ url_for('marketing.period_results', period_id=p.id) }}" class="btn btn-sm btn-outline-info">结果</a>
+                            <a href="{{ url_for('marketing.period_edit', period_id=p.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deletePeriod{{ p.id }}">删除</button>
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <!-- 删除确认弹窗 -->
+                <div class="modal fade" id="deletePeriod{{ p.id }}" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">确认删除</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                确定要删除栏目「<strong>{{ p.period_name }}</strong> 吗？<br>
+                                <small class="text-danger">栏目的所有话术与执行记录将一并删除，此操作不可恢复。</small>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                <form method="POST" action="{{ url_for('marketing.period_delete', period_id=p.id) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-danger">确认删除</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> 还没有栏目。
+        <a href="{{ url_for('marketing.period_add', group_id=group.id) }}" class="alert-link">点此创建本期栏目</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

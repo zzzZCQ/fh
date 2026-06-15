@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 720px;">
+
+    <nav style="--bs-breadcrumb-divider: '>';" aria-label="breadcrumb">
+        <ol class="breadcrumb small">
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.index') }}">营销中心</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('marketing.group_periods', group_id=group.id) }}">{{ group.name }}</a></li>
+            <li class="breadcrumb-item active">{{ '编辑栏目' if period else '新增栏目' }}</li>
+        </ol>
+    </nav>
+
+    <h3 class="mb-4">
+        <i class="bi bi-calendar-plus"></i>
+        {{ group.name }} - {{ '编辑栏目' if period else '新增栏目' }}
+    </h3>
+
+    <form method="POST" class="card">
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label">栏目名称 <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" name="period_name"
+                       value="{{ period.period_name if period else '' }}"
+                       placeholder="例如：618预热期、新客户首单促销、会员日...">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">营销策略说明</label>
+                <textarea class="form-control" name="description" rows="3"
+                          placeholder="描述本期营销策略、目标客户、推广重点...">{{ period.description if period and period.description else '' }}</textarea>
+            </div>
+
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">开始日期 <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" name="start_date"
+                           value="{{ period.start_date.strftime('%Y-%m-%d') if period else default_start.strftime('%Y-%m-%d') }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">结束日期 <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" name="end_date"
+                           value="{{ period.end_date.strftime('%Y-%m-%d') if period else default_end.strftime('%Y-%m-%d') }}">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">状态</label>
+                <select class="form-select" name="status">
+                    <option value="active" {% if period and period.status == 'active' %}selected{% endif %}>进行中</option>
+                    <option value="ended" {% if period and period.status == 'ended' %}selected{% endif %}>已结束</option>
+                </select>
+                <div class="form-text">系统会根据当前日期自动判断是否"正在进行中"。</div>
+            </div>
+        </div>
+
+        <div class="card-footer text-end">
+            <a href="{{ url_for('marketing.group_periods', group_id=group.id) }}" class="btn btn-secondary">取消</a>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save"></i> {{ '更新栏目' if period else '创建栏目' }}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

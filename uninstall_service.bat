@@ -2,25 +2,29 @@
 setlocal enabledelayedexpansion
 
 echo ==============================================
-echo   Uninstall Notification Service
+echo   卸载发货通知系统服务
 echo ==============================================
 echo.
 
-set "STARTUP_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
-set "SHORTCUT_NAME=NotificationService.lnk"
+set "SERVICE_NAME=FHNotificationService"
 
-echo Removing startup shortcut...
-if exist "!STARTUP_DIR!\!SHORTCUT_NAME!" (
-    del "!STARTUP_DIR!\!SHORTCUT_NAME!"
-    echo Shortcut removed successfully.
+echo 停止并删除任务计划程序任务...
+powershell.exe -ExecutionPolicy Bypass -Command ^
+"$taskName = '%SERVICE_NAME%'; ^
+try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue; } catch {}; ^
+Unregister-ScheduledTask -TaskName $taskName -Confirm:$false"
+
+if %errorlevel% equ 0 (
+    echo 任务计划程序任务已删除
     echo.
     echo ==============================================
-    echo   Uninstallation Complete!
+    echo   卸载完成!
     echo ==============================================
-    echo Service will NOT start on next boot.
+    echo 服务已从开机自启中移除
     echo ==============================================
 ) else (
-    echo Shortcut not found. May already be uninstalled.
+    echo ERROR: 删除任务计划程序任务失败
+    echo 请以管理员身份运行此脚本
+    pause
+    exit /b 1
 )
-
-pause

@@ -69,6 +69,9 @@ from routes_broadcast import bp as broadcast_bp
 from routes_blacklist import bp as blacklist_bp
 from routes_wecom_scrm import bp as wecom_scrm_bp
 from routes_admin_tasks import bp as admin_tasks_bp, register_task, sync_task_config_to_db
+from routes_knowledge import bp as knowledge_bp
+from routes_finance import bp as finance_bp
+from routes_marketing import bp as marketing_bp
 
 
 app.register_blueprint(auth_bp)
@@ -89,6 +92,9 @@ app.register_blueprint(broadcast_bp)
 app.register_blueprint(blacklist_bp)
 app.register_blueprint(wecom_scrm_bp)
 app.register_blueprint(admin_tasks_bp)
+app.register_blueprint(knowledge_bp)
+app.register_blueprint(finance_bp)
+app.register_blueprint(marketing_bp)
 
 
 # ============ 注册定时任务（在这里新增任务即可，配置由 admin 在页面上调整） ============
@@ -279,6 +285,28 @@ def run_migrations():
     except Exception as e:
         if 'already exists' not in str(e).lower():
             print(f'[迁移] scheduled_task_log表创建/检查: {e}')
+
+    # 创建 knowledge_entry 话术库表
+    try:
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS knowledge_entry (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                title VARCHAR(200) NOT NULL,
+                keywords VARCHAR(500) NOT NULL,
+                content TEXT NOT NULL,
+                is_active TINYINT(1) DEFAULT 1,
+                view_count INTEGER DEFAULT 0,
+                author_id INTEGER,
+                create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (author_id) REFERENCES `user`(id)
+            )
+        """))
+        db.session.commit()
+        print('[迁移] 已检查/创建 knowledge_entry 表')
+    except Exception as e:
+        if 'already exists' not in str(e).lower():
+            print(f'[迁移] knowledge_entry表创建/检查: {e}')
 
 
 def init_db():

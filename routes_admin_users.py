@@ -117,7 +117,7 @@ def update_user(user_id):
             return redirect(url_for('admin_users.admin_users'))
     
     selected_roles = request.form.getlist('roles')
-    valid_roles = ['salesman', 'shipper', 'admin', 'follow_up']
+    valid_roles = ['salesman', 'shipper', 'admin', 'follow_up', 'finance']
     roles = [r for r in selected_roles if r in valid_roles]
     if roles:
         user.roles = ','.join(roles)
@@ -168,7 +168,7 @@ def change_user_role(user_id):
 
     # 获取选中的角色列表
     selected_roles = request.form.getlist('roles')
-    valid_roles = ['salesman', 'shipper', 'admin', 'follow_up']
+    valid_roles = ['salesman', 'shipper', 'admin', 'follow_up', 'finance']
     roles = [r for r in selected_roles if r in valid_roles]
 
     if not roles:
@@ -178,7 +178,7 @@ def change_user_role(user_id):
     user.roles = ','.join(roles)
     db.session.commit()
 
-    role_names = {"salesman": "业务员", "shipper": "发货员", "admin": "管理员", "follow_up": "对接员"}
+    role_names = {"salesman": "业务员", "shipper": "发货员", "admin": "管理员", "follow_up": "对接员", "finance": "财务"}
     role_str = '、'.join([role_names.get(r, r) for r in roles])
     flash(f'用户 {user.name} 的角色已修改为：{role_str}！', 'success')
     return redirect(url_for('admin_users.admin_users'))
@@ -367,7 +367,7 @@ def add_user():
         return redirect(url_for('admin_users.admin_users'))
 
     # 验证角色
-    valid_roles = ['salesman', 'shipper', 'admin', 'follow_up']
+    valid_roles = ['salesman', 'shipper', 'admin', 'follow_up', 'finance']
     user_roles = [r for r in roles if r in valid_roles]
     if not user_roles:
         user_roles = ['salesman']

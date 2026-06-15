@@ -1,0 +1,138 @@
+{# 考勤配置表单（可复用），传入 cfg 对象 #}
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <label class="form-label">基础薪资（元/月）</label>
+        <input type="number" step="0.01" min="0" name="base_salary" class="form-control"
+               value="{{ cfg.base_salary if cfg else 0 }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">全勤奖（元）</label>
+        <input type="number" step="0.01" min="0" name="full_attendance_bonus" class="form-control"
+               value="{{ cfg.full_attendance_bonus if cfg else 0 }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">缺旷每日扣款（元）</label>
+        <input type="number" step="0.01" min="0" name="absence_deduction" class="form-control"
+               value="{{ cfg.absence_deduction if cfg else 0 }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">标准工作日（天）</label>
+        <input type="number" step="1" min="0" max="31" name="standard_work_days" class="form-control"
+               value="{{ cfg.standard_work_days if cfg else 22 }}">
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <label class="form-label">病假每日扣款（元）</label>
+        <input type="number" step="0.01" min="0" name="sick_leave_deduction" class="form-control"
+               value="{{ cfg.sick_leave_deduction if cfg else 0 }}">
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">事假每日扣款（元）</label>
+        <input type="number" step="0.01" min="0" name="personal_leave_deduction" class="form-control"
+               value="{{ cfg.personal_leave_deduction if cfg else 0 }}">
+    </div>
+</div>
+
+<!-- 迟到扣款规则 -->
+<div class="mb-3">
+    <label class="form-label">迟到扣款规则（按累计迟到分钟数匹配最高档位）</label>
+    <table class="table table-sm">
+        <thead class="table-light">
+            <tr>
+                <th>累计迟到分钟 ≥</th>
+                <th>扣金额（元）</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody class="late-rules-body">
+            {% if cfg and cfg.late_deduction_rules %}
+                {% set rules = cfg.late_deduction_rules|from_json %}
+                {% if rules %}
+                    {% for r in rules %}
+                    <tr class="late-rule-row">
+                        <td><input type="number" name="late_minutes[]" class="form-control" value="{{ r.minutes }}" min="0"></td>
+                        <td><input type="number" name="late_amount[]" class="form-control" value="{{ r.amount }}" min="0" step="0.01"></td>
+                        <td><button type="button" class="btn btn-sm btn-outline-danger remove-late-row">-</button></td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr class="late-rule-row">
+                        <td><input type="number" name="late_minutes[]" class="form-control" value="15" min="0"></td>
+                        <td><input type="number" name="late_amount[]" class="form-control" value="20" min="0" step="0.01"></td>
+                        <td><button type="button" class="btn btn-sm btn-outline-danger remove-late-row">-</button></td>
+                    </tr>
+                    <tr class="late-rule-row">
+                        <td><input type="number" name="late_minutes[]" class="form-control" value="30" min="0"></td>
+                        <td><input type="number" name="late_amount[]" class="form-control" value="50" min="0" step="0.01"></td>
+                        <td><button type="button" class="btn btn-sm btn-outline-danger remove-late-row">-</button></td>
+                    </tr>
+                    <tr class="late-rule-row">
+                        <td><input type="number" name="late_minutes[]" class="form-control" value="60" min="0"></td>
+                        <td><input type="number" name="late_amount[]" class="form-control" value="100" min="0" step="0.01"></td>
+                        <td><button type="button" class="btn btn-sm btn-outline-danger remove-late-row">-</button></td>
+                    </tr>
+                {% endif %}
+            {% else %}
+                <tr class="late-rule-row">
+                    <td><input type="number" name="late_minutes[]" class="form-control" value="15" min="0"></td>
+                    <td><input type="number" name="late_amount[]" class="form-control" value="20" min="0" step="0.01"></td>
+                    <td><button type="button" class="btn btn-sm btn-outline-danger remove-late-row">-</button></td>
+                </tr>
+                <tr class="late-rule-row">
+                    <td><input type="number" name="late_minutes[]" class="form-control" value="30" min="0"></td>
+                    <td><input type="number" name="late_amount[]" class="form-control" value="50" min="0" step="0.01"></td>
+                    <td><button type="button" class="btn btn-sm btn-outline-danger remove-late-row">-</button></td>
+                </tr>
+                <tr class="late-rule-row">
+                    <td><input type="number" name="late_minutes[]" class="form-control" value="60" min="0"></td>
+                    <td><input type="number" name="late_amount[]" class="form-control" value="100" min="0" step="0.01"></td>
+                    <td><button type="button" class="btn btn-sm btn-outline-danger remove-late-row">-</button></td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+    <button type="button" class="btn btn-sm btn-outline-secondary add-late-row">+ 添加档位</button>
+    <div class="form-text small text-muted mt-2">
+        例如：累计迟到 15 分钟扣 20 元；累计 30 分钟扣 50 元；累计 60 分钟扣 100 元。
+    </div>
+</div>
+
+<div class="mb-3">
+    <label class="form-label">备注</label>
+    <input type="text" name="remark" class="form-control" maxlength="200"
+           value="{{ cfg.remark if cfg else '' }}">
+</div>
+
+<script>
+// 只在页面第一次加载时绑定，避免重复绑定
+(function () {
+    // 添加迟到档位行
+    document.querySelectorAll('.add-late-row').forEach(btn => {
+        if (btn.dataset.bound === '1') return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', function (e) {
+            const tbody = this.parentNode.querySelector('.late-rules-body') || this.closest('.mb-3').querySelector('.late-rules-body');
+            const tr = document.createElement('tr');
+            tr.className = 'late-rule-row';
+            tr.innerHTML = `
+                <td><input type="number" name="late_minutes[]" class="form-control" value="0" min="0"></td>
+                <td><input type="number" name="late_amount[]" class="form-control" value="0" min="0" step="0.01"></td>
+                <td><button type="button" class="btn btn-sm btn-outline-danger remove-late-row">-</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    });
+
+    // 删除迟到档位行
+    document.addEventListener('click', function (e) {
+        if (e.target.classList.contains('remove-late-row')) {
+            const tbody = e.target.closest('.late-rules-body');
+            if (tbody && tbody.querySelectorAll('.late-rule-row').length > 1) {
+                tbody.removeChild(e.target.closest('.late-rule-row'));
+            }
+        }
+    });
+})();
+</script>
