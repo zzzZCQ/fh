@@ -257,7 +257,7 @@
         </div>
 
         <!-- 财务管理 -->
-        {% if current_user.has_role('finance') or current_user.has_role('admin') %}
+        {% if current_user.has_role('finance') or current_user.username == 'admin' %}
         <div class="menu-group">
             <div class="menu-label">财务管理</div>
             <nav class="nav flex-column">

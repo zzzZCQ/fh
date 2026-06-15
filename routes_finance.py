@@ -22,9 +22,9 @@ bp = Blueprint('finance', __name__)
 
 # ============ 工具函数 ============
 def _require_finance_access():
-    """财务/管理员权限校验（返回布尔值）"""
+    """财务/超级管理员权限校验（返回布尔值）"""
     roles = current_user.get_roles()
-    return 'finance' in roles or 'admin' in roles
+    return 'finance' in roles or current_user.username == 'admin'
 
 
 def _get_accessible_users():
